@@ -15,11 +15,13 @@
 #include <ulib/net/server/server.h>
 #include <ulib/utility/data_session.h>
 
+uint32_t UDataStorage::buffer_len;
+
 // method VIRTUAL to define
 
 char* UDataStorage::toBuffer()
 {
-   U_TRACE(0, "UDataStorage::toBuffer()")
+   U_TRACE_NO_PARAM(0, "UDataStorage::toBuffer()")
 
    U_INTERNAL_ASSERT_EQUALS(u_buffer_len, 0)
 
@@ -32,6 +34,8 @@ char* UDataStorage::toBuffer()
 #endif
 
    U_INTERNAL_ASSERT_MINOR(u_buffer_len, U_BUFFER_SIZE)
+
+   buffer_len = u_buffer_len;
 
    U_RETURN(u_buffer);
 }
@@ -49,41 +53,21 @@ void UDataStorage::fromData(const char* ptr, uint32_t len)
 #endif
 }
 
-void UDataStorage::setKeyId()
-{
-   U_TRACE(0, "UDataStorage::setKeyId()")
-
-   U_INTERNAL_DUMP("keyid = %V", keyid.rep)
-
-   keyid = *UHTTP::str_storage_keyid;
-}
-
 UString UDataSession::setKeyIdDataSession(uint32_t counter)
 {
    U_TRACE(0, "UDataSession::setKeyIdDataSession(%u)", counter)
 
    keyid.setBuffer(100U);
 
-   keyid.snprintf("%.*s_%u_%P_%u", U_CLIENT_ADDRESS_TO_TRACE, UHTTP::getUserAgent(), counter);
+   keyid.snprintf(U_CONSTANT_TO_PARAM("%.*s_%u_%P_%u"), U_CLIENT_ADDRESS_TO_TRACE, UHTTP::getUserAgent(), counter);
 
    U_RETURN_STRING(keyid);
-}
-
-// define method VIRTUAL of class UDataStorage
-
-void UDataSession::clear()
-{
-   U_TRACE(0, "UDataSession::clear()")
-
-   vec_var->clear();
 }
 
 #ifdef U_STDCPP_ENABLE
 void UDataSession::toStream(ostream& os)
 {
    U_TRACE(0, "UDataSession::toStream(%p)", &os)
-
-   U_ASSERT(vec_var->empty())
 
    os.put('{');
    os.put(' ');

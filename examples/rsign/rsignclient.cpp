@@ -23,7 +23,7 @@ public:
 
    // COSTRUTTORE
 
-            UClientRSIGN(UFileConfig* cfg) : USOAPClient<T>(cfg) {}
+   explicit UClientRSIGN(UFileConfig* cfg) : USOAPClient<T>(cfg) {}
    virtual ~UClientRSIGN()                                       {}
 
    // OBJECT FOR METHOD REQUEST
@@ -107,9 +107,14 @@ public:
 
       UApplication::run(argc, argv, env);
 
+      UString::str_allocate(STR_ALLOCATE_SOAP);
+
       // manage arg operation
 
       // manage options
+
+      UFileConfig cfg;
+      UString cfg_str, cfg_key;
 
       if (UApplication::isOptions())
          {
@@ -164,15 +169,13 @@ public:
             {
             result = client->getResponse();
 
-            if (result) U_WARNING("%.*s", U_STRING_TO_TRACE(result));
+            if (result) U_WARNING("%v", result.rep);
             }
          }
       }
 
 private:
    UClientRSIGN<USSLSocket>* client;
-   UString cfg_str, cfg_key;
-   UFileConfig cfg;
 };
 
 U_MAIN

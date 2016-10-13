@@ -4,8 +4,8 @@ MAINTAINERCLEANFILES	= Makefile.in
 
 DEFAULT_INCLUDES =  -I. -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_srcdir)/examples/http_header/include
 
-EXTRA_DIST = inp ok CA CSP LCSP TSA RSIGN XAdES nocat wi-auth WAGSM RA IR/WEB IR/benchmark IR/doc_dir *.cfg .htpasswd .htdigest \
-				 *.properties *.test *.sh error_msg workflow doc_parse robots.txt css js benchmark websocket docroot
+EXTRA_DIST = inp ok CA CSP LCSP TSA RSIGN XAdES nocat wi-auth WAGSM RA IR/WEB IR/benchmark IR/doc_dir *.cfg .htpasswd .htdigest python \
+				 *.properties *.test *.sh error_msg workflow doc_parse robots.txt alias.txt throttling.txt css js benchmark websocket docroot php.sh
 
 ## DEFS  = -DU_TEST @DEFS@
 
@@ -74,7 +74,7 @@ test: all-am
 	../make_test.sh client_server.test test_manager.test IR.test web_server.test web_socket.test tsa_http.test tsa_https.test rsign_rpc.test tsa_rpc.test uclient.test tsa_ssoap.test rsign.test web_server_ssl.test PEC_report_rejected.test PEC_report_messaggi.test PEC_report_virus.test PEC_report_anomalie.test PEC_check_namefile.test doc_parse.test xml2txt.test
 
 clean-local:
-	-rm -rf out err core .libs *.bb* *.da *.gcov IR/db* TSA/gSOAP/tsa_client \
+	-rm -rf out err core .libs *.bb* *.da *.gc* IR/db* TSA/gSOAP/tsa_client \
 			  *.log* \
 			*/*.log* \
 			  trace.*.[0-9]*   stack.*.[0-9]*   object.*.[0-9]*   mempool.*.[0-9]* \

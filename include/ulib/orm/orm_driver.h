@@ -156,7 +156,7 @@ public:
 
    void reset() // Resets a prepared statement on client and server to state after creation
       {
-      U_TRACE(0, "USqlStatement::reset()")
+      U_TRACE_NO_PARAM(0, "USqlStatement::reset()")
 
        vparam.clear();
       vresult.clear();
@@ -205,22 +205,8 @@ class UOrmStatement;
 class U_EXPORT UOrmDriver {
 public:
 
-   static const UString* str_host;
-   static const UString* str_port;
-   static const UString* str_root;
-   static const UString* str_UTF8;
-   static const UString* str_UTF16;
-   static const UString* str_dbname;
-   static const UString* str_timeout;
-   static const UString* str_compress;
-   static const UString* str_character_set;
-
-   static void str_allocate();
-
    // Check for memory error
    U_MEMORY_TEST
-
-   // COSTRUTTORE
 
    UOrmDriver()
       {
@@ -260,7 +246,7 @@ public:
 
    static bool isSQLite()
       {
-      U_TRACE(0, "UOrmDriver::isSQLite()")
+      U_TRACE_NO_PARAM(0, "UOrmDriver::isSQLite()")
 
       U_INTERNAL_ASSERT_MAJOR(env_driver_len, 0)
 
@@ -271,7 +257,7 @@ public:
 
    static bool isMYSQL()
       {
-      U_TRACE(0, "UOrmDriver::isMYSQL()")
+      U_TRACE_NO_PARAM(0, "UOrmDriver::isMYSQL()")
 
       U_INTERNAL_ASSERT_MAJOR(env_driver_len, 0)
 
@@ -282,7 +268,7 @@ public:
 
    static bool isPGSQL()
       {
-      U_TRACE(0, "UOrmDriver::isPGSQL()")
+      U_TRACE_NO_PARAM(0, "UOrmDriver::isPGSQL()")
 
       U_INTERNAL_ASSERT_MAJOR(env_driver_len, 0)
 
@@ -383,7 +369,7 @@ public:
 
    virtual void handlerError()
       {
-      U_TRACE(0, "UOrmDriver::handlerError()")
+      U_TRACE_NO_PARAM(0, "UOrmDriver::handlerError()")
 
       // set error value
       }
@@ -406,7 +392,7 @@ public:
 
    virtual void handlerDisConnect()
       {
-      U_TRACE(0, "UOrmDriver::handlerDisConnect()")
+      U_TRACE_NO_PARAM(0, "UOrmDriver::handlerDisConnect()")
       }
 
    // Executes the SQL statement pointed to by the null-terminated string
@@ -451,7 +437,7 @@ public:
     * a column in a WHERE clause to specify a comparison value. However, they are not permitted for identifiers (such as table or
     * column names), or to specify both operands of a binary operator such as the = equal sign. The latter restriction is necessary
     * because it would be impossible to determine the parameter type. In general, parameters are legal only in Data Manipulation Language
-    * (DML) statements, and not in Data Definition Language (DDL) statements. 
+    * (DML) statements, and not in Data Definition Language (DDL) statements 
     */
 
    virtual USqlStatement* handlerStatementCreation(const char* stmt, uint32_t len)
@@ -541,11 +527,7 @@ protected:
 private:
    static void loadStaticLinkedModules(const char* name) U_NO_EXPORT;
 
-#ifdef U_COMPILER_DELETE_MEMBERS
-   UOrmDriver& operator=(const UOrmDriver&) = delete;
-#else
-   UOrmDriver& operator=(const UOrmDriver&) { return *this; }
-#endif
+   U_DISALLOW_ASSIGN(UOrmDriver)
 
    friend class UOrmSession;
    friend class UServer_Base;

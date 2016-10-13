@@ -19,7 +19,7 @@ public:
 
    // COSTRUTTORE
 
-            UClientLCSP(UFileConfig* cfg) : USOAPClient<T>(cfg) {}
+   explicit UClientLCSP(UFileConfig* cfg) : USOAPClient<T>(cfg) {}
    virtual ~UClientLCSP()                                       {}
 
    // OBJECT FOR METHOD REQUEST
@@ -570,7 +570,12 @@ public:
 
       UApplication::run(argc, argv, env);
 
+      UString::str_allocate(STR_ALLOCATE_SOAP);
+
       // manage options
+
+      UString cfg_str;
+      UFileConfig cfg;
 
       if (UApplication::isOptions()) cfg_str = opt['c'];
 
@@ -597,8 +602,6 @@ public:
 
 private:
    UClientLCSP<UUnixSocket>* client;
-   UString cfg_str;
-   UFileConfig cfg;
 };
 
 U_MAIN

@@ -54,7 +54,7 @@ bool UTokenizer::next(UString& token, bPFi func)
          ++s;
          }
 
-      token = str.substr(p, s - p);
+      token = substr(p);
 
       ++s;
 
@@ -88,7 +88,7 @@ bool UTokenizer::next(UString& token, char c)
 
       if (s == 0) s = end;
 
-      token = str.substr(p, s - p);
+      token = substr(p);
 
       ++s;
 
@@ -124,7 +124,7 @@ bool UTokenizer::extend(UString& token, char c)
 
       if (s == 0) s = end;
 
-      token = str.substr(p, s - p);
+      token = substr(p);
 
       ++s;
 
@@ -282,35 +282,67 @@ bool UTokenizer::skipToken(const char* token, uint32_t sz)
    U_RETURN(false);
 }
 
-bool UTokenizer::skipNumber(bool& isReal)
+int UTokenizer::getTypeNumber()
 {
-   U_TRACE(0, "UTokenizer::skipNumber(%p)", &isReal)
+   U_TRACE_NO_PARAM(0, "UTokenizer::getTypeNumber()")
 
-   isReal = false;
+   U_INTERNAL_ASSERT_EQUALS(u__issign(*s), false)
+   U_INTERNAL_ASSERT(u__issign(*(s-1)) || u__isdigit(*(s-1)))
 
-   for (char c; s < end; ++s)
+   int type_num = u__isdigit(*(s-1));
+
+   for (const char* start = s; s < end; ++s)
       {
-      c = *s;
+      char c = *s;
 
-      if (u__isnumber(c)) continue;
+      U_INTERNAL_DUMP("c = %C type_num = %d", c, type_num)
 
-      if (u__isreal(c) ||
-          u__toupper(c) == 'E')
+      if (u__isdigit(c))
          {
-         isReal = true;
+         if (type_num == 0) type_num = 1;
 
          continue;
          }
 
-      U_RETURN(true);
+      if (u__issign(c))
+         {
+         if (type_num == INT_MIN) continue;
+
+         U_RETURN(0);
+         }
+
+      if (c == '.' &&
+          type_num <= 1)
+         {
+         int pos = (s-start);
+
+         if (pos == 0) type_num = INT_MIN+1;
+         else
+            {
+            if (u__isdigit(*(start-1))) ++pos;
+
+            type_num = -pos;
+            }
+
+         continue;
+         }
+
+      if (u__toupper(c) == 'E') // scientific notation (Ex: 1.45e-10)
+         {
+         type_num = INT_MIN;
+
+         continue;
+         }
+
+      break;
       }
 
-   U_RETURN(false);
+   U_RETURN(type_num);
 }
 
 UString UTokenizer::getTokenQueryParser()
 {
-   U_TRACE(0, "UTokenizer::getTokenQueryParser()")
+   U_TRACE_NO_PARAM(0, "UTokenizer::getTokenQueryParser()")
 
    skipSpaces();
 
@@ -331,9 +363,7 @@ UString UTokenizer::getTokenQueryParser()
          }
       }
 
-   UString token = str.substr(p, s - p);
-
-   U_RETURN_STRING(token);
+   return substr(p);
 }
 
 /**
@@ -354,9 +384,9 @@ UString UTokenizer::getTokenQueryParser()
  * starts_with: ~=
  */
 
-int UTokenizer::getTokenId(UString& token)
+int UTokenizer::getTokenId(UString* ptoken)
 {
-   U_TRACE(0, "UTokenizer::getTokenId(%p)", &token)
+   U_TRACE(0, "UTokenizer::getTokenId(%p)", ptoken)
 
    static const int dispatch_table[] = {
       (int)((char*)&&case_exclamation-(char*)&&cvalue),/* '!' */
@@ -456,6 +486,7 @@ int UTokenizer::getTokenId(UString& token)
    };
 
    char c;
+   long sz;
    int tid = 0;
    const char* p1;
    const char* p2;
@@ -604,9 +635,17 @@ cvalue:
    tid = (c == '(' ? U_TK_FN_CALL : U_TK_VALUE);
 
 end:
-   token = str.substr(p1, p2 - p1);
+   if (ptoken)
+      {
+      sz = (p2 -p1);
 
-   U_INTERNAL_DUMP("token = %V", token.rep)
+      if (sz)
+         {
+         *ptoken = str.substr(p1, sz);
+
+         U_INTERNAL_DUMP("token = %V", ptoken->rep)
+         }
+      }
 
    U_RETURN(tid);
 }
@@ -620,12 +659,12 @@ const char* UTokenizer::dump(bool reset) const
 
    char buffer[32];
 
-   UObjectIO::os->write(buffer, u__snprintf(buffer, sizeof(buffer), "%S", group));
+   UObjectIO::os->write(buffer, u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("%S"), group));
 
    *UObjectIO::os << '\n'
                   << "delim                       ";
 
-   UObjectIO::os->write(buffer, u__snprintf(buffer, sizeof(buffer), "%S", delim));
+   UObjectIO::os->write(buffer, u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("%S"), delim));
 
    *UObjectIO::os << '\n'
                   << "group_skip                  " << group_skip  << '\n'

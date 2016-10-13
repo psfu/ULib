@@ -95,7 +95,7 @@ U_EXPORT main (int argc, char* argv[])
       {
       y.clear();
 
-      dati = UFile::contentOf(argv[1]);
+      dati = UFile::contentOf(UString(argv[1]));
 
       t.setData(dati);
       t.setGroup(U_CONSTANT_TO_PARAM("<%%>"));
@@ -107,7 +107,7 @@ U_EXPORT main (int argc, char* argv[])
          cout << "------------------------------------------\n";
 
          uint32_t distance = t.getDistance(),
-                  pos      = dati.find("<%", distance);
+                  pos      = U_STRING_FIND(dati, distance, "<%");
 
          if (pos == U_NOT_FOUND) pos = dati.size();
 
@@ -123,15 +123,15 @@ U_EXPORT main (int argc, char* argv[])
 
    t.setData(U_STRING_FROM_CONSTANT(" ( $QUERY_STRING  =  'submitted' ) "));
 
-   while (t.getTokenId(z) > 0);
+   while (t.getTokenId(0) > 0);
 
-   U_ASSERT( t.getTokenId(z) == 0 )
+   U_ASSERT( t.getTokenId(0) == 0 )
 
    t.setData(U_STRING_FROM_CONSTANT(" ( ${QUERY_STRING}  !=  submitted ) "));
 
-   while (t.getTokenId(z) > 0);
+   while (t.getTokenId(0) > 0);
 
-   U_ASSERT( t.getTokenId(z) == 0 )
+   U_ASSERT( t.getTokenId(0) == 0 )
 
    t.setData(U_STRING_FROM_CONSTANT("!!!.,;'?pippo.,;'?!!!"));
 

@@ -28,9 +28,7 @@ vPF UError::callerDataDump;
 #  include <cxxabi.h>
 #  ifdef HAVE_DLFCN_H
 #  include <dlfcn.h>
-#  endif
-#  include <wait.h>
-
+#   ifdef U_LINUX
 static uint32_t execute_addr2line(char* buffer, uint32_t buffer_size, const char* image, void* addr)
 {
    ssize_t len;
@@ -48,13 +46,13 @@ static uint32_t execute_addr2line(char* buffer, uint32_t buffer_size, const char
 
       (void) close(pipefd[0]);
 
-#  ifndef HAVE_DUP3
+#    ifndef HAVE_DUP3
       (void) dup2(pipefd[1], STDOUT_FILENO);
       (void) dup2(fd_stderr, STDERR_FILENO);
-#  else
+#    else
       (void) dup3(pipefd[1], STDOUT_FILENO, O_CLOEXEC);
       (void) dup3(fd_stderr, STDERR_FILENO, O_CLOEXEC);
-#  endif
+#    endif
 
       // Invokes addr2line utility to determine the function name
       // and the line information from an address in the code segment
@@ -88,6 +86,8 @@ loop:
 
    return output_len;
 }
+#   endif
+#  endif
 #endif
 
 void UError::stackDump()
@@ -96,7 +96,11 @@ void UError::stackDump()
 
    char name[128];
 
-   (void) u__snprintf(name, sizeof(name), "stack.%N.%P", 0);
+#ifndef U_SERVER_CAPTIVE_PORTAL
+   (void) u__snprintf(name, sizeof(name), U_CONSTANT_TO_PARAM("stack.%N.%P"), 0);
+#else
+   (void) u__snprintf(name, sizeof(name), U_CONSTANT_TO_PARAM("/tmp/stack.%N.%P"), 0);
+#endif
 
    int fd = open(name, O_CREAT | O_WRONLY | O_APPEND | O_BINARY, 0666);
 
@@ -106,7 +110,7 @@ void UError::stackDump()
    // does not append a null byte to buf. It will truncate the contents (to a length of bufsiz characters),
    // in case the buffer is too small to hold all of the contents
 
-   char name_buf[1024] = { 0 };
+   char name_buf[1024];
 
 #if defined(U_GDB_STACK_DUMP_ENABLE) && !defined(_MSWINDOWS_)
    int n = readlink("/proc/self/exe", name_buf, sizeof(name_buf) - 1);
@@ -124,7 +128,7 @@ void UError::stackDump()
          char buf[32];
          int fd_err = open("/tmp/gbd.err", O_CREAT | O_WRONLY, 0666);
 
-         (void) u__snprintf(buf, sizeof(buf), "--pid=%P", 0);
+         (void) u__snprintf(buf, sizeof(buf), U_CONSTANT_TO_PARAM("--pid=%P"), 0);
 
          (void) dup2(fd, STDOUT_FILENO);
 #     ifdef U_COVERITY_FALSE_POSITIVE
@@ -155,6 +159,8 @@ void UError::stackDump()
          return;
          }
       }
+#else
+   name_buf[0] = 0;
 #endif
 
 #ifdef HAVE_EXECINFO_H
@@ -164,33 +170,33 @@ void UError::stackDump()
    // If you're using Linux, the standard C library includes a function called backtrace,
    // which populates an array with frames' return addresses, and another function called
    // backtrace_symbols, which will take the addresses from backtrace and look up the
-   // corresponding function names. These are documented in the GNU C Library manual.
+   // corresponding function names. These are documented in the GNU C Library manual
 
    int trace_size = backtrace(array, 256); /* use -rdynamic flag when compiling */
 
    if (trace_size <= 2) abort();
 
-#  if defined(LINUX) || defined(__LINUX__) || defined(__linux__)
-   uint32_t output_len;
-   char* functionNameEnd;
+# ifndef U_LINUX
+   // This function is similar to backtrace_symbols() but it writes the result immediately
+   // to a file and can therefore also be used in situations where malloc() is not usable anymore
+
+   backtrace_symbols_fd(array, trace_size, fd);
+# else
    char buffer[128 * 1024];
 
    FILE* f = fdopen(fd, "w");
 
-   (void) fwrite(buffer, u__snprintf(buffer, sizeof(buffer), "%9D: %N (pid %P) === STACK TRACE ===\n", 0), 1, f);
+   (void) fwrite(buffer, u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("%9D: %N (pid %P) === STACK TRACE ===\n"), 0), 1, f);
 
-#  ifdef HAVE_DLFCN_H
+# ifdef HAVE_DLFCN_H
    Dl_info dlinf;
-#  else
+# else
    int status;
    char* realname;
-   char* lastparen;
-   char* firstparen;
-#  endif
+# endif
 
    char** strings = backtrace_symbols(array, trace_size);
 
-   // -------------------------------------
    // NB: we start the loop from 3 to avoid
    // -------------------------------------
    // UError::stackDump()
@@ -202,7 +208,9 @@ void UError::stackDump()
       {
       (void) fprintf(f, "#%d %s\n", i-2, strings[i]);
 
-#     ifdef HAVE_DLFCN_H
+#   ifdef HAVE_DLFCN_H
+      uint32_t output_len;
+
       if (dladdr(array[i], &dlinf)          == 0 ||
           strcmp(name_buf, dlinf.dli_fname) == 0)
          {
@@ -214,12 +222,12 @@ void UError::stackDump()
          }
 
       // The source code below prints line numbers for all local functions.
-      // If a function from another library is called, you might see a couple of ??:0 instead of file names.
+      // If a function from another library is called, you might see a couple of ??:0 instead of file names
 
       if (output_len &&
           buffer[0] != '?')
          {
-         functionNameEnd = strchr(buffer, '\n');
+         char* functionNameEnd = strchr(buffer, '\n');
 
          if (functionNameEnd)
             {
@@ -230,9 +238,9 @@ void UError::stackDump()
          }
 
       (void) fwrite(U_CONSTANT_TO_PARAM("--------------------------------------------------------------------\n"), 1, f);
-#     else
-      firstparen = strchr(strings[i], '('); // extract the identifier from strings[i]. It's inside of parens
-      lastparen  = strchr(strings[i], '+');
+#    else
+      char* firstparen = strchr(strings[i], '('); // extract the identifier from strings[i]. It's inside of parens
+      char* lastparen  = strchr(strings[i], '+');
 
       if (firstparen &&
           lastparen  &&
@@ -249,15 +257,18 @@ void UError::stackDump()
             free(realname);
             }
          }
-#     endif
+#    endif
       }
-#  else
-   // This function is similar to backtrace_symbols() but it writes the result immediately
-   // to a file and can therefore also be used in situations where malloc() is not usable anymore
-
-   backtrace_symbols_fd(array, trace_size, fd);
-#  endif
 
    (void) fclose(f);
+# endif
 #endif
+
+   fd = open(name, O_RDONLY, 0666);
+
+   if (fd == -1) return;
+
+   if (lseek(fd, U_SEEK_BEGIN, SEEK_END) == 0) (void) unlink(name);
+
+   (void) close(fd);
 }

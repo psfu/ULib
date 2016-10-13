@@ -29,7 +29,7 @@ static void check(UTree<UString>& y)
    is >> y;
 
    U_ASSERT( y.front() == U_STRING_FROM_CONSTANT("ROOT_DN") )
-   U_ASSERT( y.rend()  == U_STRING_FROM_CONSTANT("PASSWORD") )
+   U_ASSERT( y[1]      == U_STRING_FROM_CONSTANT("PASSWORD") )
    U_ASSERT( y.back()  == U_STRING_FROM_CONSTANT("MAX_ERROR_FOR_CONNECT") )
 
    U_ASSERT( y[10] == U_STRING_FROM_CONSTANT("TIME_SLEEP_LDAP_ERROR") )
@@ -126,13 +126,19 @@ int U_EXPORT main(int argc, char* argv[])
 
    uint32_t n = dirwalk.walk(y);
 
-   U_ASSERT( n == 2 )
+   U_ASSERT( n == 3 )
 
    U_DUMP("y[0] = %.*S", U_STRING_TO_TRACE(y[0]))
    U_DUMP("y[1] = %.*S", U_STRING_TO_TRACE(y[1]))
+   U_DUMP("y[2] = %.*S", U_STRING_TO_TRACE(y[1]))
 
    U_ASSERT( y[0] == U_STRING_FROM_CONSTANT("./cdb.test") ||
-             y[0] == U_STRING_FROM_CONSTANT("./rdb.test"))
+             y[0] == U_STRING_FROM_CONSTANT("./rdb.test") ||
+             y[0] == U_STRING_FROM_CONSTANT("./tdb.test"))
    U_ASSERT( y[1] == U_STRING_FROM_CONSTANT("./rdb.test") ||
-             y[1] == U_STRING_FROM_CONSTANT("./cdb.test"))
+             y[1] == U_STRING_FROM_CONSTANT("./cdb.test") ||
+             y[1] == U_STRING_FROM_CONSTANT("./tdb.test"))
+   U_ASSERT( y[2] == U_STRING_FROM_CONSTANT("./rdb.test") ||
+             y[2] == U_STRING_FROM_CONSTANT("./cdb.test") ||
+             y[2] == U_STRING_FROM_CONSTANT("./tdb.test"))
 }

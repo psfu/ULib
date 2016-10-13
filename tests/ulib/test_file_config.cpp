@@ -1,6 +1,5 @@
 // test_file_config.cpp
 
-#include <ulib/json/value.h>
 #include <ulib/file_config.h>
 #include <ulib/debug/crono.h>
 
@@ -8,6 +7,15 @@
 
 extern "C" {
 #  include "file_config.gperf"
+}
+
+static bool setIndex(UHashMap<void*>* pthis, const char* p, uint32_t sz)
+{
+   U_TRACE(5, "setIndex(%p,%.*S,%u)", pthis, sz, p, sz)
+
+   pthis->index = gperf_hash(p, sz);
+
+   U_RETURN(false);
 }
 
 static void check(UFileConfig& y)
@@ -74,9 +82,9 @@ static void check2(UFileConfig& y)
    U_ASSERT( y.erase(U_STRING_FROM_CONSTANT("NOT_PRESENT")) == U_STRING_FROM_CONSTANT("60M") )
 
    U_ASSERT( value           == U_STRING_FROM_CONSTANT("60M") )
-   U_ASSERT( value.strtol()  == 60   * 1024   * 1024 )
+   U_ASSERT( value.strtol(10)  == 60   * 1024   * 1024 )
 #ifdef HAVE_STRTOLL
-   U_ASSERT( value.strtoll() == 60LL * 1024LL * 1024LL )
+   U_ASSERT( value.strtoll(10) == 60LL * 1024LL * 1024LL )
 #endif
 #ifdef HAVE_STRTOF
    U_ASSERT( value.strtof()  == 60.0 )
@@ -89,7 +97,7 @@ static void check2(UFileConfig& y)
 
 static bool print(UStringRep* key, void* value)
 {
-   U_TRACE(5, "print(%.*S,%p)", U_STRING_TO_TRACE(*key), value)
+   U_TRACE(5, "print(%V,%p)", key, value)
 
    cout << '\n';
    cout.write(key->data(), key->size());
@@ -101,7 +109,7 @@ static bool print(UStringRep* key, void* value)
 
 static bool cancella(UStringRep* key, void* value)
 {
-   U_TRACE(5, "cancella(%.*S,%p)", U_STRING_TO_TRACE(*key), value)
+   U_TRACE(5, "cancella(%V,%p)", key, value)
 
    static int cnt;
 
@@ -110,8 +118,7 @@ static bool cancella(UStringRep* key, void* value)
    U_RETURN(false);
 }
 
-int
-U_EXPORT main (int argc, char* argv[])
+int U_EXPORT main (int argc, char* argv[])
 {
    U_ULIB_INIT(argv);
 
@@ -119,14 +126,17 @@ U_EXPORT main (int argc, char* argv[])
 
    UFileConfig y;
 
-   y.table.gperf = gperf_hash;
+   y.table.setIndexFunction(setIndex);
+
    y.table.allocate(MAX_HASH_VALUE+1);
 
    y.load(U_STRING_FROM_CONSTANT("file_config.cf"));
 
    U_ASSERT( y.table.size() == TOTAL_KEYWORDS )
 
-   int n = y.table.first();
+   uint32_t n = 1;
+   
+   (void) y.table.first();
 
    while (y.table.next()) ++n;
 
@@ -135,7 +145,7 @@ U_EXPORT main (int argc, char* argv[])
    check(y);
    check1(y);
 
-   y.table.gperf = 0;
+   y.table.setIgnoreCase(false);
 
    cin  >> y.table;
    cout << y.table;
@@ -160,40 +170,8 @@ U_EXPORT main (int argc, char* argv[])
    check1(y);
    check2(y);
 
+   y.destroy();
    y.table.assign(x);
-
-   x.clear();
-
-   UString tmp = U_STRING_FROM_CONSTANT("{ \"key1\" : \"riga 1\", \"key2\" : \"riga 2\", \"key3\" : \"riga 3\", \"key4\" : \"riga 4\" }");
-
-   bool result = JSON_parse(tmp, x);
-
-   U_INTERNAL_ASSERT( result )
-
-   tmp    = x["key1"];
-   result = ( tmp == U_STRING_FROM_CONSTANT("riga 1") );
-
-   U_INTERNAL_ASSERT( result )
-
-   tmp    = x["key2"];
-   result = ( tmp == U_STRING_FROM_CONSTANT("riga 2") );
-
-   U_INTERNAL_ASSERT( result )
-
-   tmp    = x["key3"];
-   result = ( tmp == U_STRING_FROM_CONSTANT("riga 3") );
-
-   U_INTERNAL_ASSERT( result )
-
-   tmp    = x["key4"];
-   result = ( tmp == U_STRING_FROM_CONSTANT("riga 4") );
-
-   U_INTERNAL_ASSERT( result )
-
-   UValue json(OBJECT_VALUE);
-   tmp = JSON_stringify(json, x);
-
-   U_ASSERT( tmp.size() == U_CONSTANT_SIZE("{\"key4\":\"riga 4\",\"key3\":\"riga 3\",\"key1\":\"riga 1\",\"key2\":\"riga 2\"}") )
 
    x.clear();
 
@@ -204,7 +182,7 @@ U_EXPORT main (int argc, char* argv[])
    UCrono crono;
 
    crono.start();
-   for (int i = 0; i < n; ++i) check(y);
+   for (int i = 0; i < (int)n; ++i) check(y);
    crono.stop();
 
    check1(y);

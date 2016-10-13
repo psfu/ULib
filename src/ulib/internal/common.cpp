@@ -14,24 +14,44 @@
 #include <ulib/file.h>
 #include <ulib/utility/interrupt.h>
 
-#ifndef U_STDCPP_ENABLE
+#ifndef HAVE_POLL_H
+#  include <ulib/notifier.h>
+#  include <ulib/event/event_time.h>
+#endif
+
+#ifdef U_STDCPP_ENABLE
+#  if defined(HAVE_CXX14) && GCC_VERSION_NUM > 60100 && defined(HAVE_ARCH64)
+#     include "./itoa.cpp"
+static uint32_t itoa32(uint32_t num, char* restrict cp) { return itoa_fwd(num, cp) - cp; }
+static uint32_t itoa64(uint64_t num, char* restrict cp) { return itoa_fwd(num, cp) - cp; }
+#  elif (defined(i386) || defined(__amd64) || defined(_M_IX86) || defined(_M_X64)) && !defined(HAVE_OLD_IOSTREAM) && !defined(_MSWINDOWS_) && defined(HAVE_ARCH64)
+#     include "./itoa_sse2.cpp"
+#endif
+#else
 U_EXPORT bool __cxa_guard_acquire() { return 1; }
 U_EXPORT bool __cxa_guard_release() { return 1; }
 
-U_EXPORT void* operator new(size_t n)     { return malloc(n); }
+U_EXPORT void* operator new(  size_t n)   { return malloc(n); }
 U_EXPORT void* operator new[](size_t n)   { return malloc(n); }
-U_EXPORT void  operator delete(void* p)   { free(p); }
+U_EXPORT void  operator delete(  void* p) { free(p); }
 U_EXPORT void  operator delete[](void* p) { free(p); }
+#  ifdef __MINGW32__
+U_EXPORT void  operator delete(  void* p,      unsigned int) { free(p); }
+U_EXPORT void  operator delete[](void* p,      unsigned int) { free(p); }
+#  else
+U_EXPORT void  operator delete(  void* p, long unsigned int) { free(p); }
+U_EXPORT void  operator delete[](void* p, long unsigned int) { free(p); }
+#  endif
 #endif
 
-#ifdef USE_LIBSSL
+#if defined(USE_LIBSSL) && OPENSSL_VERSION_NUMBER < 0x10100000L
 #  include <openssl/ssl.h>
 #  include <openssl/rand.h>
 #  include <openssl/conf.h>
 
 void ULib_init_openssl()
 {
-   U_TRACE(1, "ULib_init_openssl()")
+   U_TRACE_NO_PARAM(1, "ULib_init_openssl()")
 
    // A typical TLS/SSL application will start with the library initialization,
    // will provide readable error messages and will seed the PRNG (Pseudo Random Number Generator).
@@ -40,18 +60,18 @@ void ULib_init_openssl()
    U_SYSCALL_VOID_NO_PARAM(SSL_load_error_strings);
    U_SYSCALL_VOID_NO_PARAM(SSL_library_init);
 
-#  ifdef HAVE_OPENSSL_97
+# ifdef HAVE_OPENSSL_97
    U_SYSCALL_VOID(OPENSSL_config, "%S", 0);
-#  endif
+# endif
    U_SYSCALL_VOID_NO_PARAM(OpenSSL_add_all_ciphers);
    U_SYSCALL_VOID_NO_PARAM(OpenSSL_add_all_digests);
 
    // OpenSSL makes sure that the PRNG state is unique for each thread. On systems that provide "/dev/urandom",
    // the randomness device is used to seed the PRNG transparently. However, on all other systems, the application
-   // is responsible for seeding the PRNG by calling RAND_add(),
+   // is responsible for seeding the PRNG by calling RAND_add()
 
-#  ifdef _MSWINDOWS_
-   U_SYSCALL_VOID(srand, "%ld", u_start_time); // seed with time
+# ifdef _MSWINDOWS_
+   U_SYSCALL_VOID(srand, "%ld", u_seed_hash);
 
    while (RAND_status() == 0) // Seed PRNG only if needed
       {
@@ -61,13 +81,34 @@ void ULib_init_openssl()
 
       RAND_seed(&tmp, sizeof(int));
       }
-#  endif
+# endif
 }
+#endif
+
+#ifndef HAVE_OLD_IOSTREAM
+#  include <ulib/utility/dtoa_milo.h>
+static uint32_t dtoa_milo(double value, char* buffer) { int length, K; Grisu2(value, buffer, &length, &K); return Prettify(buffer, length, K); }
 #endif
 
 void ULib_init()
 {
-   U_TRACE(1, "ULib_init()")
+   U_TRACE_NO_PARAM(1, "ULib_init()")
+
+   // conversion number to string
+
+#ifndef HAVE_OLD_IOSTREAM
+   u_dbl2str = dtoa_milo; 
+#endif
+#if defined(HAVE_CXX14) && GCC_VERSION_NUM > 60100 && defined(HAVE_ARCH64)
+   u_num2str32 = itoa32;
+   u_num2str64 = itoa64;
+#elif (defined(i386) || defined(__amd64) || defined(_M_IX86) || defined(_M_X64)) && !defined(HAVE_OLD_IOSTREAM) && !defined(_MSWINDOWS_) && defined(HAVE_ARCH64)
+   if (u_flag_sse >= 2)
+      {
+      u_num2str32 = utoa32_sse2;
+      u_num2str64 = utoa64_sse2;
+      }
+#endif
 
 #ifdef DEBUG
    static bool init;
@@ -101,22 +142,22 @@ void ULib_init()
    ptr      = (char*) UMemoryPool::pop(U_SIZE_TO_STACK_INDEX(U_MAX_SIZE_PREALLOCATE));
    u_buffer = (char*) UMemoryPool::pop(U_SIZE_TO_STACK_INDEX(U_MAX_SIZE_PREALLOCATE));
 
-   U_INTERNAL_DUMP("ptr = %p u_buffer = %p diff = %ld", ptr, u_buffer, ptr - u_buffer)
-
    if (ptr < u_buffer) u_buffer = ptr;
 
    u_err_buffer = (char*) UMemoryPool::pop(U_SIZE_TO_STACK_INDEX(256));
 
-#  ifdef DEBUG
+   U_INTERNAL_DUMP("ptr = %p u_buffer = %p diff = %ld", ptr, u_buffer, ptr - u_buffer)
+
+# ifdef DEBUG
    UMemoryError::pbuffer = (char*) UMemoryPool::pop(U_SIZE_TO_STACK_INDEX(U_MAX_SIZE_PREALLOCATE));
-#  endif
+# endif
 #else
    u_buffer     = (char*) U_SYSCALL(malloc, "%u", U_BUFFER_SIZE);
    u_err_buffer = (char*) U_SYSCALL(malloc, "%u", 256);
 
-#  ifdef DEBUG
+# ifdef DEBUG
    UMemoryError::pbuffer = (char*) U_SYSCALL(malloc, "%u", U_MAX_SIZE_PREALLOCATE);
-#  endif
+# endif
 #endif
 
    UString::ptrbuf =
@@ -124,23 +165,13 @@ void ULib_init()
    UFile::cwd_save = (char*)UMemoryPool::pop(U_SIZE_TO_STACK_INDEX(1024));
 
 #if defined(DEBUG) && defined(U_STDCPP_ENABLE)
-#  ifdef DEBUG
+# ifdef DEBUG
    UMemoryPool::obj_class = UMemoryPool::func_call = 0;
-#  endif
+# endif
    UObjectIO::init((char*)UMemoryPool::pop(U_SIZE_TO_STACK_INDEX(U_MAX_SIZE_PREALLOCATE)), U_MAX_SIZE_PREALLOCATE);
 #endif
 
    UInterrupt::init();
-
-   // TMPDIR is the canonical Unix environment variable which points to user scratch space. Most Unix utilities will honor the setting of this
-   // variable and use its value to denote the scratch area for temporary files instead of the common default of /tmp.
-   // Other forms sometimes accepted are TEMP, TEMPDIR, and TMP but these are used more commonly by non-POSIX Operating systems.
-
-   // if defined, otherwise it will be created in /tmp
-
-   u_tmpdir = (const char*) U_SYSCALL(getenv, "%S", "TMPDIR");
-
-   if (u_tmpdir == 0) u_tmpdir = "/tmp";
 
 #ifdef _MSWINDOWS_
    WSADATA wsaData;
@@ -161,23 +192,21 @@ void ULib_init()
       U_ERROR("Couldn't find useable Winsock DLL. Must be at least 2.2");
       }
 
-#  ifdef HAVE_ATEXIT
+# ifdef HAVE_ATEXIT
    (void) U_SYSCALL(atexit, "%p", (vPF)&WSACleanup);
-#  endif
+# endif
 #endif
 
 #if defined(SOLARIS) && (defined(SPARC) || defined(sparc)) && !defined(HAVE_ARCH64)
-   // make this if there are pointer misalligned
-   // (because pointers must be always a multiple of 4 (when running 32 bit applications))
-   asm("ta 6");
+   asm("ta 6"); // make this if there are pointer misalligned (because pointers must be always a multiple of 4 (when running 32 bit applications))
 #endif
 
 #if defined(DEBUG) && defined(__GNUC__) && defined(U_ENABLE_ALIGNMENT_CHECKING)
-#  ifdef __i386__
+# ifdef __i386__
    __asm__("pushf\norl $0x40000,(%esp)\npopf"); // Enable Alignment Checking on x86
-#  elif defined(__x86_64__)
+# elif defined(__x86_64__)
    __asm__("pushf\norl $0x40000,(%rsp)\npopf"); // Enable Alignment Checking on x86_64
-#  endif
+# endif
 #endif
 
    U_INTERNAL_ASSERT_EQUALS(sizeof(UStringRep), sizeof(ustringrep))
@@ -186,15 +215,25 @@ void ULib_init()
 
    U_INTERNAL_DUMP("sizeof(off_t) = %u SIZEOF_OFF_T = %u", sizeof(off_t), SIZEOF_OFF_T)
 
-/* NB: there are to many exceptions...
-#if defined(_LARGEFILE_SOURCE) && !defined(_MSWINDOWS_) 
-   U_INTERNAL_ASSERT_EQUALS(sizeof(off_t), SIZEOF_OFF_T)
-#endif
-*/
+   U_INTERNAL_DUMP("u_dosmatch = %p u_dosmatch_with_OR = %p u_pfn_match = %p u_pfn_flags = %u", u_dosmatch, u_dosmatch_with_OR, u_pfn_match, u_pfn_flags)
 
-#ifdef USE_LIBSSL
+/**
+ * NB: there are to many exceptions...
+ *
+ * #if defined(_LARGEFILE_SOURCE) && !defined(_MSWINDOWS_)
+ * U_INTERNAL_ASSERT_EQUALS(sizeof(off_t), SIZEOF_OFF_T)
+ * #endif
+ */
+
+   UString::str_allocate(0);
+
+#if defined(USE_LIBSSL) && OPENSSL_VERSION_NUMBER < 0x10100000L
    ULib_init_openssl();
 #endif
 
-   UString::str_allocate();
+#ifndef HAVE_POLL_H
+   U_INTERNAL_ASSERT_EQUALS(UNotifier::time_obj, 0)
+
+   U_NEW_ULIB_OBJECT(UEventTime, UNotifier::time_obj, UEventTime);
+#endif
 }

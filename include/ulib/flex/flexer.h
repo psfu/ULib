@@ -20,18 +20,10 @@
 #  include <FlexLexer.h>
 #endif
 
-#ifndef min
-#  define min(x,y) (x < y ? x : y)
-#endif
-
-#ifndef max
-#  define max(x,y) (x > y ? x : y)
-#endif
-
 /**
  * @class UFlexer
  *
- * Implementazione di FlexLexer per ULib
+ * Implementation of FlexLexer for ULib
  */
 
 struct U_NO_EXPORT UFlexerReference {
@@ -57,8 +49,6 @@ public:
    U_MEMORY_ALLOCATOR
    U_MEMORY_DEALLOCATOR
 
-   // COSTRUTTORI
-
    UFlexer() : yyFlexLexer()
       {
       U_TRACE_REGISTER_OBJECT(0, UFlexer, "", 0)
@@ -81,6 +71,7 @@ public:
 #ifndef YY_DECL
    /**
     * ordinary flex scanners: it scans the input stream, consuming tokens, until a rule's action returns a value.
+    *
     * NB: this function code is produced by flex program...
     */
 
@@ -88,15 +79,14 @@ public:
 #endif
 
    /**
-    * reads up to `max_size' characters into buf and returns the number of characters read.
-    * To indicate end-of-input, return 0 characters.
+    * reads up to max_size characters into buf and returns the number of characters read. To indicate end-of-input, return 0 characters
     */
 
    virtual int LexerInput(char* buf, int max_size)
       {
       U_TRACE(0, "UFlexer::LexerInput(%p,%d)", buf, max_size)
 
-      int length = min(max((int)data.size() - write_position, 0), max_size);
+      int length = U_min(U_max((int)data.size() - write_position, 0), max_size);
 
       U_INTERNAL_DUMP("length = %d data.size() = %u", length, data.size())
 
@@ -114,14 +104,12 @@ public:
 
    void reset()
       {
-      U_TRACE(0, "UFlexer::reset()")
+      U_TRACE_NO_PARAM(0, "UFlexer::reset()")
 
    // yyFlexLexer::yy_flush_buffer(yyFlexLexer::yy_current_buffer);
 
       parsed_chars = write_position = 0;
       }
-
-   // VARIE
 
    uint32_t size() const { return data.size(); }
 
@@ -138,7 +126,7 @@ public:
 
    int getParsedChars()
       {
-      U_TRACE(0, "UFlexer::getParsedChars()")
+      U_TRACE_NO_PARAM(0, "UFlexer::getParsedChars()")
 
       U_RETURN(parsed_chars);
       }
@@ -163,13 +151,7 @@ protected:
    int parsed_chars, write_position;
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-   UFlexer(const UFlexer&) = delete;
-   UFlexer& operator=(const UFlexer&) = delete;
-#else
-   UFlexer(const UFlexer&) : yyFlexLexer() {}
-   UFlexer& operator=(const UFlexer&)      { return *this; }
-#endif
+   U_DISALLOW_COPY_AND_ASSIGN(UFlexer)
 };
 
 #endif

@@ -1,4 +1,4 @@
-// ============================================================================
+/* ============================================================================
 //
 // = LIBRARY
 //    ULib - c++ library
@@ -9,7 +9,7 @@
 // = AUTHOR
 //    Stefano Casazza
 //
-// ============================================================================
+// ============================================================================ */
 
 /*
 #define DEBUG_DEBUG
@@ -37,11 +37,11 @@ uint32_t u_escape_encode(const unsigned char* restrict inptr, uint32_t len, char
 
       if (outptr >= outend)
          {
-         *outptr++ = '.';
-         *outptr++ = '.';
-         *outptr++ = '.';
+         u_put_unalignedp32(outptr, U_MULTICHAR_CONSTANT32('.','.','.','"'));
 
-         break;
+         outptr[4] = '\0';
+
+         return (outptr - out) + 4;
          }
       }
 
@@ -52,7 +52,6 @@ uint32_t u_escape_encode(const unsigned char* restrict inptr, uint32_t len, char
 }
 
 /**
- * --------------------------------------------------------------------
  * Decode escape sequences into a buffer, the following are recognized:
  * --------------------------------------------------------------------
  *  \a  BEL                 (\007  7  7)
@@ -105,8 +104,8 @@ uint32_t u_escape_decode(const char* restrict inptr, uint32_t len, unsigned char
          if (p == 0) break;
          }
 
-           inptr = p+1;
-      c = *inptr++;
+      inptr = p+1;
+          c = *inptr++;
 
       U_INTERNAL_PRINT("c = %d", c)
 
@@ -197,23 +196,29 @@ uint32_t u_escape_decode(const char* restrict inptr, uint32_t len, unsigned char
 
                if (c <= 0x7FF) /* U+0080..U+07FF */
                   {
-                  *outptr++ = (unsigned char)(0xC0 |  c >> 6);
-                  *outptr++ = (unsigned char)(0x80 | (c & 0x3F));
+                  u_put_unalignedp16(outptr, U_MULTICHAR_CONSTANT16((unsigned char)(0xC0 |  c >> 6),
+                                                                    (unsigned char)(0x80 | (c & 0x3F))));
+
+                  outptr += 2;
                   }
                else if (c <= 0xFFFF) /* U+0800..U+FFFF */
                   {
-                  *outptr++ = (unsigned char)(0xE0 |  c >> 12);
-                  *outptr++ = (unsigned char)(0x80 | (c >> 6 & 0x3F));
-                  *outptr++ = (unsigned char)(0x80 | (c      & 0x3F));
+                  u_put_unalignedp32(outptr, U_MULTICHAR_CONSTANT32((unsigned char)(0xE0 |  c >> 12),
+                                                                    (unsigned char)(0x80 | (c >>  6 & 0x3F)),
+                                                                    (unsigned char)(0x80 | (c       & 0x3F)), 0));
+
+                  outptr += 3;
                   }
                else /* U+10000..U+10FFFF */
                   {
                   U_INTERNAL_ASSERT(c <= 0x10FFFF)
 
-                  *outptr++ = (unsigned char)(0xF0 |  c >> 18);
-                  *outptr++ = (unsigned char)(0x80 | (c >> 12 & 0x3F));
-                  *outptr++ = (unsigned char)(0x80 | (c >>  6 & 0x3F));
-                  *outptr++ = (unsigned char)(0x80 | (c       & 0x3F));
+                  u_put_unalignedp32(outptr, U_MULTICHAR_CONSTANT32((unsigned char)(0xF0 |  c >> 18),
+                                                                    (unsigned char)(0x80 | (c >> 12 & 0x3F)),
+                                                                    (unsigned char)(0x80 | (c >>  6 & 0x3F)),
+                                                                    (unsigned char)(0x80 | (c       & 0x3F))));
+
+                  outptr += 4;
                   }
 
                continue;

@@ -17,16 +17,16 @@
 #include <ulib/string.h>
 
 /**
-   @class URPCMethod
-
-   URPCMethod provides an interface for the things that methods most know how to do.
-
-   Specifically, it needs to know the following:
-   · Its name so the URPCObject can find it
-   · How to execute itself given a URPCEnvelope
-   · If it fails, how to fill in a URPCFault
-   · How to encode itself for execution or response
-*/
+ * @class URPCMethod
+ *
+ * URPCMethod provides an interface for the things that methods most know how to do.
+ *
+ * Specifically, it needs to know the following:
+ *   - Its name so the URPCObject can find it
+ *   - How to execute itself given a URPCEnvelope
+ *   - If it fails, how to fill in a URPCFault
+ *   - How to encode itself for execution or response
+ */
 
 // Forward declaration
 
@@ -44,11 +44,14 @@ public:
    U_MEMORY_ALLOCATOR
    U_MEMORY_DEALLOCATOR
 
-   // COSTRUTTORI
-
    URPCMethod()
       {
       U_TRACE_REGISTER_OBJECT(0, URPCMethod, "", 0)
+      }
+
+   URPCMethod(const UString& n, const UString& _ns) : method_name(n), ns(_ns)
+      {
+      U_TRACE_REGISTER_OBJECT(0, URPCMethod, "%V,%V", n.rep, _ns.rep)
       }
 
    virtual ~URPCMethod()
@@ -63,7 +66,7 @@ public:
 
    static bool hasFailed()
       {
-      U_TRACE(0, "URPCMethod::hasFailed()")
+      U_TRACE_NO_PARAM(0, "URPCMethod::hasFailed()")
 
       bool result = (pFault != 0);
 
@@ -88,7 +91,7 @@ public:
 
    virtual void encode()
       {
-      U_TRACE(0, "URPCMethod::encode()")
+      U_TRACE_NO_PARAM(0, "URPCMethod::encode()")
 
       U_INTERNAL_ASSERT(false) // If this assert fires, you need to implement the method
       }
@@ -119,11 +122,7 @@ protected:
    UString method_name, ns;
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-   URPCMethod& operator=(const URPCMethod&) = delete;
-#else
-   URPCMethod& operator=(const URPCMethod&) { return *this; }
-#endif
+   U_DISALLOW_ASSIGN(URPCMethod)
 };
 
 #endif

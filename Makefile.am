@@ -9,16 +9,18 @@ EXTRA_DIST = cdb configure.help TODO LICENSE* README* *.spec* \
 
 MAINTAINERCLEANFILES = configure aclocal.m4 libtool Makefile.in Makefile INSTALL
 
+moduledir = @ULIB_MODULEDIR@
+
 SUBDIRS  = include src/ulib
 if PLUGIN
 SUBDIRS += src/ulib/net/server/plugin src/ulib/orm/driver
 endif
 if ENABLE_EXAMPLES
-SUBDIRS += examples contrib
+SUBDIRS += examples
 endif
 SUBDIRS += tests
 
-DIST_SUBDIRS = include src/ulib src/ulib/net/server/plugin src/ulib/orm/driver m4 doc contrib examples tests
+DIST_SUBDIRS = include src/ulib src/ulib/net/server/plugin src/ulib/orm/driver m4 doc examples tests contrib
 
 ## bin_SCRIPTS = ulib-config
 
@@ -39,7 +41,19 @@ doc: $(top_builddir)/doc/Doxyfile
 todo:
 	@grep --color=tty --exclude="Makefile*" --exclude-dir=.git -nrEI "/[*] TODO|/[*] FIXME|// TODO|// FIXME" .
 
+coverage:
+	@lcov --output-file coverage.info --directory . --capture
+	@lcov --output-file coverage.info --remove coverage.info '/usr/*' 'src/ulib/expression.*'
+	 lcov --list   	  coverage.info
+
+coverage_clean:
+	@lcov --directory . -z
+
+coverage_html:
+	@genhtml --ignore-errors source -o html coverage.info
+
 install-data-local:
+	@cd $(top_builddir)/src/ulib/net/server/plugin/usp; $(MAKE) $(AM_MAKEFLAGS) usp_compile.sh
 	@${INSTALL} -m 777 $(top_builddir)/libtool $(DESTDIR)${bindir}/usp_libtool.sh; \
 	 ${INSTALL} -m 777 $(top_builddir)/src/ulib/net/server/plugin/usp/usp_compile.sh $(DESTDIR)${bindir}
 
@@ -57,6 +71,7 @@ cleandist:
 		$(distdir)/tests/ulib/tmp/* \
 		$(distdir)/tests/ulib/private/* \
 		$(distdir)/tests/ulib/CApath/*.*0 \
+		$(distdir)/tests/ulib/ok/json.ok \
 		$(distdir)/tests/ulib/ok/timer.ok \
 		$(distdir)/tests/ulib/ok/socket.ok \
 		$(distdir)/tests/ulib/ok/interrupt.ok \
@@ -101,6 +116,7 @@ cleandist:
 		$(distdir)/tests/examples/nocat/.ht* \
 		$(distdir)/tests/examples/nocat/image \
 		$(distdir)/tests/examples/nocat/webif* \
+		$(distdir)/tests/examples/python/*.pyc \
 		$(distdir)/tests/examples/TSA/log \
 		$(distdir)/tests/examples/TSA/TSA \
 		$(distdir)/tests/examples/TSA/.rnd \

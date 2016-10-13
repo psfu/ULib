@@ -11,8 +11,11 @@
 //
 // ============================================================================
 
-#include <ulib/container/vector.h>
 #include <ulib/utility/string_ext.h>
+
+#if defined(ENABLE_MEMPOOL) && defined(U_LINUX)
+#  include <ulib/file.h>
+#endif
 
 bool UVector<void*>::istream_loading;
 
@@ -44,6 +47,34 @@ void UVector<void*>::push(const void* elem) // add to end
    vec[_length++] = elem;
 }
 
+void UVector<void*>::move(UVector<void*>& source) // add to end and reset source
+{
+   U_TRACE(0, "UVector<void*>::move(%p)", &source)
+
+   U_CHECK_MEMORY
+
+   U_INTERNAL_ASSERT_MAJOR(source._length, 0)
+
+   if ((_length + source._length) >= _capacity)
+      {
+      const void** old_vec  = vec;
+      uint32_t old_capacity = _capacity;
+
+      _capacity <<= 1; // x 2...
+
+      vec = (const void**) UMemoryPool::_malloc(&_capacity, sizeof(void*));
+
+      if (_length) U_MEMCPY(vec, old_vec, _length * sizeof(void*));
+
+      UMemoryPool::_free(old_vec, old_capacity, sizeof(void*));
+      }
+
+   U_MEMCPY(vec+_length, source.vec, source._length * sizeof(void*));
+
+   _length += source._length;
+              source._length = 0;
+}
+
 // LIST OPERATIONS
 
 void UVector<void*>::insert(uint32_t pos, const void* elem) // add elem before pos
@@ -71,7 +102,11 @@ void UVector<void*>::insert(uint32_t pos, const void* elem) // add elem before p
       }
    else
       {
-      (void) U_SYSCALL(memmove, "%p,%p,%u", vec + pos + 1, vec + pos, (_length - pos) * sizeof(void*));
+#  ifdef U_APEX_ENABLE
+      (void) U_SYSCALL(apex_memmove, "%p,%p,%u", vec + pos + 1, vec + pos, (_length - pos) * sizeof(void*));
+#  else
+      (void) U_SYSCALL(     memmove, "%p,%p,%u", vec + pos + 1, vec + pos, (_length - pos) * sizeof(void*));
+#  endif
       }
 
    vec[pos] = elem;
@@ -107,7 +142,11 @@ void UVector<void*>::insert(uint32_t pos, uint32_t n, const void* elem) // add n
       }
    else
       {
-      (void) U_SYSCALL(memmove, "%p,%p,%u", vec + pos + n, vec + pos, (_length - pos) * sizeof(void*));
+#  ifdef U_APEX_ENABLE
+      (void) U_SYSCALL(apex_memmove, "%p,%p,%u", vec + pos + n, vec + pos, (_length - pos) * sizeof(void*));
+#  else
+      (void) U_SYSCALL(     memmove, "%p,%p,%u", vec + pos + n, vec + pos, (_length - pos) * sizeof(void*));
+#  endif
       }
 
    for (uint32_t i = 0; i < n; ++i) vec[pos++] = elem;
@@ -134,7 +173,25 @@ void UVector<void*>::reserve(uint32_t n)
       }
 }
 
-// specializzazione stringa
+#ifdef DEBUG
+bool UVector<void*>::check_memory() // check all element
+{
+   U_TRACE_NO_PARAM(0+256, "UVector<void*>::check_memory()")
+
+   U_CHECK_MEMORY
+
+   const void* pelem;
+
+   for (uint32_t i = 0; i < _length; ++i)
+      {
+      pelem = at(i);
+
+      U_INTERNAL_ASSERT_EQUALS(((const UMemoryError*)pelem)->_this, (void*)U_CHECK_MEMORY_SENTINEL)
+      }
+
+   U_RETURN(true);
+}
+#endif
 
 UVector<UString>::UVector(const UString& str, char delim) : UVector<UStringRep*>(64)
 {
@@ -144,10 +201,8 @@ UVector<UString>::UVector(const UString& str, char delim) : UVector<UStringRep*>
 
    if (n > 64)
       {
-#  if defined(ENABLE_MEMPOOL) && !defined(_MSWINDOWS_)
-      uint32_t npage = (((n * sizeof(UStringRep)) + U_PAGEMASK) & ~U_PAGEMASK) / sizeof(UStringRep);
-
-      UMemoryPool::allocateMemoryBlocks(U_SIZE_TO_STACK_INDEX(sizeof(UStringRep)), npage);
+#  if defined(ENABLE_MEMPOOL) && defined(U_LINUX)
+      UMemoryPool::allocateMemoryBlocks(U_SIZE_TO_STACK_INDEX(sizeof(UStringRep)), UFile::getSizeAligned(n * sizeof(UStringRep)) / sizeof(UStringRep));
 #  endif
 
       UMemoryPool::_free(vec, _capacity, sizeof(void*));
@@ -165,47 +220,23 @@ UVector<UString>::UVector(const UString& x, const char* delim) : UVector<UString
    U_TRACE_REGISTER_OBJECT(0, UVector<UString>, "%V,%S", x.rep, delim)
 
    const char* s = x.data();
+         char  c = *s;
 
-   if (*s == '[' ||
-       *s == '(')
+   if (c == '[' ||
+       c == '(')
       {
+      istream_loading = true; // NB: we need this flag for distinguish this operation in UString::setFromData()...
+
       (void) loadFromData(s, x.size());
+
+      istream_loading = false;
       }
    else
       {
-      (void) split(x, delim);
+      (void) split(x, delim); // NB: use substr(), so dependency from x...
       }
 
    if (_length) reserve(_length);
-}
-
-UVector<UString>::~UVector()
-{
-   U_TRACE_UNREGISTER_OBJECT(0, UVector<UString>)
-
-   U_ASSERT(check_memory())
-}
-
-__pure UString UVector<UString>::at(uint32_t pos) const
-{
-   U_TRACE(0, "UVector<UString>::at(%u)", pos)
-
-   UStringRep* rep = UVector<UStringRep*>::at(pos);
-
-   UString result(rep);
-
-   U_RETURN_STRING(result);
-}
-
-void UVector<UString>::push(const UString& str) // add to end
-{
-   U_TRACE(0, "UVector<UString>::push(%V)", str.rep)
-
-   UVector<UStringRep*>::push(str.rep);
-
-   U_INTERNAL_DUMP("str.rep = %p at(%u) = %p", str.rep, _length-1, UVector<UStringRep*>::at(_length-1))
-
-   U_ASSERT_EQUALS(str.rep, UVector<UStringRep*>::at(_length-1))
 }
 
 __pure uint32_t UVector<UString>::find(const char* s, uint32_t n)
@@ -278,25 +309,23 @@ __pure uint32_t UVector<UString>::find(const UString& str, bool ignore_case)
    U_RETURN(U_NOT_FOUND);
 }
 
-/*
-__pure uint32_t UVector<UString>::findWithDataOffset(const char* s, uint32_t n, uint32_t offset)
+// Check equality with string at pos
+
+__pure bool UVector<UString>::isEqual(uint32_t pos, const UString& str, bool ignore_case)
 {
-   U_TRACE(0, "UVector<UString>::findWithDataOffset(%#.*S,%u)", n, s, n)
+   U_TRACE(0, "UVector<UString>::isEqual(%u,%V,%b)", pos, str.rep, ignore_case)
 
    U_CHECK_MEMORY
 
-   UStringRep* r;
-
-   for (uint32_t i = 0; i < _length; ++i)
+   if (_length)
       {
-      r = UVector<UStringRep*>::at(i);
+      UStringRep* rep = UVector<UStringRep*>::at(pos);
 
-      if (u_find(r->data() + offset, r->size() - offset, s, n)) U_RETURN(i);
+      if (UStringRep::equal_lookup(rep, U_STRING_TO_PARAM(*rep), str.rep, str.size(), ignore_case)) U_RETURN(true);
       }
 
-   U_RETURN(U_NOT_FOUND);
+   U_RETURN(false);
 }
-*/
 
 __pure uint32_t UVector<UString>::findSorted(const UString& str, bool ignore_case, bool bcouple)
 {
@@ -443,12 +472,58 @@ UString UVector<UString>::operator[](uint32_t pos) const
 #ifdef DEBUG
    if (pos >= _length)
       {
-      U_ERROR("array access out of bounds - UVector<UString>::at(pos:%u >= _length:%u) _capacity = %u elem(0) = %V elem(%u) = %V",
+      U_ERROR("Array access out of bounds - UVector<UString>::at(pos:%u >= _length:%u) _capacity = %u elem(0) = %V elem(%u) = %V",
                pos, _length, _capacity, vec[0], _length-1, (_length ? vec[_length-1] : UStringRep::string_rep_null));
       }
 #endif
 
    return at(pos);
+}
+
+UString UVector<UString>::join(char c)
+{
+   U_TRACE(0, "UVector<UString>::join(%C)", c)
+
+   U_CHECK_MEMORY
+
+   U_INTERNAL_DUMP("_length = %u", _length)
+
+   U_INTERNAL_ASSERT(_length <= _capacity)
+
+   if (_length == 0) return UString::getStringNull();
+
+   uint32_t i   = 0,
+            len = 0;
+
+   for (; i < _length; ++i) len += ((UStringRep*)vec[i])->size();
+
+   len += (_length - 1);
+
+   UString str(len < U_CAPACITY ? U_CAPACITY : len);
+
+   str.size_adjust(len);
+
+   i = 0;
+   char* ptr = str.data();
+
+   while (true)
+      {
+      UStringRep* rep = (UStringRep*)vec[i];
+
+      uint32_t sz = rep->size();
+
+      if (sz) U_MEMCPY(ptr, rep->data(), sz);
+
+      if (++i >= _length) break;
+
+      ptr += sz;
+
+      *ptr++ = c;
+      }
+
+   (void) str.shrink();
+
+   U_RETURN_STRING(str);
 }
 
 UString UVector<UString>::join(const char* t, uint32_t tlen)
@@ -605,7 +680,8 @@ uint32_t UVector<UString>::split(const UString& str, char delim)
    const char* s    = str.data();
    const char* _end = s + str.size();
 
-   if (str.isQuoted())
+   if (delim != ';' && // usp translator (printfor)
+       str.isQuoted())
       {
       ++s;
       --_end;
@@ -761,67 +837,6 @@ static inline int chfunc(UStringRep* a[], int i, int depth)
    U_RETURN(result);
 }
 
-/* Simple version
-
-static inline void swap2(UStringRep* a[], int i, int j)
-{
-   U_TRACE(0, "swap2(%p,%d,%d)", a, i, j)
-
-   UStringRep* t = a[i];
-   a[i] = a[j];
-   a[j] = t;
-}
-
-static inline void vecswap2(UStringRep* a[], int i, int j, int n)
-{
-   U_TRACE(0, "vecswap2(%p,%d,%d,%d)", a, i, j, n)
-
-   while (n-- > 0) swap2(a, i++, j++);
-}
-
-#define ch(i) chfunc(a, i, depth)
-
-void UVector<UString>::mksort(UStringRep** a, int n, int depth)
-{
-   U_TRACE(0+256, "UVector<UString>::mksort(%p,%d,%d)", a, n, depth)
-
-   int le, lt, gt, ge, r, v;
-
-   if (n <= 1) return;
-
-   swap2(a, 0, u_random(n) % n);
-
-   v = ch(0);
-   le = lt = 1;
-   gt = ge = n-1;
-
-   for (;;)
-      {
-      for (; lt <= gt && ch(lt) <= v; lt++) if (ch(lt) == v) swap2(a, le++, lt);
-      for (; lt <= gt && ch(gt) >= v; gt--) if (ch(gt) == v) swap2(a, gt, ge--);
-
-      if (lt > gt) break;
-
-      swap2(a, lt++, gt--);
-      }
-
-   r = U_min(le, lt-le);
-
-   vecswap2(a, 0, lt-r, r);
-
-   r = U_min(ge-gt, n-ge-1);
-
-   vecswap2(a, lt, n-r, r);
-
-   mksort(a, lt-le, depth);
-
-   if (v != 0) mksort(a + lt-le, le + n-ge-1, depth+1);
-               mksort(a + n-(ge-gt),   ge-gt, depth); 
-}
-*/
-
-/* Faster version */
-
 static inline void vecswap2(UStringRep** a, UStringRep** b, int n)
 {
    U_TRACE(0, "vecswap2(%p,%p,%d)", a, b, n)
@@ -842,7 +857,7 @@ static inline void vecswap2(UStringRep** a, UStringRep** b, int n)
 
 #define swap2(a,b) { t = *(a); *(a) = *(b); *(b) = t; }
 
-static UStringRep** med3func(UStringRep** a, UStringRep** b, UStringRep** c, int depth)
+static inline UStringRep** med3func(UStringRep** a, UStringRep** b, UStringRep** c, int depth)
 {
    U_TRACE(0, "med3func(%p,%p,%p,%d)", a, b, c, depth)
 
@@ -970,11 +985,15 @@ uint32_t UVector<UString>::loadFromData(const char* ptr, uint32_t sz)
    const char* _end   = ptr + sz;
    const char* _start = ptr;
 
-   char c = *ptr++; // skip '[' or '('
+   char terminator = 0, c = *ptr;
 
-   U_INTERNAL_ASSERT(c == '[' || c == '(')
+   if (c == '(' ||
+       c == '[')
+      {
+      ++ptr; // skip '(' or '['
 
-   char terminator = (c == '[' ? ']' : ')');
+      terminator = (c == '(' ? ')' : ']');
+      }
 
    U_INTERNAL_DUMP("terminator = %C", terminator)
 
@@ -988,7 +1007,12 @@ uint32_t UVector<UString>::loadFromData(const char* ptr, uint32_t sz)
 
    // U_INTERNAL_DUMP("c = %C", c)
 
-      if (c == terminator) break;
+      if ( terminator == c ||
+          (terminator == 0 &&
+           (c == '}' || c == ']')))
+         {
+         break;
+         }
 
       if (c == '#')
          {
@@ -1003,20 +1027,31 @@ uint32_t UVector<UString>::loadFromData(const char* ptr, uint32_t sz)
 
    // U_INTERNAL_DUMP("c = %C", c)
 
-      if (c == '"') str.setFromData(&ptr, sz, '"');
+      if (c == '"')
+         {
+         // NB: check if we have a string null...
+
+         if (*ptr != '"') str.setFromData(&ptr, _end - ptr, '"');
+         else
+            {
+            ++ptr;
+
+            str.clear();
+            }
+         }
       else
          {
          --ptr;
 
-         str.setFromData(&ptr, sz);
+         str.setFromData(&ptr, _end - ptr, terminator);
          }
 
       push(str);
       }
 
-   U_INTERNAL_DUMP("ptr-_start = %lu", ptr-_start)
+   U_INTERNAL_DUMP("ptr - _start = %lu", ptr - _start)
 
-   U_INTERNAL_ASSERT((ptr-_start) <= sz)
+   U_INTERNAL_ASSERT((ptr - _start) <= sz)
 
    sz = ptr - _start;
 
@@ -1071,8 +1106,6 @@ U_EXPORT istream& operator>>(istream& is, UVector<UString>& v)
 
             str.get(is);
 
-         // U_INTERNAL_ASSERT(str) // NB: per file configurazione con elementi posizionali...
-
             v.push(str);
             }
 
@@ -1080,11 +1113,11 @@ U_EXPORT istream& operator>>(istream& is, UVector<UString>& v)
          }
       }
 
-   // -------------------------------------------------
-   // NB: we can load an empty vector (ex. mod_http)...
-   // -------------------------------------------------
-   // if (v._length == 0) is.setstate(ios::failbit);
-   // -------------------------------------------------
+// -------------------------------------------------
+// NB: we can load an empty vector (ex. mod_http)...
+// -------------------------------------------------
+// if (v._length == 0) is.setstate(ios::failbit);
+// -------------------------------------------------
 
    return is;
 }

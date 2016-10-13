@@ -54,17 +54,18 @@ public:
          U_ERROR("you must avoid the jnl suffix, exiting");
          }
 
-      if (x.open(10 * 1024 * 1024, false, false, true)) // bool open(uint32_t log_size, bool btruncate, bool cdb_brdonly, bool breference)
+      const char* method = argv[optind++];
+
+      if (method == 0) U_ERROR("<number_of_command> argument is missing");
+
+      if (u__isdigit(*method) == false) U_ERROR("<number_of_command> argument is not numeric");
+
+      int op = method[0] - '0';
+
+      if (x.open(10 * 1024 * 1024, false, op == 6, true)) // bool open(uint32_t log_size, bool btruncate, bool cdb_brdonly, bool breference)
          {
-         const char* method = argv[optind++];
-
-         if (method == 0)                  U_ERROR("<number_of_command> argument is missing");
-         if (u__isdigit(*method) == false) U_ERROR("<number_of_command> argument is not numeric");
-
          if (method[1] == 's') x.setShared(0,0); // POSIX shared memory object (interprocess - can be used by unrelated processes)
          else                  x.resetReference();
-
-         int op = method[0] - '0';
 
          switch (op)
             {
@@ -72,7 +73,7 @@ public:
                {
                UString key(argv[optind]), value = x[key]; 
 
-               (void) UFile::writeToTmp(U_STRING_TO_PARAM(value), false, U_FILE_OUTPUT, 0);
+               (void) UFile::writeToTmp(U_STRING_TO_PARAM(value), O_RDWR | O_TRUNC, U_CONSTANT_TO_PARAM(U_FILE_OUTPUT), 0);
                }
             break;
 
@@ -96,7 +97,7 @@ public:
                {
                UString key(argv[optind]), value(argv[++optind]);
 
-               if (value.equal(U_CONSTANT_TO_PARAM(U_DIR_OUTPUT U_FILE_OUTPUT))) value = UStringExt::trim(UFile::contentOf(U_DIR_OUTPUT U_FILE_OUTPUT));
+               if (value.equal(U_CONSTANT_TO_PARAM(U_DIR_OUTPUT U_FILE_OUTPUT))) value = UStringExt::trim(UFile::contentOf(UString(U_DIR_OUTPUT U_FILE_OUTPUT)));
 
                UApplication::exit_value = x.store(key, value, RDB_REPLACE);
                }
@@ -106,7 +107,7 @@ public:
                {
                char buffer[64];
                uint32_t sz = x.getCapacity(),
-                        n  = u__snprintf(buffer, sizeof(buffer), "%u record(s) - capacity: %.2fM (%u bytes)\n",
+                        n  = u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("%u record(s) - capacity: %.2fM (%u bytes)\n"),
                                          x.size(), (double)sz / (1024.0 * 1024.0), sz);
 
                (void) write(1, buffer, n);
@@ -118,7 +119,7 @@ public:
                UString value = x.print();
 
                if (value.empty()) (void) UFile::_unlink(U_DIR_OUTPUT U_FILE_OUTPUT);
-               else               (void) UFile::writeToTmp(U_STRING_TO_PARAM(value), false, U_FILE_OUTPUT, 0);
+               else               (void) UFile::writeToTmp(U_STRING_TO_PARAM(value), O_RDWR | O_TRUNC, U_CONSTANT_TO_PARAM(U_FILE_OUTPUT), 0);
                }
             break;
 

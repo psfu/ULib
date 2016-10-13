@@ -17,7 +17,7 @@ pkgconfig_DATA = ULib.pc
 ## base/lzo/minilzo.c
 ## base/mkqsort.c base/rsort.c
 
-SRC_C = base/base.c base/base_error.c base/hash.c base/utility.c base/miniz/miniz.c \
+SRC_C = base/base.c base/base_error.c base/hash.c base/utility.c base/miniz/miniz.c base/xxhash/xxhash.c \
 		  base/coder/cbase64.c base/coder/cquoted_printable.c base/coder/curl_coder.c base/coder/cxml_coder.c base/coder/cescape.c base/coder/chexdump.c
 
 SRC_CPP = internal/common.cpp \
@@ -37,12 +37,20 @@ SRC_CPP = internal/common.cpp \
  			 net/rpc/rpc.cpp net/rpc/rpc_envelope.cpp net/rpc/rpc_fault.cpp net/rpc/rpc_method.cpp net/rpc/rpc_encoder.cpp \
  			 net/rpc/rpc_object.cpp net/rpc/rpc_gen_method.cpp net/rpc/rpc_parser.cpp net/rpc/rpc_client.cpp \
 			 net/client/smtp.cpp net/client/ftp.cpp net/client/pop3.cpp net/client/imap.cpp \
-			 net/client/http.cpp net/client/client.cpp \
+			 net/client/http.cpp net/client/client.cpp net/client/redis.cpp net/client/elasticsearch.cpp \
 			 net/ipt_ACCOUNT.cpp \
 			 json/value.cpp \
 			 query/query_parser.cpp  event/event_time.cpp \
 			 timeval.cpp timer.cpp notifier.cpp string.cpp file.cpp process.cpp file_config.cpp log.cpp \
 			 options.cpp application.cpp cache.cpp date.cpp url.cpp tokenizer.cpp command.cpp
+
+if LIBTDB
+SRC_CPP += db/tdb.cpp
+endif
+
+if MONGODB
+SRC_CPP += net/client/mongodb.cpp
+endif
 
 if HTTP2
 SRC_CPP += utility/http2.cpp
@@ -86,6 +94,10 @@ endif
 
 if !SEMAPHORE
 SRC_C += replace/sem.c
+else
+if !SEM_TIMEDWAIT
+SRC_C += replace/sem_timedwait.c
+endif
 endif
 
 if !STRPTIME
@@ -94,6 +106,10 @@ endif
 
 if !MKDTEMP
 SRC_C += replace/mkdtemp.c
+endif
+
+if !MEMMEM
+SRC_C += replace/memmem.c
 endif
 
 if !MEMRCHR
@@ -128,8 +144,16 @@ if !ASSERT
 SRC_C += replace/assert.c
 endif
 
+if APEXMEM
+SRC_C += base/apex/apex_memmove.c
+endif
+
 if MEMORY_POOL
 SRC_CPP += internal/memory_pool.cpp
+endif
+
+if !SCHED_GETCPU
+SRC_C += replace/sched_getcpu.c
 endif
 
 if ZIP
@@ -151,7 +175,7 @@ endif
 
 if SSL
 SRC_C   += base/ssl/cdes3.c base/ssl/dgst.c
-SRC_CPP += ssl/certificate.cpp ssl/pkcs7.cpp ssl/crl.cpp ssl/pkcs10.cpp \
+SRC_CPP += ssl/certificate.cpp ssl/pkcs7.cpp ssl/crl.cpp ssl/pkcs10.cpp net/client/twilio.cpp \
 		     ssl/mime/mime_pkcs7.cpp ssl/net/sslsocket.cpp ssl/net/ssl_session.cpp utility/des3.cpp
 if SSL_TS
 SRC_CPP += ssl/timestamp.cpp
@@ -292,7 +316,7 @@ endif
 endif
 
 if FINAL
-lib@ULIB@_la_SOURCES = all_c.c all_cpp.cpp
+lib@ULIB@_la_SOURCES = all_c.c base/xxhash/xxhash.c all_cpp.cpp
 else
 lib@ULIB@_la_SOURCES = $(SRC_C) $(SRC_CPP)
 endif
@@ -308,7 +332,8 @@ dist-hook:
 	find $(distdir) -type f -name \*.usp -exec /utility/expand_tab '{}' ';'
 
 clean-local:
-	-rm -rf core .libs *.bb* *.da *.gcov *.la gmon.out
+	@cd $(top_builddir)/src/ulib/net/server/plugin/usp; $(MAKE) $(AM_MAKEFLAGS) clean 
+	-rm -rf core .libs *.bb* *.da *.la gmon.out *.gc* */*.gc* */*/*.gc* */*/*/*.gc* */*/*/*/*.gc*
 
 ## ----------------------------------------------------------------------------------------------------
 ## usp section
@@ -331,7 +356,7 @@ endif
 endif
 
 .lo.la:
-	$(CXXLINK) -rpath $(moduledir) -module $(MODULE_LIBTOOL_OPTIONS) $< lib@ULIB@.la @ULIB_LIBS@
+	$(CXXLINK) -rpath @ULIB_MODULEDIR@ -module $(MODULE_LIBTOOL_OPTIONS) $< lib@ULIB@.la @ULIB_LIBS@
 
 ## all: net/server/plugin/usp/usp_translator$(EXEEXT)
 endif
@@ -343,7 +368,7 @@ endif
 ##
 ##.libs/lib@ULIB@.so: .libs/lib@ULIB@.a
 ##	$(DLLTOOL) --export-all-symbols -e .libs/exports.o -l .libs/lib@ULIB@.lib -z .libs/lib@ULIB@.def $<
-##	$(CXX_LD) -shared .libs/exports.o .libs/all_c.o .libs/all_cpp.o $< -o $@ @ULIB_LIBS@
+##	$(CXX_LD) -shared .libs/exports.o .libs/all_c.o base/xxhash/.libs/xxhash.o .libs/all_cpp.o $< -o $@ @ULIB_LIBS@
 ##
 ##all: .libs/lib@ULIB@.so
 ##endif
@@ -355,7 +380,7 @@ endif
 
 ULib-win32-res.o: ULib.rc
 	$(WINDRES) $< $@
-	$(DLLTOOL) -export-all-symbols -z $(srcdir)/@ULIB@.def $(srcdir)/.libs/all_c.o $(srcdir)/.libs/all_cpp.o
+	$(DLLTOOL) -export-all-symbols -z $(srcdir)/@ULIB@.def $(srcdir)/.libs/all_c.o $(srcdir)/base/xxhash/.libs/xxhash.o $(srcdir)/.libs/all_cpp.o
 	$(SED) -i 's/EXPORTS/;/' $(srcdir)/@ULIB@.def
 
 if MINGW

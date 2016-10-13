@@ -15,15 +15,15 @@ usp_translator_LDFLAGS = $(PRG_LDFLAGS)
 bin_PROGRAMS = usp_translator
 
 clean-local:
-	-rm -rf core .libs *.bb* *.da *.gcov *.la *.exe trace.usp_translator* gmon.out usp_compile.sh
+	-rm -rf core .libs *.bb* *.da *.gc* *.la *.exe trace.usp_translator* gmon.out usp_compile.sh
 
 ## usp section
 ## ----------------------------------------------------------------------------------------------------
-moduledir = $(libexecdir)/ulib/usp
 MODULE_LIBTOOL_OPTIONS = -export-dynamic -avoid-version
 
 if !CROSS_COMPILING
 AM_CPPFLAGS = @USP_FLAGS@
+moduledir = @ULIB_MODULEDIR@/usp
 
 #SUFFIXES = .cpp .usp .lo .la
 
@@ -43,7 +43,7 @@ AM_CPPFLAGS = @USP_FLAGS@
 	@$(WINELOADER) ./usp_translator$(EXEEXT) $<
 
 .lo.la:
-	$(CXXLINK) @USP_LDFLAGS@ -rpath $(moduledir) -module $(MODULE_LIBTOOL_OPTIONS) $< $(ulib_la) @USP_LIBS@ @ULIB_LIBS@
+	$(CXXLINK) @USP_LDFLAGS@ -rpath $(moduledir) -module @MODULE_LIBTOOL_OPTIONS@ $< $(ulib_la) @USP_LIBS@ @ULIB_LIBS@
 
 #all: usp_translator db.la fortune.la json.la plaintext.la query.la update.la
 

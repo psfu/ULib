@@ -204,9 +204,13 @@ public:
 
    static bool reportMessaggi(UStringRep* key, void* list)
       {
-      U_TRACE(5, "Application::reportMessaggi(%p,%p)", key, list)
+      U_TRACE(5, "Application::reportMessaggi(%V,%p)", key, list)
 
-      (void) sprintf(buffer, U_XML_MSG_ENTRY_START, U_STRING_TO_TRACE(*key));
+      UString tmp(U_CAPACITY);
+
+      UXMLEscape::encode(U_STRING_TO_PARAM(*key), tmp);
+
+      (void) sprintf(buffer, U_XML_MSG_ENTRY_START, U_STRING_TO_TRACE(tmp));
 
       std::cout << buffer;
 
@@ -221,9 +225,9 @@ public:
       {
       U_TRACE(5, "Application::checkCasella(%p)", elem)
 
-      bool result = (*id == ((CasellaIdCounter*)elem)->cid);
+      if (*id == ((CasellaIdCounter*)elem)->cid) U_RETURN(true);
 
-      U_RETURN(result);
+      U_RETURN(false);
       }
 
    static bool casellaUpdate(const UString& key)
@@ -242,9 +246,9 @@ public:
             {
             vc = new VCasellaIdCounter();
 
-            // NB: need duplicate string because depends on mmap()'s content of document...
+            key.duplicate(); // NB: need duplicate string because depends on mmap()'s content of document...
 
-            table->insertAfterFind(UStringExt::tolower(key), vc);
+            table->insertAfterFind(key, vc);
             }
 
          CasellaIdCounter* c;

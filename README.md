@@ -13,7 +13,7 @@ It include as application example a powerful search engine with relative [web in
 
 The current version offers the following features :
 
-   * HTTP/1.0 and 1.1 protocols supported and initial implementations of HTTP/2.
+   * HTTP/1.0 and 1.1 protocols supported and experimental implementations of HTTP/2.
    * Persistent connections for HTTP/1.1 and Keep-Alive support for HTTP/1.0.
    * Browser cache management (headers: If-Modified-Since/Last-modified).
    * Chunk-encoding transfers support.
@@ -22,11 +22,12 @@ The current version offers the following features :
    * Support for automatic update of caching document root with inotify (on Linux).
    * Support for pipelining.
    * Support for virtual hosts (also with SSL).
-   * Support for basic/digest authentication.
+   * Support for basic/digest authentication optionally based on url mask.
    * Support for directory listings via basic/digest authentication.
    * Support for uri protection.
    * Support for aliases/redirection.
    * Support for switch the site to a maintenance page only.
+   * Support for URL traffic based throttling (experimental).
    * Support for overriden of error messages by local document (ErrorDocument/40x|500.html).
    * Support for RewriteRule (lighttpd-like) that check for file existence as they do on Apache, some CMS (SilverStripe) require it.
    * Support for (apache-like) log [NCSA extended/combined format](http://httpd.apache.org/docs/2.0/mod/mod_log_config.html)
@@ -67,13 +68,27 @@ The current version offers the following features :
        * [DNS rebinding](http://en.wikipedia.org/wiki/DNS_rebinding) prevention by RFC1918 filtering and Host header validation.
        * selective uri support (DOS regex) for [HTTP Strict Transport Security](https://developer.mozilla.org/en/Security/HTTP_Strict_Transport_Security).
    * Immune to [Slow Read DoS attack](http://code.google.com/p/slowhttptest/)
-   * [High SSL server quality score](https://www.ssllabs.com/ssltest/analyze.html?d=wifi-aaa.comune.fi.it)
+   * [High SSL server quality score](https://www.ssllabs.com/ssltest/analyze.html?d=wifi-aaa2.comune.fi.it)
 
-It is the main software component of [city of Florence wireless network](http://wifi-aaa.comune.fi.it/login?mac=00%3A00%3A00%3A00%3A00%3A00&ip=172.22.11.124&redirect=http%3A//pasta.dianxinos.com/api/data&gateway=159.213.248.230%3A5280&timeout=0&token=1810300063&ap=05@159.213.248.230)
+## Who is Using ULib
 
-userver application server is in the [10th round of TechEmpower's web framework benchmarks](http://www.techempower.com/benchmarks). This independent work tests a large number of frameworks and platforms against a set of tests common to web applications, such as JSON serialization, database queries and templating.
+It is the main software component of [city of Florence wireless network](http://wifi-aaa2.comune.fi.it/login?mac=00%3A00%3A00%3A00%3A00%3A00&ip=172.22.11.124&redirect=http%3A//pasta.dianxinos.com/api/data&gateway=159.213.248.230%3A5280&timeout=0&token=1810300063&ap=05@159.213.248.230&ts=ts=21467819142)
 
-ULib is normally built and installed as a set of shared object libraries and header files. These libraries and headers are installed using directories selected through a "configure" script that has been prepared with automake and autoconf. As such, they should build and install similarly to and in a manner compatible and consistent with most other GNU software. ULib is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. ULib is Free Software under the LGPL
+## Benchmark
+
+userver application server is since 10th round in the [TechEmpower's web framework benchmarks](http://www.techempower.com/benchmarks). This independent work tests a large number of frameworks and platforms against a set of tests common to web applications, such as JSON serialization, database queries and templating.
+
+## Contributing
+
+1. Fork it ( http://github.com/<my-github-username>/ULib/fork )
+2. Create your feature branch (`git checkout -b my-new-feature`)
+3. Commit your changes (`git commit -am 'Add some feature'`)
+4. Push to the branch (`git push origin my-new-feature`)
+5. Create new Pull Request
+
+## License
+
+ULib is normally built and installed as a set of shared object libraries and header files. These libraries and headers are installed using directories selected through a "configure" script that has been prepared with automake and autoconf. As such, they should build and install similarly to and in a manner compatible and consistent with most other GNU software. ULib is Free Software under the LGPL and it is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 Comments and suggestions are welcome.
 

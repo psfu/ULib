@@ -17,13 +17,11 @@
 #include <ulib/net/rpc/rpc_fault.h>
 
 /**
-  @class USOAPFault
-*/
+ * @class USOAPFault
+ */
 
 class U_EXPORT USOAPFault : public URPCFault {
 public:
-
-   // COSTRUTTORI
 
    USOAPFault()
       {
@@ -46,13 +44,7 @@ public:
 #endif
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-   USOAPFault(const USOAPFault&) = delete;
-   USOAPFault& operator=(const USOAPFault&) = delete;
-#else
-   USOAPFault(const USOAPFault&) : URPCFault() {}
-   USOAPFault& operator=(const USOAPFault&)    { return *this; }
-#endif      
+   U_DISALLOW_COPY_AND_ASSIGN(USOAPFault)
 };
 
 #endif

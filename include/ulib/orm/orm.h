@@ -36,10 +36,8 @@ public:
    U_MEMORY_ALLOCATOR
    U_MEMORY_DEALLOCATOR
 
-   // COSTRUTTORI
-
-    UOrmSession(const char* dbname,  uint32_t len);
-    UOrmSession(const char* backend, uint32_t len, const UString& option)
+   UOrmSession(const char* dbname,  uint32_t len);
+   UOrmSession(const char* backend, uint32_t len, const UString& option)
       {
       U_TRACE_REGISTER_OBJECT(0, UOrmSession, "%.*S,%u,%V", len, backend, len, option.rep)
 
@@ -88,13 +86,7 @@ protected:
 private:
    static void loadDriverFail(const char* ptr, uint32_t len) __noreturn U_NO_EXPORT;
 
-#ifdef U_COMPILER_DELETE_MEMBERS
-   UOrmSession(const UOrmSession&) = delete;
-   UOrmSession& operator=(const UOrmSession&) = delete;
-#else
-   UOrmSession(const UOrmSession&)            {}
-   UOrmSession& operator=(const UOrmSession&) { return *this; }
-#endif
+   U_DISALLOW_COPY_AND_ASSIGN(UOrmSession)
 
    friend class UOrmStatement;
 };
@@ -130,13 +122,7 @@ protected:
    void* pval;
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-// UOrmTypeHandler_Base(const UOrmTypeHandler_Base&) = delete;
-   UOrmTypeHandler_Base& operator=(const UOrmTypeHandler_Base&) = delete;
-#else
-// UOrmTypeHandler_Base(const UOrmTypeHandler_Base&) {}
-   UOrmTypeHandler_Base& operator=(const UOrmTypeHandler_Base&) { return *this; }
-#endif
+   U_DISALLOW_ASSIGN(UOrmTypeHandler_Base)
 };
 
 #define U_ORM_TYPE_HANDLER(class_name, name_object_member, type_object_member) \
@@ -191,13 +177,7 @@ public:
    void bindResult(UOrmStatement* stmt);
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-// UOrmTypeHandler(const UOrmTypeHandler&) = delete;
-   UOrmTypeHandler& operator=(const UOrmTypeHandler&) = delete;
-#else
-// UOrmTypeHandler(const UOrmTypeHandler&) : UOrmTypeHandler_Base(0) {}
-   UOrmTypeHandler& operator=(const UOrmTypeHandler&)                { return *this; }
-#endif
+   U_DISALLOW_ASSIGN(UOrmTypeHandler)
 };
 
 /**
@@ -354,13 +334,7 @@ protected:
    USqlStatement* pstmt;
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-   UOrmStatement(const UOrmStatement&) = delete;
-   UOrmStatement& operator=(const UOrmStatement&) = delete;
-#else
-   UOrmStatement(const UOrmStatement&)            {}
-   UOrmStatement& operator=(const UOrmStatement&) { return *this; }
-#endif
+   U_DISALLOW_COPY_AND_ASSIGN(UOrmStatement)
 };
 
 // Syntactic sugar for bindParam() used with use() binding registers

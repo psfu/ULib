@@ -12,7 +12,7 @@ SUBDIRS1 += debug
 endif
 SUBDIRS = $(SUBDIRS1) ulib
 if ENABLE_EXAMPLES
-SUBDIRS += examples contrib
+SUBDIRS += examples
 endif
 
 DIST_SUBDIRS = base debug ulib examples contrib
@@ -24,3 +24,6 @@ dist-hook:
 	find $(distdir) -type f -name \*.c   -exec /utility/expand_tab '{}' ';'
 	find $(distdir) -type f -name \*.cpp -exec /utility/expand_tab '{}' ';'
 	find $(distdir) -type f -name \*.cfg -exec /utility/expand_tab '{}' ';'
+
+clean-local:
+	-rm -rf core .libs *.bb* *.da *.la gmon.out *.gc* */*.gc* */*/*.gc* */*/*/*.gc*

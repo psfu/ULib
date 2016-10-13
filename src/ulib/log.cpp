@@ -14,6 +14,7 @@
 #include <ulib/log.h>
 #include <ulib/date.h>
 #include <ulib/utility/lock.h>
+#include <ulib/internal/chttp.h>
 
 #ifndef _MSWINDOWS_
 #  ifdef __clang__
@@ -34,18 +35,28 @@
 #define U_MARK_END       "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n" // 24
 #define U_FMT_START_STOP "*** %s %N (%ubit, pid %P) [%U@%H] ***"
 
-ULog*              ULog::pthis;
-const char*        ULog::prefix;
-struct iovec       ULog::iov_vec[5];
-ULog::static_date* ULog::ptr_static_date;
+long              ULog::tv_sec_old_1;
+long              ULog::tv_sec_old_2;
+long              ULog::tv_sec_old_3;
+ULog*             ULog::pthis;
+uint32_t          ULog::log_data_sz;
+uint32_t          ULog::prefix_len;
+const char*       ULog::prefix;
+struct iovec      ULog::iov_vec[5];
+ULog::log_date    ULog::date;
+ULog::log_date*   ULog::ptr_shared_date;
+#if defined(ENABLE_THREAD) && !defined(_MSWINDOWS_)
+pthread_rwlock_t* ULog::prwlock;
+#endif
 
 ULog::ULog(const UString& path, uint32_t _size, const char* dir_log_gz) : UFile(path, 0)
 {
    U_TRACE_REGISTER_OBJECT(0, ULog, "%V,%u,%S", path.rep, _size, dir_log_gz)
 
    lock         = 0;
-   log_file_sz  = log_gzip_sz = 0;
    ptr_log_data = 0;
+   log_file_sz  =
+   log_gzip_sz  = 0;
 
    U_Log_start_stop_msg(this) = false;
 
@@ -68,22 +79,22 @@ ULog::ULog(const UString& path, uint32_t _size, const char* dir_log_gz) : UFile(
    if (UFile::creat(O_RDWR | O_APPEND, 0664) == false)
       {
 #  ifndef U_COVERITY_FALSE_POSITIVE
-      U_ERROR("cannot creat log file %.*S", U_FILE_TO_TRACE(*this));
+      U_ERROR("Cannot creat log file %.*S", U_FILE_TO_TRACE(*this));
 #  endif
 
       return;
       }
 
-   /*
-   typedef struct log_data {
-      uint32_t file_ptr;
-      uint32_t file_page;
-      uint32_t gzip_len;
-      sem_t lock_shared;
-      char spinlock_shared[1];
-      // --------------> maybe unnamed array of char for gzip compression...
-   } log_data;
-   */
+   /**
+    * typedef struct log_data {
+    *  uint32_t file_ptr;
+    *  uint32_t file_page;
+    *  uint32_t gzip_len;
+    *  sem_t lock_shared;
+    *  char spinlock_shared[1];
+    *  // --------------> maybe unnamed array of char for gzip compression...
+    * } log_data;
+    */
 
    ptr_log_data = U_MALLOC_TYPE(log_data);
 
@@ -98,7 +109,7 @@ ULog::ULog(const UString& path, uint32_t _size, const char* dir_log_gz) : UFile(
       if ((bsize && UFile::ftruncate(_size) == false) ||
           UFile::memmap(PROT_READ | PROT_WRITE) == false)
          {
-         U_ERROR("cannot init log file %.*S", U_FILE_TO_TRACE(*this));
+         U_ERROR("Cannot init log file %.*S", U_FILE_TO_TRACE(*this));
 
          return;
          }
@@ -131,16 +142,17 @@ ULog::ULog(const UString& path, uint32_t _size, const char* dir_log_gz) : UFile(
 
    U_INTERNAL_ASSERT(ptr_log_data->file_ptr <= UFile::st_size)
 
-   lock                    = U_NEW(ULock);
+   U_NEW(ULock, lock, ULock);
+
    U_Log_syslog(this)      = false;
    ptr_log_data->gzip_len  = 0;
    ptr_log_data->file_page = ptr_log_data->file_ptr;
 
 #ifdef USE_LIBZ
    char suffix[32];
-   uint32_t len_suffix = u__snprintf(suffix, sizeof(suffix), ".%4D.gz");
+   uint32_t len_suffix = u__snprintf(suffix, sizeof(suffix), U_CONSTANT_TO_PARAM(".%4D.gz"));
 
-   buf_path_compress = U_NEW(UString(MAX_FILENAME_LEN));
+   U_NEW(UString, buf_path_compress, UString(MAX_FILENAME_LEN));
 
    char* ptr = buf_path_compress->data();
 
@@ -159,16 +171,16 @@ ULog::ULog(const UString& path, uint32_t _size, const char* dir_log_gz) : UFile(
       UString name = UFile::getName();
       uint32_t len = u__strlen(dir_log_gz, __PRETTY_FUNCTION__), sz = name.size();
 
-      (void) memcpy(ptr, dir_log_gz, len);
+      U_MEMCPY(ptr, dir_log_gz, len);
 
        ptr  += len;
       *ptr++ = '/';
 
       buf_path_compress->size_adjust(len + 1 + sz + len_suffix);
 
-      (void) memcpy(ptr, name.data(), sz);
-                    ptr            += sz;
-      (void) memcpy(ptr, suffix, len_suffix);
+      U_MEMCPY(ptr, name.data(), sz);
+               ptr +=            sz;
+      U_MEMCPY(ptr, suffix, len_suffix);
 
       index_path_compress = buf_path_compress->distance(ptr) + 1;
       }
@@ -186,73 +198,70 @@ ULog::~ULog()
 #endif
 }
 
-void ULog::initStaticDate()
+void ULog::initDate()
 {
-   U_TRACE(1, "ULog::initStaticDate()")
-
-   U_INTERNAL_ASSERT_EQUALS(ptr_static_date, 0)
-
-   ptr_static_date = U_MALLOC_TYPE(static_date);
-
-   (void) U_SYSCALL(memset, "%p,%d,%u", ptr_static_date, 0, sizeof(static_date));
-
-   u_now = &(ptr_static_date->_timeval);
+   U_TRACE_NO_PARAM(1, "ULog::initDate()")
 
    iov_vec[0].iov_len  = 17;
    iov_vec[1].iov_len  =
    iov_vec[4].iov_len  = 1;
-   iov_vec[0].iov_base = (caddr_t) ptr_static_date->date1;
-   iov_vec[1].iov_base = (caddr_t) " ";
-   iov_vec[2].iov_base = (caddr_t) u_buffer;
-   iov_vec[4].iov_base = (caddr_t) U_LF;
+   iov_vec[0].iov_base = (caddr_t)date.date1;
+   iov_vec[1].iov_base = (caddr_t)" ";
+   iov_vec[2].iov_base = (caddr_t)u_buffer;
+   iov_vec[4].iov_base = (caddr_t)U_LF;
 
-   (void) U_SYSCALL(gettimeofday, "%p,%p", u_now, 0);
+   u_gettimenow();
 
-   (void) u_strftime2(ptr_static_date->date1, 17, "%d/%m/%y %T",    u_now->tv_sec + u_now_adjust);
-   (void) u_strftime2(ptr_static_date->date2, 26, "%d/%b/%Y:%T %z", u_now->tv_sec + u_now_adjust);
-   (void) u_strftime2(ptr_static_date->date3, 6+29+2+12+2+17+2, "Date: %a, %d %b %Y %T GMT\r\nServer: ULib\r\nConnection: close\r\n", u_now->tv_sec);
+   tv_sec_old_1 =
+   tv_sec_old_2 =
+   tv_sec_old_3 = u_now->tv_sec;
+
+   (void) u_strftime2(date.date1, 17,               U_CONSTANT_TO_PARAM("%d/%m/%y %T"),                                                        tv_sec_old_1 + u_now_adjust);
+   (void) u_strftime2(date.date2, 26,               U_CONSTANT_TO_PARAM("%d/%b/%Y:%T %z"),                                                     tv_sec_old_2 + u_now_adjust);
+   (void) u_strftime2(date.date3, 6+29+2+12+2+17+2, U_CONSTANT_TO_PARAM("Date: %a, %d %b %Y %T GMT\r\nServer: ULib\r\nConnection: close\r\n"), tv_sec_old_3);
 }
 
 void ULog::startup()
 {
-   U_TRACE(1, "ULog::startup()")
+   U_TRACE_NO_PARAM(1, "ULog::startup()")
   
-   initStaticDate();
+   initDate();
 
-   log(U_FMT_START_STOP, "STARTUP", sizeof(void*) * 8);
+   log(U_CONSTANT_TO_PARAM(U_FMT_START_STOP), "STARTUP", sizeof(void*) * 8);
 
-   log("Building Environment: " PLATFORM_VAR " (" __DATE__ ")", 0);
+   log(U_CONSTANT_TO_PARAM("Building Environment: " PLATFORM_VAR " (" __DATE__ ")"), 0);
 
 #ifndef _MSWINDOWS_
    struct utsname u;
 
    (void) U_SYSCALL(uname, "%p", &u);
 
-   log("Current Operating System: %s %s v%s %s", u.sysname, u.machine, u.version, u.release);
+   log(U_CONSTANT_TO_PARAM("Current Operating System: %s %s v%s %s"), u.sysname, u.machine, u.version, u.release);
 #endif
 
-#if __BYTE_ORDER == __BIG_ENDIAN
-   log("Big endian arch detected", 0);
+#if __BYTE_ORDER != __LITTLE_ENDIAN
+   log(U_CONSTANT_TO_PARAM("Big endian arch detected"), 0);
 #endif
 }
 
-void ULog::init(const char* _prefix)
+void ULog::init(const char* _prefix, uint32_t _prefix_len)
 {
-   U_TRACE(0, "ULog::init(%S)", _prefix)
+   U_TRACE(0, "ULog::init(%.*S,%u)", _prefix_len, _prefix, _prefix_len)
 
    U_INTERNAL_ASSERT_EQUALS(pthis, 0)
    U_INTERNAL_ASSERT_EQUALS(U_Log_syslog(this), false)
 
    pthis                      = this;
    prefix                     = _prefix;
+   prefix_len                 = _prefix_len;
    U_Log_start_stop_msg(this) = true;
 
    startup();
 }
 
-void ULog::setPrefix(const char* _prefix)
+void ULog::setPrefix(const char* _prefix, uint32_t _prefix_len)
 {
-   U_TRACE(0, "ULog::setPrefix(%S)", _prefix)
+   U_TRACE(0, "ULog::setPrefix(%.*S,%u)", _prefix_len, _prefix, _prefix_len)
 
    U_INTERNAL_ASSERT_EQUALS(pthis, 0)
 
@@ -261,107 +270,228 @@ void ULog::setPrefix(const char* _prefix)
    if (U_Log_syslog(this) == false)
       {
       prefix                     = _prefix;
+      prefix_len                 = _prefix_len;
       U_Log_start_stop_msg(this) = true;
 
       startup();
       }
 }
 
-void ULog::_updateStaticDate(char* ptr, int which)
+void ULog::updateDate1()
 {
-   U_TRACE(1, "ULog::_updateStaticDate(%p,%d)", ptr, which)
+   U_TRACE_NO_PARAM(1, "ULog::updateDate1()")
 
+   /**
+    * 18/06/12 18:45:56
+    * 012345678901234567890123456789
+    */
+
+#if defined(ENABLE_THREAD) && !defined(_MSWINDOWS_)
+   if (u_pthread_time)
+      {
+      (void) U_SYSCALL(pthread_rwlock_rdlock, "%p", prwlock);
+
+      if (tv_sec_old_1 != u_now->tv_sec)
+         {
+         long tv_sec = u_now->tv_sec;
+
+         U_INTERNAL_DUMP("tv_sec_old_1 = %lu u_now->tv_sec = %lu", tv_sec_old_1, tv_sec)
+
+         if ((tv_sec - tv_sec_old_1) != 1 ||
+             (tv_sec % U_ONE_HOUR_IN_SECOND) == 0)
+            {
+            tv_sec_old_1 = tv_sec;
+
+            U_MEMCPY(date.date1, ptr_shared_date->date1, 17);
+            }
+         else
+            {
+            ++tv_sec_old_1;
+
+            u_put_unalignedp16(date.date1+12,  U_MULTICHAR_CONSTANT16(ptr_shared_date->date1[12],ptr_shared_date->date1[13]));
+            u_put_unalignedp16(date.date1+12+3,U_MULTICHAR_CONSTANT16(ptr_shared_date->date1[15],ptr_shared_date->date1[16]));
+            }
+
+         U_INTERNAL_ASSERT_EQUALS(tv_sec, tv_sec_old_1)
+         }
+
+      (void) U_SYSCALL(pthread_rwlock_unlock, "%p", prwlock);
+      }
+   else
+#endif
+   {
    U_INTERNAL_ASSERT_EQUALS(u_pthread_time, 0)
 
-   (void) U_SYSCALL(gettimeofday, "%p,%p", u_now, 0);
+   u_gettimenow();
 
-   bool bchange = ((u_now->tv_sec % U_ONE_HOUR_IN_SECOND) == 0);
-
-   if (which == 1)
+   if (tv_sec_old_1 != u_now->tv_sec)
       {
-      static long tv_sec_old_1;
+      long tv_sec = u_now->tv_sec;
 
-      /**
-       * 18/06/12 18:45:56
-       * 012345678901234567890123456789
-       */
+      U_INTERNAL_DUMP("tv_sec_old_1 = %lu u_now->tv_sec = %lu", tv_sec_old_1, tv_sec)
 
-      if (tv_sec_old_1 == u_now->tv_sec) return;
-
-      U_INTERNAL_ASSERT_MINOR(tv_sec_old_1, u_now->tv_sec)
-
-      if (bchange ||
-          (u_now->tv_sec - tv_sec_old_1) != 1)
+      if ((tv_sec - tv_sec_old_1) != 1 ||
+          (tv_sec % U_ONE_HOUR_IN_SECOND) == 0)
          {
-         (void) u_strftime2(ptr, 17, "%d/%m/%y %T", (tv_sec_old_1 = u_now->tv_sec) + u_now_adjust);
+         (void) u_strftime2(date.date1, 17, U_CONSTANT_TO_PARAM("%d/%m/%y %T"), (tv_sec_old_1 = tv_sec) + u_now_adjust);
          }
       else
          {
          ++tv_sec_old_1;
 
-         UTimeDate::updateTime(ptr+12);
+         UTimeDate::updateTime(date.date1+12);
          }
 
-      U_INTERNAL_ASSERT_EQUALS(u_now->tv_sec, tv_sec_old_1)
+      U_INTERNAL_ASSERT_EQUALS(tv_sec, tv_sec_old_1)
       }
-   else if (which == 3)
+   }
+
+   U_INTERNAL_DUMP("date.date1 = %.17S", date.date1)
+}
+
+void ULog::updateDate2()
+{
+   U_TRACE_NO_PARAM(1, "ULog::updateDate2()")
+
+   /**
+    * 04/Jun/2012:18:18:37 +0200
+    * 012345678901234567890123456789
+    */
+
+#if defined(ENABLE_THREAD) && !defined(_MSWINDOWS_)
+   if (u_pthread_time)
       {
-      static long tv_sec_old_3;
+      (void) U_SYSCALL(pthread_rwlock_rdlock, "%p", prwlock);
 
-      /**
-       * Date: Wed, 20 Jun 2012 11:43:17 GMT\r\nServer: ULib\r\n
-       * 0123456789012345678901234567890123456789
-       */
-
-      if (tv_sec_old_3 == u_now->tv_sec) return;
-
-      U_INTERNAL_ASSERT_MINOR(tv_sec_old_3, u_now->tv_sec)
-
-      if (bchange ||
-          (u_now->tv_sec - tv_sec_old_3) != 1)
+      if (tv_sec_old_2 != u_now->tv_sec)
          {
-         (void) u_strftime2(ptr, 29-4, "%a, %d %b %Y %T", (tv_sec_old_3 = u_now->tv_sec)); // GMT can't change...
+         long tv_sec = u_now->tv_sec;
+
+         U_INTERNAL_DUMP("tv_sec_old_2 = %lu u_now->tv_sec = %lu", tv_sec_old_2, tv_sec)
+
+         if ((tv_sec - tv_sec_old_2) != 1 ||
+             (tv_sec % U_ONE_HOUR_IN_SECOND) == 0)
+            {
+            tv_sec_old_2 = tv_sec;
+
+            U_MEMCPY(date.date2, ptr_shared_date->date2, 26);
+            }
+         else
+            {
+            ++tv_sec_old_2;
+
+            u_put_unalignedp16(date.date2+15,  U_MULTICHAR_CONSTANT16(ptr_shared_date->date2[15],ptr_shared_date->date2[16]));
+            u_put_unalignedp16(date.date2+15+3,U_MULTICHAR_CONSTANT16(ptr_shared_date->date2[18],ptr_shared_date->date2[19]));
+            }
+
+         U_INTERNAL_ASSERT_EQUALS(tv_sec, tv_sec_old_2)
+         }
+
+      (void) U_SYSCALL(pthread_rwlock_unlock, "%p", prwlock);
+      }
+   else
+#endif
+   {
+   U_INTERNAL_ASSERT_EQUALS(u_pthread_time, 0)
+
+   u_gettimenow();
+
+   if (tv_sec_old_2 != u_now->tv_sec)
+      {
+      long tv_sec = u_now->tv_sec;
+
+      U_INTERNAL_DUMP("tv_sec_old_2 = %lu u_now->tv_sec = %lu", tv_sec_old_2, tv_sec)
+
+      if ((tv_sec - tv_sec_old_2) != 1 ||
+          (tv_sec % U_ONE_HOUR_IN_SECOND) == 0)
+         {
+         (void) u_strftime2(date.date2, 26-6, U_CONSTANT_TO_PARAM("%d/%b/%Y:%T"), (tv_sec_old_2 = tv_sec) + u_now_adjust);
+         }
+      else
+         {
+         ++tv_sec_old_2;
+
+         UTimeDate::updateTime(date.date2+15);
+         }
+
+      U_INTERNAL_ASSERT_EQUALS(tv_sec, tv_sec_old_2)
+      }
+   }
+
+   U_INTERNAL_DUMP("date.date2 = %.26S", date.date2)
+}
+
+void ULog::updateDate3()
+{
+   U_TRACE_NO_PARAM(1, "ULog::updateDate3()")
+
+   /**
+    * Date: Wed, 20 Jun 2012 11:43:17 GMT\r\nServer: ULib\r\n
+    *       0123456789012345678901234567890123
+    * 0123456789012345678901234567890123456789
+    */
+
+#if defined(ENABLE_THREAD) && !defined(_MSWINDOWS_)
+   if (u_pthread_time)
+      {
+      (void) U_SYSCALL(pthread_rwlock_rdlock, "%p", prwlock);
+
+      if (tv_sec_old_3 != u_now->tv_sec)
+         {
+         long tv_sec = u_now->tv_sec;
+
+         U_INTERNAL_DUMP("tv_sec_old_3 = %lu u_now->tv_sec = %lu", tv_sec_old_3, tv_sec)
+
+         if ((tv_sec - tv_sec_old_3) != 1 ||
+             (tv_sec % U_ONE_HOUR_IN_SECOND) == 0)
+            {
+            tv_sec_old_3 = tv_sec;
+
+            U_MEMCPY(date.date3+6, ptr_shared_date->date3+6, 29-4);
+            }
+         else
+            {
+            ++tv_sec_old_3;
+
+            u_put_unalignedp16(date.date3+26,  U_MULTICHAR_CONSTANT16(ptr_shared_date->date3[26],ptr_shared_date->date3[27]));
+            u_put_unalignedp16(date.date3+26+3,U_MULTICHAR_CONSTANT16(ptr_shared_date->date3[29],ptr_shared_date->date3[30]));
+            }
+
+         U_INTERNAL_ASSERT_EQUALS(tv_sec, tv_sec_old_3)
+         }
+
+      (void) U_SYSCALL(pthread_rwlock_unlock, "%p", prwlock);
+      }
+   else
+#endif
+   {
+   U_INTERNAL_ASSERT_EQUALS(u_pthread_time, 0)
+
+   u_gettimenow();
+
+   if (tv_sec_old_3 != u_now->tv_sec)
+      {
+      long tv_sec = u_now->tv_sec;
+
+      U_INTERNAL_DUMP("tv_sec_old_3 = %lu u_now->tv_sec = %lu", tv_sec_old_3, tv_sec)
+
+      if ((tv_sec - tv_sec_old_3) != 1 ||
+          (tv_sec % U_ONE_HOUR_IN_SECOND) == 0)
+         {
+         (void) u_strftime2(date.date3+6, 29-4, U_CONSTANT_TO_PARAM("%a, %d %b %Y %T"), (tv_sec_old_3 = tv_sec)); // GMT can't change...
          }
       else
          {
          ++tv_sec_old_3;
 
-         UTimeDate::updateTime(ptr+20);
+         UTimeDate::updateTime(date.date3+26);
          }
 
-      U_INTERNAL_ASSERT_EQUALS(u_now->tv_sec, tv_sec_old_3)
+      U_INTERNAL_ASSERT_EQUALS(tv_sec, tv_sec_old_3)
       }
-   else
-      {
-      static long tv_sec_old_2;
+   }
 
-      U_INTERNAL_ASSERT_EQUALS(which, 2)
-
-      /**
-       * 04/Jun/2012:18:18:37 +0200
-       * 012345678901234567890123456789
-       */
-
-      if (tv_sec_old_2 == u_now->tv_sec) return;
-
-      U_INTERNAL_ASSERT_MINOR(tv_sec_old_2, u_now->tv_sec)
-
-      if (bchange ||
-          (u_now->tv_sec - tv_sec_old_2) != 1)
-         {
-         (void) u_strftime2(ptr, 26-6, "%d/%b/%Y:%T", (tv_sec_old_2 = u_now->tv_sec) + u_now_adjust);
-         }
-      else
-         {
-         ++tv_sec_old_2;
-      
-         UTimeDate::updateTime(ptr+15);
-         }
-
-      U_INTERNAL_ASSERT_EQUALS(u_now->tv_sec, tv_sec_old_2)
-      }
-
-   U_INTERNAL_ASSERT_EQUALS(ptr_static_date->date1, iov_vec[0].iov_base)
+   U_INTERNAL_DUMP("date.date3+6 = %.29S", date.date3+6)
 }
 
 void ULog::setShared(log_data* ptr, uint32_t _size, bool breference)
@@ -377,11 +507,9 @@ void ULog::setShared(log_data* ptr, uint32_t _size, bool breference)
       {
       if (_size == 0)
          {
-         log_gzip_sz = sizeof(log_data);
+         log_data_sz = sizeof(log_data);
 
-         uint32_t length = (sizeof(log_data) + U_PAGEMASK) & ~U_PAGEMASK;
-
-         ptr = (log_data*) UFile::mmap(&length);
+         ptr = (log_data*) UFile::mmap(&log_data_sz);
 
          U_INTERNAL_ASSERT_DIFFERS(ptr, MAP_FAILED)
          }
@@ -397,7 +525,7 @@ void ULog::setShared(log_data* ptr, uint32_t _size, bool breference)
 
          UString basename = UFile::getName();
 
-         (void) u__snprintf(somename, sizeof(somename), "/%v", basename.rep);
+         (void) u__snprintf(somename, sizeof(somename), U_CONSTANT_TO_PARAM("/%v"), basename.rep);
 
          // -------------------------------------------------------------------------------------------------------------------
          // ULog::log_data log_data_shared;
@@ -476,7 +604,7 @@ void ULog::write(const struct iovec* iov, int n)
 
             if (file_ptr <= log_gzip_sz)
                {
-               (void) checkForLogRotateDataToWrite(); // check if there are previous data to write
+               checkForLogRotateDataToWrite(); // check if there are previous data to write
 
                ptr_log_data->gzip_len = u_gz_deflate(UFile::map, file_ptr, (char*)ptr_log_data+sizeof(log_data), true);
 
@@ -488,11 +616,11 @@ void ULog::write(const struct iovec* iov, int n)
 
                UString data_to_write = UStringExt::deflate(UFile::map, file_ptr, 1);
 
-               (void) u__snprintf(buf_path_compress->c_pointer(index_path_compress), 17, "%4D");
+               char* ptr1 = buf_path_compress->c_pointer(index_path_compress);
 
-               U_ASSERT_EQUALS(UFile::access(buf_path_compress->data(), R_OK | W_OK), false)
+               ptr1[u__snprintf(ptr1, 17, U_CONSTANT_TO_PARAM("%4D"))] = '.';
 
-               (void) UFile::writeTo(*buf_path_compress, data_to_write, false, false);
+               (void) UFile::writeTo(*buf_path_compress, data_to_write, O_RDWR | O_EXCL, false);
                }
 #        endif
 
@@ -503,8 +631,7 @@ void ULog::write(const struct iovec* iov, int n)
          if (len == 1) UFile::map[file_ptr++] = *ptr;
          else
             {
-         // U_MEMCPY( UFile::map + file_ptr, ptr, len);
-            u__memcpy(UFile::map + file_ptr, ptr, len, __PRETTY_FUNCTION__);
+            U_MEMCPY(UFile::map + file_ptr, ptr, len);
 
             file_ptr += len;
 
@@ -546,46 +673,46 @@ void ULog::write(const char* msg, uint32_t len)
    U_INTERNAL_ASSERT_EQUALS(iov_vec[1].iov_len,  1)
    U_INTERNAL_ASSERT_EQUALS(iov_vec[4].iov_len,  1)
 
-   if (prefix)
+   if (prefix_len)
       {
       U_INTERNAL_DUMP("u_buffer_len = %u", u_buffer_len)
 
       U_INTERNAL_ASSERT_MINOR(u_buffer_len, U_BUFFER_SIZE - 100)
 
       iov_vec[2].iov_base = (caddr_t) u_buffer + u_buffer_len;
-      iov_vec[2].iov_len  = u__snprintf((char*)iov_vec[2].iov_base, U_BUFFER_SIZE - u_buffer_len, prefix, 0);
+      iov_vec[2].iov_len  = u__snprintf((char*)iov_vec[2].iov_base, U_BUFFER_SIZE - u_buffer_len, prefix, prefix_len, 0);
       }
 
    iov_vec[3].iov_len  = len;
    iov_vec[3].iov_base = (caddr_t) msg;
 
-   updateStaticDate(ptr_static_date->date1, 1);
+   updateDate1();
 
    pthis->write(iov_vec, 5);
 
-   if (prefix) iov_vec[2].iov_len = 0;
+   if (prefix_len) iov_vec[2].iov_len = 0;
 }
 
-void ULog::log(const char* fmt, ...)
+void ULog::log(const char* fmt, uint32_t fmt_size, ...)
 {
-   U_TRACE(0, "ULog::log(%S)", fmt)
+   U_TRACE(0, "ULog::log(%.*S,%u)", fmt_size, fmt, fmt_size)
 
    uint32_t len;
    char buffer[8196];
 
    va_list argp;
-   va_start(argp, fmt);
+   va_start(argp, fmt_size);
 
-   len = u__vsnprintf(buffer, sizeof(buffer), fmt, argp);
+   len = u__vsnprintf(buffer, sizeof(buffer), fmt, fmt_size, argp);
 
    va_end(argp);
 
    write(buffer, len);
 }
 
-void ULog::log(int _fd, const char* fmt, ...)
+void ULog::log(int _fd, const char* fmt, uint32_t fmt_size, ...)
 {
-   U_TRACE(1, "ULog::log(%d,%S)", _fd, fmt)
+   U_TRACE(1, "ULog::log(%d,%.*S,%u)", _fd, fmt_size, fmt, fmt_size)
 
    U_INTERNAL_ASSERT_DIFFERS(_fd, -1)
 
@@ -593,9 +720,9 @@ void ULog::log(int _fd, const char* fmt, ...)
    char buffer[8196];
 
    va_list argp;
-   va_start(argp, fmt);
+   va_start(argp, fmt_size);
 
-   len = u__vsnprintf(buffer, sizeof(buffer), fmt, argp);
+   len = u__vsnprintf(buffer, sizeof(buffer), fmt, fmt_size, argp);
 
    va_end(argp);
 
@@ -606,14 +733,14 @@ void ULog::log(int _fd, const char* fmt, ...)
    iov_vec[3].iov_len  = len;
    iov_vec[3].iov_base = (caddr_t)buffer;
 
-   updateStaticDate(ptr_static_date->date1, 1);
+   updateDate1();
 
    (void) U_SYSCALL(writev, "%d,%p,%d", _fd, iov_vec, 5);
 }
 
-void ULog::log(const struct iovec* iov, const char* name, const char* type, int ncount, const char* msg, uint32_t msg_len, const char* format, ...)
+void ULog::log(const struct iovec* iov, const char* name, const char* type, int ncount, const char* msg, uint32_t msg_len, const char* format, uint32_t fmt_size, ...)
 {
-   U_TRACE(0, "ULog::log(%p,%S,%S,%d,%.*S,%u,%S)", iov, name, type, ncount, msg_len, msg, msg_len, format)
+   U_TRACE(0, "ULog::log(%p,%S,%S,%d,%.*S,%u,%.*S,%u)", iov, name, type, ncount, msg_len, msg, msg_len, fmt_size, format, fmt_size)
 
    U_INTERNAL_ASSERT_MAJOR(ncount, 0)
 
@@ -625,6 +752,10 @@ void ULog::log(const struct iovec* iov, const char* name, const char* type, int 
    U_INTERNAL_DUMP("u_printf_string_max_length = %d iov[0].len = %d iov[1].len = %d iov[2].len = %d iov[3].len = %d",
                     u_printf_string_max_length,     iov[0].iov_len, iov[1].iov_len, iov[2].iov_len, iov[3].iov_len)
 
+#ifndef U_HTTP2_DISABLE
+   if (U_http_version != '2')
+#endif
+   {
    if (u_printf_string_max_length == -1)
       {
       uint32_t endHeader = (sz ? u_findEndHeader1(ptr, sz) : U_NOT_FOUND);
@@ -638,6 +769,7 @@ void ULog::log(const struct iovec* iov, const char* name, const char* type, int 
 
       U_INTERNAL_ASSERT(u_printf_string_max_length <= (int)sz_header)
       }
+   }
 
    U_INTERNAL_DUMP("u_printf_string_max_length = %d sz1 = %u", u_printf_string_max_length, sz1)
 
@@ -667,14 +799,14 @@ void ULog::log(const struct iovec* iov, const char* name, const char* type, int 
          U_INTERNAL_ASSERT_MAJOR(length, 0)
          U_INTERNAL_ASSERT_MINOR(length, (int)sizeof(buffer1))
 
-         u__memcpy(buffer1, (const char*)iov[0].iov_base, length, __PRETTY_FUNCTION__);
+         U_MEMCPY(buffer1, (const char*)iov[0].iov_base, length);
          }
 
       if (iov[1].iov_len)
          {
          U_INTERNAL_ASSERT_MINOR(length+iov[1].iov_len, sizeof(buffer1))
 
-         u__memcpy(buffer1+length, (const char*)iov[1].iov_base, iov[1].iov_len, __PRETTY_FUNCTION__);
+         U_MEMCPY(buffer1+length, (const char*)iov[1].iov_base, iov[1].iov_len);
          }
 
       U_INTERNAL_ASSERT_MINOR(length+iov[1].iov_len+sz, sizeof(buffer1))
@@ -683,19 +815,19 @@ void ULog::log(const struct iovec* iov, const char* name, const char* type, int 
          {
          U_INTERNAL_ASSERT_POINTER(ptr)
 
-         u__memcpy(buffer1+length+iov[1].iov_len, ptr, sz, __PRETTY_FUNCTION__);
+         U_MEMCPY(buffer1+length+iov[1].iov_len, ptr, sz);
          }
 
       sz += sz1;
       ptr = buffer1;
       }
 
-   len = u__snprintf(buffer2, sizeof(buffer2), "%ssend %s (%u bytes) %.*s%.*S", name, type, ncount, msg_len, msg, sz, ptr);
+   len = u__snprintf(buffer2, sizeof(buffer2), U_CONSTANT_TO_PARAM("%ssend %s (%u bytes) %.*s%.*S"), name, type, ncount, msg_len, msg, sz, ptr);
 
    va_list argp;
-   va_start(argp, format);
+   va_start(argp, fmt_size);
 
-   len += u__vsnprintf(buffer2+len, sizeof(buffer2)-len, format, argp);
+   len += u__vsnprintf(buffer2+len, sizeof(buffer2)-len, format, fmt_size, argp);
 
    va_end(argp);
 
@@ -704,9 +836,9 @@ void ULog::log(const struct iovec* iov, const char* name, const char* type, int 
    u_printf_string_max_length = u_printf_string_max_length_save;
 }
 
-void ULog::logResponse(const UString& data, const char* name, const char* format, ...)
+void ULog::logResponse(const UString& data, const char* name, const char* format, uint32_t fmt_size, ...)
 {
-   U_TRACE(0, "ULog::logResponse(%V,%S,%S)", data.rep, name, format)
+   U_TRACE(0, "ULog::logResponse(%V,%S,%.*S,%u)", data.rep, name, fmt_size, format, fmt_size)
 
    U_INTERNAL_ASSERT(data)
 
@@ -720,19 +852,19 @@ void ULog::logResponse(const UString& data, const char* name, const char* format
       {
       u_printf_string_max_length = u_findEndHeader1(ptr, sz);
 
-      if (u_printf_string_max_length == -1) u_printf_string_max_length = U_min(sz,2000);
+      if ((uint32_t)u_printf_string_max_length == U_NOT_FOUND) u_printf_string_max_length = U_min(sz,2000);
 
       U_INTERNAL_ASSERT_MAJOR(u_printf_string_max_length, 0)
       }
 
    U_INTERNAL_DUMP("u_printf_string_max_length = %d", u_printf_string_max_length)
 
-   len = u__snprintf(buffer, sizeof(buffer), "%sreceived response (%u bytes) %.*S", name, sz, sz, ptr);
+   len = u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("%sreceived response (%u bytes) %.*S"), name, sz, sz, ptr);
 
    va_list argp;
-   va_start(argp, format);
+   va_start(argp, fmt_size);
 
-   len += u__vsnprintf(buffer+len, sizeof(buffer)-len, format, argp);
+   len += u__vsnprintf(buffer+len, sizeof(buffer)-len, format, fmt_size, argp);
 
    va_end(argp);
 
@@ -741,9 +873,9 @@ void ULog::logResponse(const UString& data, const char* name, const char* format
    u_printf_string_max_length = u_printf_string_max_length_save;
 }
 
-void ULog::logger(const char* ident, int priority, const char* format, ...)
+void ULog::logger(const char* ident, int priority, const char* format, uint32_t fmt_size, ...)
 {
-   U_TRACE(1, "ULog::logger(%S,%d,%S)", ident, priority, format)
+   U_TRACE(1, "ULog::logger(%S,%d,%.*S,%u)", ident, priority, fmt_size, format, fmt_size)
 
 #ifndef _MSWINDOWS_
    U_INTERNAL_ASSERT(U_Log_syslog(pthis))
@@ -759,9 +891,9 @@ void ULog::logger(const char* ident, int priority, const char* format, ...)
    char buffer[4096];
 
    va_list argp;
-   va_start(argp, format);
+   va_start(argp, fmt_size);
 
-   len = u__vsnprintf(buffer, sizeof(buffer), format, argp);
+   len = u__vsnprintf(buffer, sizeof(buffer), format, fmt_size, argp);
 
    va_end(argp);
 
@@ -776,7 +908,7 @@ __pure U_NO_EXPORT int ULog::decode(const char* name, uint32_t len, bool bfacili
    U_TRACE(0, "ULog::decode(%.*S,%u,%b)", len, name, len, bfacility)
 
 #ifndef _MSWINDOWS_
-   for (CODE* c = (bfacility ? facilitynames : prioritynames); c->c_name; ++c) if (strncasecmp(name, c->c_name, len) == 0) U_RETURN(c->c_val);
+   for (CODE* c = (bfacility ? facilitynames : prioritynames); c->c_name; ++c) if (u__strncasecmp(name, c->c_name, len) == 0) U_RETURN(c->c_val);
 #endif
 
    U_RETURN(-1);
@@ -818,7 +950,7 @@ __pure int ULog::getPriorityForLogger(const char* s)
 
 void ULog::closeLog()
 {
-   U_TRACE(1, "ULog::closeLog()")
+   U_TRACE_NO_PARAM(1, "ULog::closeLog()")
 
    if (U_Log_syslog(this))
       {
@@ -838,7 +970,7 @@ void ULog::closeLog()
    // msync();
 
 #  ifdef USE_LIBZ
-      (void) checkForLogRotateDataToWrite(); // check for previous data to write
+      checkForLogRotateDataToWrite(); // check for previous data to write
 #  endif
 
       U_INTERNAL_ASSERT_EQUALS(ptr_log_data->gzip_len, 0)
@@ -850,19 +982,12 @@ void ULog::closeLog()
 
    UFile::close();
 
-   if (log_gzip_sz == sizeof(log_data))
-      {
-      uint32_t length = (sizeof(log_data) + U_PAGEMASK) & ~U_PAGEMASK;
-
-      U_INTERNAL_ASSERT_EQUALS(length & U_PAGEMASK, 0)
-
-      UFile::munmap(ptr_log_data, length);
-      }
+   if (log_gzip_sz == sizeof(log_data)) UFile::munmap(ptr_log_data, log_data_sz);
 }
 
 void ULog::close()
 {
-   U_TRACE(0, "ULog::close()")
+   U_TRACE_NO_PARAM(0, "ULog::close()")
 
    // NB: we need this check because all child try to close the log... (inherits from its parent)
 
@@ -870,7 +995,7 @@ void ULog::close()
       {
       U_INTERNAL_DUMP("pthis = %p", pthis)
 
-      if (U_Log_start_stop_msg(pthis)) log(U_FMT_START_STOP, "SHUTDOWN", sizeof(void*) * 8);
+      if (U_Log_start_stop_msg(pthis)) log(U_CONSTANT_TO_PARAM(U_FMT_START_STOP), "SHUTDOWN", sizeof(void*) * 8);
 
       pthis->closeLog();
 
@@ -881,7 +1006,7 @@ void ULog::close()
 #ifdef USE_LIBZ
 UString ULog::getDirLogGz()
 {
-   U_TRACE(0, "ULog::getDirLogGz()")
+   U_TRACE_NO_PARAM(0, "ULog::getDirLogGz()")
 
    U_INTERNAL_ASSERT_POINTER(pthis)
    U_INTERNAL_ASSERT_POINTER(pthis->buf_path_compress)
@@ -891,26 +1016,22 @@ UString ULog::getDirLogGz()
    U_RETURN_STRING(result);
 }
 
-bool ULog::checkForLogRotateDataToWrite()
+void ULog::checkForLogRotateDataToWrite()
 {
-   U_TRACE(0, "ULog::checkForLogRotateDataToWrite()")
+   U_TRACE_NO_PARAM(0, "ULog::checkForLogRotateDataToWrite()")
 
    if (ptr_log_data->gzip_len)
       {
       // there are previous data to write
 
-      (void) u__snprintf(buf_path_compress->c_pointer(index_path_compress), 17, "%4D");
+      char* ptr1 = buf_path_compress->c_pointer(index_path_compress);
 
-      U_ASSERT_EQUALS(UFile::access(buf_path_compress->data(), R_OK | W_OK), false)
+      ptr1[u__snprintf(ptr1, 17, U_CONSTANT_TO_PARAM("%4D"))] = '.';
 
-      (void) UFile::writeTo(*buf_path_compress, (char*)ptr_log_data+sizeof(log_data), ptr_log_data->gzip_len, false, false);
+      (void) UFile::writeTo(*buf_path_compress, (char*)ptr_log_data+sizeof(log_data), ptr_log_data->gzip_len, O_RDWR | O_EXCL, false);
 
       ptr_log_data->gzip_len = 0;
-
-      U_RETURN(true);
       }
-
-   U_RETURN(false);
 }
 #endif
 
@@ -922,18 +1043,9 @@ const char* ULog::dump(bool _reset) const
    UFile::dump(false);
 
    *UObjectIO::os << '\n'
-                  << "prefix                    ";
-
-   if (prefix)
-      {
-      char buffer[1024];
-
-      UObjectIO::os->write(buffer, u__snprintf(buffer, 1024, "%.*S", u__strlen(prefix, __PRETTY_FUNCTION__), prefix));
-      }
-
-   *UObjectIO::os << '\n'
-                  << "log_file_sz               " << log_file_sz         << '\n'
-                  << "lock        (ULock        " << (void*)lock         << ')';
+                  << "prefix_len                " << prefix_len  << '\n'
+                  << "log_file_sz               " << log_file_sz << '\n'
+                  << "lock     (ULock           " << (void*)lock << ')';
 
    if (_reset)
       {

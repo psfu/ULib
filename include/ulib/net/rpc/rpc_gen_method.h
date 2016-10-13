@@ -20,25 +20,20 @@
 class U_EXPORT URPCGenericMethod : public URPCMethod {
 public:
 
-   // COSTRUTTORI
-
-   URPCGenericMethod(const UString& n, const UString& _ns, UCommand* cmd, int rtype) : response_type(rtype), response(U_CAPACITY)
+   URPCGenericMethod(const UString& n, const UString& _ns, UCommand* cmd, int rtype) : URPCMethod(n, _ns), response(U_CAPACITY)
       {
       U_TRACE_REGISTER_OBJECT(0, URPCGenericMethod, "%V,%V,%p,%d", n.rep, _ns.rep, cmd, rtype) 
 
-      command                 = cmd;
-      URPCMethod::ns          = _ns;
-      URPCMethod::method_name = n;
+      command       = cmd; 
+      response_type = rtype;
       }
 
    virtual ~URPCGenericMethod()
       {
       U_TRACE_UNREGISTER_OBJECT(0, URPCGenericMethod)
 
-      delete command;
+      if (command) delete command;
       }
-
-   // VIRTUAL METHOD
 
    // Transforms the method into something that servers and clients can send. The encoder holds the actual
    // data while the client hands data to be entered in. This makes a whole lot more sense in the samples that
@@ -46,7 +41,7 @@ public:
 
    virtual void encode()
       {
-      U_TRACE(0, "URPCGenericMethod::encode()")
+      U_TRACE_NO_PARAM(0, "URPCGenericMethod::encode()")
 
       U_INTERNAL_ASSERT_POINTER(URPCMethod::encoder)
 
@@ -66,18 +61,14 @@ public:
 #endif
 
 protected:
+   UString response;
    UCommand* command;
    int response_type;
-   UString response;
+
+   URPCGenericMethod() : URPCMethod() {}
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-   URPCGenericMethod(const URPCGenericMethod& g) = delete;
-   URPCGenericMethod& operator=(const URPCGenericMethod& g) = delete;
-#else
-   URPCGenericMethod(const URPCGenericMethod& g) : URPCMethod() {}
-   URPCGenericMethod& operator=(const URPCGenericMethod& g)     { return *this; }
-#endif
+   U_DISALLOW_COPY_AND_ASSIGN(URPCGenericMethod)
 };
 
 #endif

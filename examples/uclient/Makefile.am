@@ -3,7 +3,7 @@
 dist_sysconf_DATA = uclient.cfg.default
 
 DEFAULT_INCLUDES    = -I. -I$(top_srcdir)/include
-DEFAULT_CONFIG_FILE = $(sysconfdir)/uclient.cfg
+DEFAULT_CONFIG_FILE = @ULIB_SYSCONFDIR@/uclient.cfg
 
 ulib_la = @ULIBS@ $(top_builddir)/src/ulib/lib@ULIB@.la @ULIB_LIBS@
 
@@ -28,4 +28,4 @@ uninstall-hook:
    fi
 
 clean-local:
-	-rm -rf core .libs *.bb* *.da *.gcov *.la *.exe gmon.out
+	-rm -rf core .libs *.bb* *.da *.gc* *.la *.exe gmon.out

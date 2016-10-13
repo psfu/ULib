@@ -15,16 +15,17 @@ start_msg web_server
 
 DOC_ROOT=docroot
 
-rm -f db/session.ssl* /tmp/ssl_session.txt /tmp/byterange* /tmp/*.memusage.* \
+rm -f db/session.ssl* /tmp/ssl_session.txt /tmp/byterange* /tmp/soap.res /tmp/*.memusage.* /tmp/*.hpack.* \
 		$DOC_ROOT/webserver*.log* $DOC_ROOT/uploads/* /var/log/httpd/access_log \
       out/userver_tcp.out err/userver_tcp.err web_server.err \
 					 trace.*userver_*.[0-9]*			  object.*userver_*.[0-9]*				 stack.*userver_*.[0-9]*			  mempool.*userver_*.[0-9]* \
       $DOC_ROOT/trace.*userver_*.[0-9]* $DOC_ROOT/object.*userver_*.[0-9]* $DOC_ROOT/stack.*userver_*.[0-9]* $DOC_ROOT/mempool.*userver_*.[0-9]*
 
 #UTRACE="0 100M 0"
-#UOBJDUMP="0 50M 5000"
+#UTRACE_SIGNAL="0 50M 0"
+#UOBJDUMP="0 10M 100"
 #USIMERR="error.sim"
- export UTRACE UOBJDUMP USIMERR
+export UTRACE UOBJDUMP USIMERR UTRACE_SIGNAL
 
 if [ "$TERM" = "msys" ]; then
    export TMPDIR="c:/tmp"
@@ -36,16 +37,19 @@ compile_usp
 
 check_for_netcat
 
+mkdir -p	/var/log/httpd 2>/dev/null
+
 # function : upload_test
 upload_test() {
 
 rm    -rf      uploads
 mkdir -p		   uploads
-$CHOWN apache: uploads
+$CHOWN nobody: uploads docroot 2>/dev/null
 chmod 777      uploads
 
-$CURL -s -F 'file=@vuoto.txt'											 -F "name=prova" http://$1/cgi-bin/uploader.sh >>out/web_server.out 2>>err/web_server.err
-$CURL -s -F 'file=@inp/xml2txt/operazione.xml;type=text/xml' -F "name=prova" http://$1/cgi-bin/uploader.sh >>out/web_server.out 2>>err/web_server.err
+$CURL -s -F 'file=@vuoto.txt'											 -F "name=prova" http://$1/cgi-bin/uploader.sh    >>out/web_server.out 2>>err/web_server.err
+$CURL -s -F 'file=@inp/xml2txt/operazione.xml;type=text/xml' -F "name=prova" http://$1/cgi-bin/uploader.sh    >>out/web_server.out 2>>err/web_server.err
+$CURL -s -T web_server.test                                                  http://$1/upload/web_server.test >>out/web_server.out 2>>err/web_server.err
 
 if [ $? -ne 0 ]; then
    kill_prg userver_tcp TERM
@@ -55,17 +59,11 @@ fi
 
 # function : kill_server
 kill_server() {
+
 kill_prg userver_tcp TERM
-if [ $? -ne 0 ]; then
-	for i in 1 2 3 4 5; do
-		pgrep userver_tcp >/dev/null 2>/dev/null
-		if [ $? -ne 0 ]; then
-			return
-		fi
-		$SLEEP
-	done
-	exit 1
-fi
+$SLEEP
+pkill -9    userver_tcp 2>/dev/null
+pkill -9 lt-userver_tcp 2>/dev/null
 }
 
 # function : start_test
@@ -82,18 +80,17 @@ $SLEEP
  start_prg_background userver_tcp -c inp/webserver.cfg
 
 for i in 1 2 3 4 5; do
-	$NC -c localhost 80 </dev/null 2>/dev/null
+	$NC -c localhost 8080 </dev/null 2>/dev/null
 	if [ $? -eq 0 ]; then
 		break
 	fi
-	$SLEEP
 done
 
 #LS=tst_90
 #LS=`ls inp/http/and`
 #mkdir -p /tmp/web_server
 #for i in $LS; do
-# $NC -w 10 localhost 80 <inp/http/and/$i >/tmp/web_server/$i
+# $NC -w 10 localhost 8080 <inp/http/and/$i >/tmp/web_server/$i
 #done
 
 #./sendbytes.pl
@@ -107,22 +104,22 @@ done
 
 LS=`ls inp/http/close`
 for i in $LS; do
-	send_req $1 $2 80 inp/http/close/$i web_server 2
-	if [ $? -ne 0 ]; then
-	   kill_prg userver_tcp TERM
-		exit 1
-	fi
+	send_req $1 $2 8080 inp/http/close/$i web_server 2
+#	if [ $? -ne 0 ]; then
+#		kill_server
+#		exit 1
+#  fi
 done
 
 for i in all.inp all0.inp all01.inp all1.inp all2.inp plaintext.inp post.inp; do
-	send_req $1 $2 80 inp/http/$i web_server 4
+	send_req $1 $2 8080 inp/http/$i web_server 4
 #	if [ $? -ne 0 ]; then
-#	   kill_prg userver_tcp TERM
+#		kill_server
 #		exit 1
 #	fi
 done
 
-upload_test $2
+upload_test $2:8080
 
 kill_server
 }
@@ -138,7 +135,8 @@ fi
 
 cat <<EOF >inp/webserver.cfg
 userver {
- RUN_AS_USER apache
+ PORT 8080
+ RUN_AS_USER nobody
 #MIN_SIZE_FOR_SENDFILE 2k
  REQ_TIMEOUT 30
  LOG_FILE webserver$1.log
@@ -151,16 +149,14 @@ userver {
  PREFORK_CHILD $N
 }
 http {
- ALIAS [ /                                                    /index.php
-			/fortunes                                            /benchmark/docroot/servlet/fortunes
-			/plaintext                                           /benchmark/docroot/servlet/plaintext
-			/www.sito1.com/benchmark/docroot/servlet/jsonrequest /benchmark/docroot/servlet/jsonrequest ]
  ENABLE_INOTIFY yes
+ ALIAS @FILE:../alias.txt
  LIMIT_REQUEST_BODY 700K
  REQUEST_READ_TIMEOUT 30
  DIGEST_AUTHENTICATION no
  APACHE_LIKE_LOG /var/log/httpd/access_log
- CACHE_FILE_MASK *.jpg|*.png|*.css|*.js|*.gif|inp/http/data/file1|*.*html|*.flv|*.svgz
+ BANDWIDTH_THROTTLING_MASK @FILE:../throttling.txt
+ CACHE_FILE_MASK inp/http/data/file1|*.flv|*.svgz
  CACHE_AVOID_MASK www.sito1.com|ruby
 }
 EOF
@@ -174,12 +170,12 @@ rm -rf $DOC_ROOT/www.sito1.com 2>/dev/null
 grep 'www.sito1.com' /etc/hosts >/dev/null 2>/dev/null
 
 if [ $? -ne 0 ]; then
-   echo '# virtual host userver' >> /etc/hosts
-   echo localhost www.sito1.com	>> /etc/hosts
-   echo localhost www.sito2.com	>> /etc/hosts
+   echo '# virtual host userver' >> /etc/hosts 2>/dev/null
+   echo localhost www.sito1.com	>> /etc/hosts 2>/dev/null
+   echo localhost www.sito2.com	>> /etc/hosts 2>/dev/null
 fi
 
-mkdir -p $DOC_ROOT/www.sito1.com/benchmark/docroot
+mkdir -p $DOC_ROOT/benchmark/docroot $DOC_ROOT/www.sito1.com/benchmark/docroot
 
 creat_link ../ok												$DOC_ROOT/ok
 creat_link ../tmp												$DOC_ROOT/tmp
@@ -198,41 +194,43 @@ c
 c
 EOF
 
+#cp $DOC_ROOT/../.htpasswd $DOC_ROOT/../tmp.htpasswd
+
 export UMEMPOOL="136,0,60,100,250,-22,-17,-23,60"
 
 # webserver-1
  creat_config -1
  start_test $NCAT localhost
-#exit 0
 # webserver0
  creat_config 0 
  start_test $NCAT localhost
-#exit 0
 # webserver1
  creat_config 1 
  start_test $NCAT localhost
-#exit 0
 # webserver2
  creat_config 2 
  start_test $NCAT localhost
-#exit 0
-# webserver2
 # webserverN
  creat_config N 2
  start_test $NCAT localhost
-#exit 0
 # webserverV
  creat_config V 2
  start_test $NCAT www.sito1.com
 
-# ---------------------------------------------------------------------------
+kill_server
+
+# -----------------------------------------------------------------------------------
 # for GDB
-# ---------------------------------------------------------------------------
-# sed "s/Host: 10.30.1.131/Host: www.sito1.com/" inp/http/all.inp | nc localhost 80
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------
+# sed "s/Host: 10.30.1.131/Host: www.sito1.com/" inp/http/all.inp | nc localhost 8080
+# -----------------------------------------------------------------------------------
 
 diff inp/xml2txt/operazione.xml uploads/operazione.xml
 RESULT=$?
+if [ "$RESULT" = "0" ]; then
+	diff web_server.test uploads/web_server.test
+	RESULT=$?
+fi
 
 mv err/userver_tcp.err err/web_server.err
 

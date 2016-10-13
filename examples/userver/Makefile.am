@@ -7,7 +7,7 @@ ulib_la = @ULIBS@ $(top_builddir)/src/ulib/lib@ULIB@.la @ULIB_LIBS@
 dist_sysconf_DATA = userver.cfg.default
 
 DEFAULT_INCLUDES    = -I. -I$(top_srcdir)/include
-DEFAULT_CONFIG_FILE = $(sysconfdir)/userver.cfg
+DEFAULT_CONFIG_FILE = @ULIB_SYSCONFDIR@/userver.cfg
 
 userver_tcp_LDADD    = $(ulib_la)
 userver_tcp_SOURCES  = userver.cpp
@@ -46,4 +46,4 @@ uninstall-hook:
 	fi
 
 clean-local:
-	-rm -rf core .libs *.bb* *.da *.gcov *.la *.exe gmon.out
+	-rm -rf core .libs *.bb* *.da *.gc* *.la *.exe gmon.out

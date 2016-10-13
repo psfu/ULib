@@ -27,6 +27,7 @@ static URDB* rdb;
 #define MARGINE      (MAX_NUM_MSG / 10)
 
 static UString* rdbname;
+static uint32_t table_space;
 static uint32_t max_size_table;
 static uint32_t ntable_discharges;
 static UHashMap<Messaggio*>* table;
@@ -60,7 +61,7 @@ public:
       U_TRACE(5, "Application::MessageToString(%p,%p)", msg, bdelete)
 
       *bdelete        = true;
-      UStringRep* rep = UObject2StringRep<Messaggio>(msg);
+      UStringRep* rep = UObject2StringRep<Messaggio>(*msg, false);
 
       U_RETURN_POINTER(rep,UStringRep);
       }
@@ -78,7 +79,9 @@ public:
          {
          if (msg->isAnomalia()) PEC_report_anomalie::reportAnomalie(0, msg);
 
-         UStringRep* rep = U_NEW(UStringRep((const char*)&(msg->start), sizeof(time_t)));
+         UStringRep* rep;
+
+         U_NEW(UStringRep, rep, UStringRep((const char*)&(msg->start), sizeof(time_t)));
 
          delete msg;
 
@@ -205,7 +208,7 @@ public:
          {
          UString tmp = UStringExt::basename(PEC_report::file->getPath());
 
-         rdbname->snprintf("%s/%.*s", u_tmpdir, U_STRING_TO_TRACE(tmp));
+         rdbname->snprintf(U_CONSTANT_TO_PARAM("%s/%.*s"), u_tmpdir, U_STRING_TO_TRACE(tmp));
 
          U_INTERNAL_DUMP("rdbname = %.*S", U_STRING_TO_TRACE(*rdbname))
          }
@@ -216,7 +219,7 @@ public:
 #     ifdef U_DB_MANAGE
          UString tmp = UStringExt::basename(PEC_report::file->getPath());
 
-         rdbname->snprintf_add("#%.*s.cdb", U_STRING_TO_TRACE(tmp));
+         rdbname->snprintf_add(U_CONSTANT_TO_PARAM("#%.*s.cdb"), U_STRING_TO_TRACE(tmp));
 
          U_INTERNAL_DUMP("rdbname = %.*S", U_STRING_TO_TRACE(*rdbname))
 
@@ -226,11 +229,11 @@ public:
 
          U_MESSAGE("start session <%d>: write table on database %.*S...", lrdb->size(), U_STRING_TO_TRACE(*rdbname));
 
-         table->setSpace(table->size() * U_DIMENSIONE_MEDIA_RECORD_LOG * 2);
+         table_space = table->size() * U_DIMENSIONE_MEDIA_RECORD_LOG * 2;
 
          pvPFpmpb func = Application::MessageToString;
 
-         if (rdb->UCDB::writeTo(table, (pvPFpvpb)func) == false) U_ERROR("failed to write table on database");
+         if (rdb->UCDB::writeTo(table, table_space, (pvPFpvpb)func) == false) U_ERROR("failed to write table on database");
 
          rdbname->setEmpty();
 #     else
@@ -240,17 +243,17 @@ public:
 
          if (rdb == 0)
             {
-            rdbname->snprintf("%s/PEC_report_anomalie1.%4D.cdb", u_tmpdir);
+            rdbname->snprintf(U_CONSTANT_TO_PARAM("%s/PEC_report_anomalie1.%4D.cdb"), u_tmpdir);
 
             U_INTERNAL_DUMP("rdbname = %.*S", U_STRING_TO_TRACE(*rdbname))
       
             rdb = new URDB(*rdbname, true);
 
-            table->setSpace(table->size() * 512 + MARGINE);
+            table_space = table->size() * 512 + MARGINE;
 
             pvPFpmpb func = Application::FirstCheckForOldMessage;
 
-            if (rdb->UCDB::writeTo(table, (pvPFpvpb)func) == false)
+            if (rdb->UCDB::writeTo(table, table_space, (pvPFpvpb)func) == false)
                {
                U_ERROR("write to database file %.*S failed", U_STRING_TO_TRACE(*rdbname));
                }
@@ -258,7 +261,7 @@ public:
          else
             {
             if (ntable_discharges == 2 &&
-             // rdb->open(table->space() + MARGINE) == false)
+             // rdb->open(table_space + MARGINE) == false)
                 rdb->open(1024 * 1024 * 1024) == false)
                {
                U_ERROR("open database file %.*S failed", U_STRING_TO_TRACE(*rdbname));

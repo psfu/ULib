@@ -1,4 +1,4 @@
-// ============================================================================
+/* ============================================================================
 //
 // = LIBRARY
 //    ULib - c library
@@ -9,7 +9,7 @@
 // = AUTHOR
 //    Stefano Casazza
 //
-// ============================================================================
+// ============================================================================ */
  
 /*
 #define DEBUG_DEBUG
@@ -18,21 +18,33 @@
 #include <ulib/base/trace.h>
 #include <ulib/base/utility.h>
 
-#ifdef HAVE_SYS_SYSCALL_H
-#  include <sys/syscall.h>
-#endif
-
-int   u_trace_fd = -1;
-int   u_trace_signal;
-int   u_trace_suspend;
-void* u_plock;
-void* u_trace_mask_level;
-
+int      u_trace_fd = -1;
+int      u_trace_signal;
+int      u_trace_suspend;
+void*    u_trace_mask_level;
 char     u_trace_tab[256]; /* 256 max indent */
 uint32_t u_trace_num_tab;
 
-static int      level_active;
-static uint32_t file_size;
+static int level_active;
+static uint32_t file_size, old_tid;
+#ifdef ENABLE_THREAD
+# ifdef _MSWINDOWS_
+static CRITICAL_SECTION mutex;
+# else
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+# endif
+#endif
+
+/*
+#ifdef __UNIKERNEL__
+#  include <rump/rump.h>
+#  include <rump/rump_syscalls.h>
+
+#  define  open(...) rump_sys_open(__VA_ARGS__)
+#  define write(...) rump_sys_write(__VA_ARGS__)
+#  define close(...) rump_sys_close(__VA_ARGS__)
+#endif
+*/
 
 static void printInfo(void)
 {
@@ -77,32 +89,31 @@ void u_trace_lock(void)
 {
    U_INTERNAL_TRACE("u_trace_lock()")
 
-#if defined(HAVE_SYS_SYSCALL_H) && defined(ENABLE_THREAD)
-   if (u_plock)
+#ifdef ENABLE_THREAD
+   uint32_t tid = u_gettid();
+# ifdef _MSWINDOWS_
+   if (old_tid == 0) InitializeCriticalSection(&mutex);
+
+   EnterCriticalSection(&mutex);
+# else
+   (void) pthread_mutex_lock(&mutex);
+# endif
+
+   if (old_tid != tid)
       {
-      static pid_t old_tid;
+      char tid_buffer[32];
+      int sz = snprintf(tid_buffer, sizeof(tid_buffer), "[tid %u]<--\n[tid %u]-->\n", old_tid, tid);
 
-      pid_t tid = syscall(SYS_gettid);
+      old_tid = tid;
 
-      (void) pthread_mutex_lock((pthread_mutex_t*)u_plock);
-
-      if (old_tid != tid)
+      if (file_size == 0) (void) write(u_trace_fd, tid_buffer, sz);
+      else
          {
-         char tid_buffer[32];
+         if ((file_ptr + sz) > file_limit) file_ptr = file_mem;
 
-         int sz = snprintf(tid_buffer, sizeof(tid_buffer), "[tid %d]<--\n[tid %d]-->\n", old_tid, tid);
+         u__memcpy(file_ptr, tid_buffer, sz, __PRETTY_FUNCTION__);
 
-         old_tid = tid;
-
-         if (file_size == 0) (void) write(u_trace_fd, tid_buffer, sz);
-         else
-            {
-            if ((file_ptr + sz) > file_limit) file_ptr = file_mem;
-
-            u__memcpy(file_ptr, tid_buffer, sz, __PRETTY_FUNCTION__);
-
-            file_ptr += sz;
-            }
+         file_ptr += sz;
          }
       }
 #endif
@@ -112,8 +123,12 @@ void u_trace_unlock(void)
 {
    U_INTERNAL_TRACE("u_trace_unlock()")
 
-#if defined(HAVE_SYS_SYSCALL_H) && defined(ENABLE_THREAD)
-   if (u_plock) (void) pthread_mutex_unlock((pthread_mutex_t*)u_plock);
+#ifdef ENABLE_THREAD
+# ifdef _MSWINDOWS_
+   LeaveCriticalSection(&mutex);
+# else
+   (void) pthread_mutex_unlock(&mutex);
+# endif
 #endif
 }
 
@@ -176,10 +191,10 @@ void u_trace_close(void)
          {
          ptrdiff_t write_size = file_ptr - file_mem;
 
-         U_INTERNAL_ASSERT_MINOR(write_size,(ptrdiff_t)file_size)
+         U_INTERNAL_ASSERT_MINOR(write_size, (ptrdiff_t)file_size)
 
-      // (void)  msync(file_mem, write_size, MS_SYNC);
-         (void) munmap(file_mem, file_size);
+         (void)  msync(file_mem, write_size, MS_SYNC | MS_INVALIDATE);
+         (void) munmap(file_mem,  file_size);
 
          (void) ftruncate(lfd, write_size);
          (void) fsync(lfd);
@@ -237,7 +252,7 @@ void u_trace_init(int bsignal)
       if (env == 0) env = "0 50M 0";
       else
          {
-         if (u__isquote(*env)) ++env; // normalization...
+         if (u__isquote(*env)) ++env; /* normalization... */
 
          if (*env == '-')
             {
@@ -247,9 +262,10 @@ void u_trace_init(int bsignal)
             }
          }
 
-      /* format: <level> <max_size_log> <u_flag_test>
-                    -1        500k           0
-      */
+      /**
+       * format: <level> <max_size_log> <u_flag_test>
+       *            -1        500k           0
+       */
 
       (void) sscanf(env, "%d%d%c%d", &level_active, &file_size, &suffix, &u_flag_test);
 
@@ -267,7 +283,7 @@ void u_trace_init(int bsignal)
          {
          char name[128];
 
-         (void) u__snprintf(name, 128, "trace.%N.%P", 0);
+         (void) u__snprintf(name, 128, U_CONSTANT_TO_PARAM("trace.%N.%P"), 0);
 
          /* NB: O_RDWR is needed for mmap(MAP_SHARED)... */
 
@@ -275,40 +291,40 @@ void u_trace_init(int bsignal)
 
          if (u_trace_fd == -1)
             {
-            U_WARNING("error on create file %S", name);
+            U_WARNING("Failed to create file %S - current working directory: %.*s", name, u_cwd_len, u_cwd);
+
+            return;
             }
-         else
+
+         /* we manage max size... */
+
+         if (file_size)
             {
-            /* we manage max size... */
+            off_t start = (u_fork_called ? lseek(u_trace_fd, 0, SEEK_END) : 0);
 
-            if (file_size)
+            if (ftruncate(u_trace_fd, file_size))
                {
-               off_t start = (u_fork_called ? lseek(u_trace_fd, 0, SEEK_END) : 0);
+               U_WARNING("Out of space on file system, (required %u bytes)", file_size);
 
-               if (ftruncate(u_trace_fd, file_size))
-                  {
-                  U_WARNING("out of space on file system, (required %u bytes)", file_size);
+               file_size = 0;
 
-                  file_size = 0;
-                  }
-               else
-                  {
-                  /* NB: PROT_READ avoid some strange SIGSEGV... */
-
-                  file_mem = (char* restrict) mmap(0, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, u_trace_fd, 0);
-
-                  if (file_mem == MAP_FAILED)
-                     {
-                     file_mem  = 0;
-                     file_size = 0;
-
-                     (void) ftruncate(u_trace_fd, 0);
-                     }
-
-                  file_ptr   = file_mem + start;
-                  file_limit = file_mem + file_size;
-                  }
+               return;
                }
+
+            /* NB: include also PROT_READ seem to avoid some strange SIGSEGV... */
+
+            file_mem = (char* restrict) mmap(0, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, u_trace_fd, 0);
+
+            if (file_mem == MAP_FAILED)
+               {
+               file_mem  = 0;
+               file_size = 0;
+
+               (void) ftruncate(u_trace_fd, 0);
+               }
+
+            file_ptr   = file_mem + start;
+            file_limit = file_mem + file_size;
             }
          }
 
@@ -337,9 +353,9 @@ void u_trace_handlerSignal(void)
 
    printInfo();
 
-#  ifdef _MSWINDOWS_
+# ifndef _MSWINDOWS_
    setHandlerSIGUSR2(); /* on-off by signal SIGUSR2 */
-#  endif
+# endif
 #endif
 
    u_trace_signal = 0;
@@ -354,26 +370,15 @@ int u_trace_check_if_active(int level)
         if (flag_init == 0) u_trace_init(0);
    else if (u_trace_signal) u_trace_handlerSignal();
 
-   U_INTERNAL_PRINT("u_trace_fd = %d level_active = %d u_trace_mask_level = %p u_flag_test = %d", u_trace_fd, level_active, u_trace_mask_level, u_flag_test)
+   U_INTERNAL_PRINT("u_trace_fd = %d level_active = %d u_trace_mask_level = %p", u_trace_fd, level_active, u_trace_mask_level)
 
+        if (u_trace_fd == -1 || u_trace_suspend) trace_active = 0;
+   else if (     level == -1)                    trace_active = (level_active == 0);
+   else                                          trace_active = (u_trace_mask_level == 0 && ((level & 0x000000ff) >= level_active));
 
-   if (u_trace_fd == -1 ||
-       (u_trace_suspend && u_flag_test >= 0))
-      {
-      trace_active = 0;
-      }
-   else if (level == -1)
-      {
-      trace_active = (u_flag_test > 0 && level_active == 0);
-      }
-   else
-      {
-      trace_active = (u_trace_mask_level == 0 && ((level & 0x000000ff) >= level_active));
-      }
+   U_INTERNAL_PRINT("trace_active = %d u_flag_test = %d", trace_active, u_flag_test)
 
-   U_INTERNAL_PRINT("trace_active = %d", trace_active)
-
-   return trace_active;
+   return (u_flag_test >= 0 ? trace_active : 1);
 }
 
 void u_trace_check_init(void)
@@ -388,7 +393,7 @@ void u_trace_check_init(void)
       {
       char name[128];
 
-      (void) u__snprintf(name, 128, "trace.%N.%P", 0);
+      (void) u__snprintf(name, 128, U_CONSTANT_TO_PARAM("trace.%N.%P"), 0);
 
       (void) rename("trace..", name);
       }
@@ -400,17 +405,17 @@ void u_trace_check_init(void)
    printInfo();
 }
 
-void u_trace_dump(const char* restrict format, ...)
+void u_trace_dump(const char* restrict format, uint32_t fmt_size, ...)
 {
-   U_INTERNAL_TRACE("u_trace_dump(%s)", format)
+   U_INTERNAL_TRACE("u_trace_dump(%.*s,%u)", fmt_size, format, fmt_size)
 
    char buffer[8192];
    uint32_t buffer_len;
 
    va_list argp;
-   va_start(argp, format);
+   va_start(argp, fmt_size);
 
-   buffer_len = u__vsnprintf(buffer, sizeof(buffer), format, argp);
+   buffer_len = u__vsnprintf(buffer, sizeof(buffer), format, fmt_size, argp);
 
    va_end(argp);
 
@@ -446,3 +451,11 @@ void u_trace_initFork(void)
 
    printInfo();
 }
+
+/*
+#ifdef __UNIKERNEL__
+#  undef  open
+#  undef write
+#  undef close
+#endif
+*/

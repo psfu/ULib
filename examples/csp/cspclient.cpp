@@ -19,7 +19,7 @@ public:
 
    // COSTRUTTORE
 
-            UClientCSP(UFileConfig* cfg) : USOAPClient<T>(cfg) {}
+   explicit UClientCSP(UFileConfig* cfg) : USOAPClient<T>(cfg) {}
    virtual ~UClientCSP()                                       {}
 
    // OBJECT FOR METHOD REQUEST
@@ -572,6 +572,11 @@ public:
 
       // manage options
 
+      UString cfg_str;
+      UFileConfig cfg;
+
+      UString::str_allocate(STR_ALLOCATE_SOAP);
+
       if (UApplication::isOptions()) cfg_str = opt['c'];
 
       // manage arg operation
@@ -607,8 +612,6 @@ public:
 
 private:
    UClientCSP<USSLSocket>* client;
-   UString cfg_str;
-   UFileConfig cfg;
 };
 
 U_MAIN

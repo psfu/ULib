@@ -16,6 +16,7 @@ void WeightWord::clear()
    if (tbl)
       {
       tbl->_length = 0;
+
       tbl->deallocate();
 
       delete tbl;
@@ -37,11 +38,13 @@ void WeightWord::push()
 
    U_INTERNAL_ASSERT(*UPosting::filename)
 
-   WeightWord* item = U_NEW(WeightWord(*UPosting::filename, UPosting::word_freq));
+   WeightWord* item;
+
+   U_NEW(WeightWord, item, WeightWord(*UPosting::filename, UPosting::word_freq));
 
    if (check_for_duplicate)
       {
-      if (tbl == 0) tbl = U_NEW(UHashMap<WeightWord*>);
+      if (tbl == 0) U_NEW(UHashMap<WeightWord*>, tbl, UHashMap<WeightWord*>);
 
       if (tbl->find(*UPosting::filename))
          {
@@ -55,7 +58,7 @@ void WeightWord::push()
       tbl->insertAfterFind(*UPosting::filename, item);
       }
 
-   if (vec == 0) vec = U_NEW(UVector<WeightWord*>);
+   if (vec == 0) U_NEW(UVector<WeightWord*>, vec, UVector<WeightWord*>);
 
    vec->push_back(item);
 }
@@ -104,8 +107,8 @@ Query::Query()
    U_INTERNAL_ASSERT_EQUALS(parser,  0)
    U_INTERNAL_ASSERT_EQUALS(request, 0)
 
-   parser  = U_NEW(UQueryParser);
-   request = U_NEW(UString);
+   U_NEW(UQueryParser, parser, UQueryParser);
+   U_NEW(UString, request, UString);
 }
 
 Query::~Query()
@@ -133,8 +136,8 @@ int Query::query_meta(UStringRep* word_rep, UStringRep* value)
 {
    U_TRACE(5, "Query::query_meta(%.*S,%p)", U_STRING_TO_TRACE(*word_rep), value)
 
-   if (u_pfn_match(      word_rep->data(),       word_rep->size(),
-               UPosting::word->data(), UPosting::word->size(), u_pfn_flags))
+   if (u_dosmatch(       word_rep->data(),       word_rep->size(),
+                   UPosting::word->data(), UPosting::word->size(), UPosting::ignore_case ? FNM_CASEFOLD : 0))
       {
       UPosting::posting->_assign(value);
 
@@ -262,8 +265,6 @@ void Query::run(const char* ptr, uint32_t len, UVector<WeightWord*>* vec)
          else
             {
             WeightWord::check_for_duplicate = true;
-
-            if (UPosting::ignore_case) u_pfn_flags |= FNM_CASEFOLD;
 
             cdb_words->callForAllEntryWithPattern(query_meta, 0);
 

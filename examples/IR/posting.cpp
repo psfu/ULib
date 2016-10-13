@@ -2,8 +2,6 @@
 
 #include <ulib/db/rdb.h>
 #include <ulib/base/utility.h>
-#include <ulib/container/vector.h>
-#include <ulib/container/hash_map.h>
 #include <ulib/utility/string_ext.h>
 
 #include "posting.h"
@@ -24,6 +22,7 @@ UString*           UPosting::filename;
 UString*           UPosting::str_cur_doc_id;
 uint32_t           UPosting::word_freq;
 uint32_t           UPosting::min_word_size;
+uint32_t           UPosting::tbl_name_space;
 uint32_t           UPosting::tbl_words_space;
 uint32_t           UPosting::max_distance = 2;
 UHashMap<UString>* UPosting::tbl_name;
@@ -91,10 +90,10 @@ UPosting::UPosting(uint32_t dimension, bool parsing, bool index)
    U_INTERNAL_ASSERT_EQUALS(filename,0)
    U_INTERNAL_ASSERT_EQUALS(str_cur_doc_id,0)
 
-   word           = U_NEW(UString);
-   posting        = U_NEW(UString);
-   filename       = U_NEW(UString);
-   str_cur_doc_id = U_NEW(UString(sizeof(cur_doc_id)));
+   U_NEW(UString, word, UString);
+   U_NEW(UString, posting, UString);
+   U_NEW(UString, filename, UString);
+   U_NEW(UString, str_cur_doc_id, UString(sizeof(cur_doc_id)));
 
    approximate_num_words = 2000 + (dimension * 8);
 
@@ -105,8 +104,8 @@ UPosting::UPosting(uint32_t dimension, bool parsing, bool index)
 
       dimension += dimension / 4;
 
-      tbl_name  = U_NEW(UHashMap<UString>(U_GET_NEXT_PRIME_NUMBER(dimension), false));
-      tbl_words = U_NEW(UHashMap<UString>(U_GET_NEXT_PRIME_NUMBER(approximate_num_words), ignore_case));
+      U_NEW(UHashMap<UString>, tbl_name,  UHashMap<UString>(U_GET_NEXT_PRIME_NUMBER(dimension)));
+      U_NEW(UHashMap<UString>, tbl_words, UHashMap<UString>(U_GET_NEXT_PRIME_NUMBER(approximate_num_words), ignore_case));
       }
 
    if (parsing)
@@ -114,8 +113,8 @@ UPosting::UPosting(uint32_t dimension, bool parsing, bool index)
       U_INTERNAL_ASSERT_EQUALS(file,0)
       U_INTERNAL_ASSERT_EQUALS(content,0)
 
-      file    = U_NEW(UFile);
-      content = U_NEW(UString);
+      U_NEW(UFile, file, UFile);
+      U_NEW(UString, content, UString);
       }
 }
 
@@ -428,7 +427,7 @@ U_NO_EXPORT void UPosting::del()
    uint32_t last_offset = POSTING_OFFSET_LAST_DOC_ID;
 #endif
 
-   char* end = posting->rep->end();
+   char* end = (char*) posting->pend();
 
    do {
       U_INTERNAL_DUMP("doc_id          = %lu", POSTING64(ptr,doc_id))
@@ -441,10 +440,7 @@ U_NO_EXPORT void UPosting::del()
       }
    while (ptr < end);
 
-   if (ptr >= end)
-      {
-      U_ERROR("del(): cannot find DocID<%llu> reference for word<%.*s> on index database", cur_doc_id, U_STRING_TO_TRACE(*word));
-      }
+   if (ptr >= end) U_ERROR("del(): cannot find DocID<%llu> reference for word<%.*s> on index database", cur_doc_id, U_STRING_TO_TRACE(*word));
 
    (void) posting->replace(ptr - data, size_entry, 0, '\0');
 
@@ -452,7 +448,7 @@ U_NO_EXPORT void UPosting::del()
 
    data = posting->data();
    ptr  = data + sizeof(uint32_t);
-   end  = posting->rep->end();
+   end  = (char*) posting->pend();
 
    U_INTERNAL_DUMP("posting->size() = %u", posting->size())
 
@@ -475,10 +471,7 @@ U_NO_EXPORT void UPosting::del()
 
    result = writePosting(RDB_REPLACE);
 
-   if (result != 0)
-      {
-      U_ERROR("del(): error<%d> on operation replace reference for word<%.*s> on index database", result, U_STRING_TO_TRACE(*word));
-      }
+   if (result != 0) U_ERROR("del(): error<%d> on operation replace reference for word<%.*s> on index database", result, U_STRING_TO_TRACE(*word));
 }
 
 // ADD WORD
@@ -525,7 +518,7 @@ U_NO_EXPORT void UPosting::add()
 
    U_INTERNAL_ASSERT(*word)
 
-   bool present = (tbl_words ? tbl_words->find(*word)
+   bool present = (tbl_words ?          tbl_words->find(*word)
                              : ((URDB*)cdb_words)->find(*word));
 
    if (present == false)
@@ -698,7 +691,7 @@ void UPosting::processWord(int32_t op)
       {
       readPosting(word->rep, (op == 2)); // del
 
-      if (posting->empty()  == true ||
+      if (posting->empty() ||
           setPosting(false) == false)
          {
          U_ERROR("processWord(%d): word<%v> reference at position<%u> for DocID<%llu %v> lost", op, word->rep, pos, cur_doc_id, filename->rep);
@@ -819,7 +812,12 @@ void UPosting::setDocID(int32_t op)
 
    setDocID(true);
 
-   if (tbl_name) tbl_name->insert(*str_cur_doc_id, *filename);
+   if (tbl_name)
+      {
+      tbl_name->insert(*str_cur_doc_id, *filename);
+
+      tbl_name_space += str_cur_doc_id->size() + filename->size();
+      }
    else
       {
       int result = 0;
@@ -867,7 +865,7 @@ void UPosting::callForPosting(vPF function)
 
    data      = posting->data();
    ptr       = data + sizeof(uint32_t);
-   char* end = posting->rep->end();
+   char* end = (char*) posting->pend();
 
    do {
       word_freq  = POSTING32(ptr,word_freq);
@@ -931,10 +929,11 @@ U_NO_EXPORT bool UPosting::setVectorCompositeWord()
    U_INTERNAL_ASSERT_EQUALS(vec_sub_word,0)
    U_INTERNAL_ASSERT_EQUALS(vec_sub_word_posting,0)
 
-   sub_word             = U_NEW(UString);
-   vec_sub_word         = U_NEW(UVector<UString>(*word));
-   vec_sub_word_posting = U_NEW(UVector<UString>);
-   vec_sub_word_size    = vec_sub_word->size();
+   U_NEW(UString, sub_word, UString);
+   U_NEW(UVector<UString>, vec_sub_word, UVector<UString>(*word));
+   U_NEW(UVector<UString>, vec_sub_word_posting, UVector<UString>);
+
+   vec_sub_word_size = vec_sub_word->size();
 
    for (uint32_t i = 0; i < vec_sub_word_size; ++i)
       {
@@ -1020,7 +1019,7 @@ inline UString UPosting::extractDocID()
 
       data      = r->data();
       ptr       = data + sizeof(uint32_t);
-      char* end = r->end();
+      char* end = r->pend();
 
       do {
          size_entry = POSTING_SIZE(ptr);
@@ -1071,10 +1070,11 @@ bool UPosting::findDocID(UStringRep* word_rep)
       {
       // allocation property...
 
-      i           = U_NOT_FOUND;
-      vec_word    = U_NEW(UVector<UString>(32));
-      vec_entry   = U_NEW(UVector<UString>(approximate_num_words));
-      vec_posting = U_NEW(UVector<UString>(32));
+      i = U_NOT_FOUND;
+
+      U_NEW(UVector<UString>, vec_word, UVector<UString>(32));
+      U_NEW(UVector<UString>, vec_entry, UVector<UString>(approximate_num_words));
+      U_NEW(UVector<UString>, vec_posting, UVector<UString>(32));
       }
 
    // check if exist property for this word...
@@ -1247,7 +1247,7 @@ U_NO_EXPORT bool UPosting::callForCompositeWord(vPF function)
 
    data = posting->data();
    ptr1 = data + sizeof(uint32_t);
-   end1 = posting->rep->end();
+   end1 = (char*) posting->pend();
 
    do {
       ptr        = ptr1;
@@ -1378,8 +1378,8 @@ start:
 
       if (buffer->space() < SIZE_ENTRY) buffer->reserve(buffer->capacity() * 2);
 
-                                               buffer->snprintf_add("(%llX,%u,%u", cur_doc_id, word_freq, u_get_unalignedp32(vpos));
-      for (uint32_t i = 1; i < word_freq; ++i) buffer->snprintf_add(",%u", u_get_unalignedp32(vpos+i));
+                                               buffer->snprintf_add(U_CONSTANT_TO_PARAM("(%llX,%u,%u"), cur_doc_id, word_freq, u_get_unalignedp32(vpos));
+      for (uint32_t i = 1; i < word_freq; ++i) buffer->snprintf_add(U_CONSTANT_TO_PARAM(",%u"), u_get_unalignedp32(vpos+i));
                                         (void) buffer->append(U_CONSTANT_TO_PARAM(")"));
       }
    else
@@ -1420,7 +1420,7 @@ U_NO_EXPORT int UPosting::printDocName(UStringRep* doc_id, UStringRep* doc_name)
 #ifdef U_STDCPP_ENABLE
    char _buffer[20];
 
-   os->write(_buffer, u__snprintf(_buffer, sizeof(_buffer), "%llX ", *((uint64_t*)(doc_id->data()))));
+   os->write(_buffer, u__snprintf(_buffer, sizeof(_buffer), U_CONSTANT_TO_PARAM("%llX "), *((uint64_t*)(doc_id->data()))));
 
    doc_name->write(*os);
 
@@ -1437,7 +1437,7 @@ void UPosting::printDB(ostream& s)
 #ifdef U_STDCPP_ENABLE
    os = &s;
 
-   buffer = U_NEW(UString(U_CAPACITY));
+   U_NEW(UString, buffer, UString(U_CAPACITY));
 
    if (tbl_words) tbl_words->callForAllEntry((bPFprpv)print);
    else
@@ -1476,6 +1476,7 @@ const char* UPosting::dump(bool _reset) const
                   << "max_distance                            " << max_distance                 << '\n'
                   << "min_word_size                           " << min_word_size                << '\n'
                   << "sub_word_size                           " << sub_word_size                << '\n'
+                  << "tbl_name_space                          " << tbl_name_space               << '\n'
                   << "ptr_cur_doc_id                          " << (void*)ptr_cur_doc_id        << '\n'
                   << "tbl_words_space                         " << tbl_words_space              << '\n'
                   << "off_last_doc_id                         " << off_last_doc_id              << '\n'

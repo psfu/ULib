@@ -14,109 +14,64 @@
 #ifndef ULIB_SOAP_CLIENT_H
 #define ULIB_SOAP_CLIENT_H 1
 
-#include <ulib/net/client/http.h>
-#include <ulib/net/server/server.h>
 #include <ulib/net/rpc/rpc_client.h>
-#include <ulib/xml/soap/soap_parser.h>
 #include <ulib/xml/soap/soap_encoder.h>
+
+class USOAPParser;
 
 class U_EXPORT USOAPClient_Base : public URPCClient_Base {
 public:
 
-   void clearData()
-      {
-      U_TRACE(0, "USOAPClient_Base::clearData()")
-
-             parser.clearData();
-      UClient_Base::clearData();
-      }
+   void clearData();
+   bool processRequest(URPCMethod& method);
 
    // define method VIRTUAL
 
    virtual bool sendRequest()
       {
-      U_TRACE(0, "USOAPClient_Base::sendRequest()")
+      U_TRACE_NO_PARAM(0, "USOAPClient_Base::sendRequest()")
 
-      if (UClient_Base::sendRequest(request, false)) U_RETURN(true);
+      if (UClient_Base::sendRequest()) U_RETURN(true);
 
       U_RETURN(false);
       }
 
    virtual bool readResponse();
 
-   bool processRequest(URPCMethod& method)
-      {
-      U_TRACE(0, "USOAPClient_Base::processRequest(%p)", &method)
-
-      U_INTERNAL_ASSERT_POINTER(URPCMethod::encoder)
-
-      request = URPCMethod::encoder->encodeMethodCall(method, *UString::str_ns);
-
-      request = UHttpClient_Base::wrapRequest(&request, UClient_Base::host_port, 2, U_CONSTANT_TO_PARAM("/soap"), "", "application/soap+xml; charset=\"utf-8\"");
-
-      if (sendRequest()  &&
-          readResponse() &&
-          parser.parse(UClient_Base::response))
-         {
-         if (parser.getMethodName() == *UString::str_fault) UClient_Base::response = parser.getFaultResponse();
-         else
-            {
-#        ifndef U_COVERITY_FALSE_POSITIVE // Explicit null dereferenced (FORWARD_NULL)
-            UClient_Base::response = parser.getResponse();
-#        endif
-
-            U_RETURN(true);
-            }
-         }
-
-      U_RETURN(false);
-      }
-
 #if defined(U_STDCPP_ENABLE) && defined(DEBUG)
    const char* dump(bool _reset) const;
 #endif
 
 protected:
-   UString request;
-   USOAPParser parser;
+   USOAPParser* parser;
 
-   // COSTRUTTORI
-
-   USOAPClient_Base(UFileConfig* _cfg) : URPCClient_Base(_cfg)
+   USOAPClient_Base(UFileConfig* _cfg = 0) : URPCClient_Base(_cfg)
       {
       U_TRACE_REGISTER_OBJECT(0, USOAPClient_Base, "%p", _cfg)
+
+      parser = 0;
 
       u_init_http_method_list();
 
       delete URPCMethod::encoder;
-             URPCMethod::encoder = U_NEW(USOAPEncoder);
+
+      U_NEW(USOAPEncoder, URPCMethod::encoder, USOAPEncoder);
       }
 
-   virtual ~USOAPClient_Base()
-      {
-      U_TRACE_UNREGISTER_OBJECT(0, USOAPClient_Base)
-      }
+   virtual ~USOAPClient_Base();
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-   USOAPClient_Base(const USOAPClient_Base&) = delete;
-   USOAPClient_Base& operator=(const USOAPClient_Base&) = delete;
-#else
-   USOAPClient_Base(const USOAPClient_Base&) : URPCClient_Base(0) {}
-   USOAPClient_Base& operator=(const USOAPClient_Base&)           { return *this; }
-#endif      
+   U_DISALLOW_COPY_AND_ASSIGN(USOAPClient_Base)
 };
 
 template <class Socket> class U_EXPORT USOAPClient : public USOAPClient_Base {
 public:
 
-   // Costruttori
-
    USOAPClient(UFileConfig* _cfg) : USOAPClient_Base(_cfg)
       {
       U_TRACE_REGISTER_OBJECT(0, USOAPClient, "%p", _cfg)
 
-      UClient_Base::socket = U_NEW(Socket(UClient_Base::bIPv6));
+      U_NEW(Socket, UClient_Base::socket, Socket(UClient_Base::bIPv6));
       }
 
    virtual ~USOAPClient()
@@ -129,17 +84,10 @@ public:
 #endif
 
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-   USOAPClient(const USOAPClient&) = delete;
-   USOAPClient& operator=(const USOAPClient&) = delete;
-#else
-   USOAPClient(const USOAPClient&) : USOAPClient_Base(0) {}
-   USOAPClient& operator=(const USOAPClient&)            { return *this; }
-#endif      
+   U_DISALLOW_COPY_AND_ASSIGN(USOAPClient)
 };
 
-#ifdef USE_LIBSSL // specializzazione con USSLSocket
-
+#ifdef USE_LIBSSL
 template <> class U_EXPORT USOAPClient<USSLSocket> : public USOAPClient_Base {
 public:
 
@@ -161,17 +109,8 @@ public:
    const char* dump(bool _reset) const { return USOAPClient_Base::dump(_reset); }
 #endif
 
-protected:
-
 private:
-#ifdef U_COMPILER_DELETE_MEMBERS
-   USOAPClient<USSLSocket>(const USOAPClient<USSLSocket>&) = delete;
-   USOAPClient<USSLSocket>& operator=(const USOAPClient<USSLSocket>&) = delete;
-#else
-   USOAPClient<USSLSocket>(const USOAPClient<USSLSocket>&) : USOAPClient_Base(0) {}
-   USOAPClient<USSLSocket>& operator=(const USOAPClient<USSLSocket>&)            { return *this; }
-#endif
+   U_DISALLOW_COPY_AND_ASSIGN(USOAPClient<USSLSocket>)
 };
-
 #endif
 #endif

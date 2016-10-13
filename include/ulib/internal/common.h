@@ -14,7 +14,7 @@
 #ifndef ULIB_INTERNAL_COMMON_H
 #define ULIB_INTERNAL_COMMON_H 1
 
-// Manage file to include
+// Manage which file headers to include
 
 #include <ulib/base/base.h>
 
@@ -75,14 +75,14 @@ extern U_EXPORT void  operator delete[](void*);
 #endif
 
 #ifdef U_COMPILER_EXPLICIT_OVERRIDES
-# define U_DECL_OVERRIDE override
 # define U_DECL_FINAL final
+# define U_DECL_OVERRIDE override
 #else
-# ifndef U_DECL_OVERRIDE
-# define U_DECL_OVERRIDE
-# endif
 # ifndef U_DECL_FINAL
 # define U_DECL_FINAL
+# endif
+# ifndef U_DECL_OVERRIDE
+# define U_DECL_OVERRIDE
 # endif
 #endif
 
@@ -111,9 +111,31 @@ extern U_EXPORT void  operator delete[](void*);
 #  endif
 #endif
 
+#include <ulib/internal/macro.h>
 #include <ulib/internal/objectIO.h>
 #include <ulib/internal/memory_pool.h>
-#include <ulib/internal/macro.h>
+
+enum StringAllocationType {
+   STR_ALLOCATE_SOAP         = 0x00000001,
+   STR_ALLOCATE_IMAP         = 0x00000002,
+   STR_ALLOCATE_SSI          = 0x00000004,
+   STR_ALLOCATE_NOCAT        = 0x00000008,
+   STR_ALLOCATE_HTTP         = 0x00000010,
+   STR_ALLOCATE_QUERY_PARSER = 0x00000020,
+   STR_ALLOCATE_ORM          = 0x00000040,
+   STR_ALLOCATE_HTTP2        = 0x00000080
+};
+
+enum StringAllocationIndex {
+   STR_ALLOCATE_INDEX_SOAP         = 18,
+   STR_ALLOCATE_INDEX_IMAP         = STR_ALLOCATE_INDEX_SOAP+14,
+   STR_ALLOCATE_INDEX_SSI          = STR_ALLOCATE_INDEX_IMAP+4,
+   STR_ALLOCATE_INDEX_NOCAT        = STR_ALLOCATE_INDEX_SSI+2,
+   STR_ALLOCATE_INDEX_HTTP         = STR_ALLOCATE_INDEX_NOCAT+2,
+   STR_ALLOCATE_INDEX_QUERY_PARSER = STR_ALLOCATE_INDEX_HTTP+10,
+   STR_ALLOCATE_INDEX_ORM          = STR_ALLOCATE_INDEX_QUERY_PARSER+5,
+   STR_ALLOCATE_INDEX_HTTP2        = STR_ALLOCATE_INDEX_ORM+15
+};
 
 // json value representation
 
@@ -157,7 +179,8 @@ typedef enum ValueType {
      LREAL_VALUE = 14, // long double value
     STRING_VALUE = 15, // UTF-8 string value
      ARRAY_VALUE = 16, // array value (ordered list)
-    OBJECT_VALUE = 17  // object value (collection of name/value pairs)
+    OBJECT_VALUE = 17, // object value (collection of name/value pairs)
+    NUMBER_VALUE = 18  // generic number value (may be -ve) int or float
 } ValueType;
 
 using namespace std;
@@ -165,7 +188,7 @@ using namespace std;
 // Init library
 
 U_EXPORT void ULib_init();
-#ifdef USE_LIBSSL
+#if defined(USE_LIBSSL) && OPENSSL_VERSION_NUMBER < 0x10100000L
 U_EXPORT void ULib_init_openssl();
 #endif
 

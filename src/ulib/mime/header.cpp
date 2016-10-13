@@ -88,8 +88,9 @@ uint32_t UMimeHeader::parse(const char* ptr, uint32_t len)
          {
          pkv = (const char*) memchr(prev, ':', _end - prev);
 
-         if (pkv == 0 ||
-             pkv >= ptr)
+         if (pkv == 0   ||
+             pkv >= ptr ||
+             pkv == prev)
             {
             break;
             }
@@ -116,7 +117,7 @@ uint32_t UMimeHeader::parse(const char* ptr, uint32_t len)
                {
                UString duplicate(rep->size() + 4U + key.size() + 2U);
 
-               duplicate.snprintf("%v%s%v: ", rep, (cr ? U_CRLF : U_LF), key.rep);
+               duplicate.snprintf(U_CONSTANT_TO_PARAM("%v%s%v: "), rep, (cr ? U_CRLF : U_LF), key.rep);
 
                U_INTERNAL_DUMP("duplicate = %V", duplicate.rep)
 
@@ -182,7 +183,7 @@ UString UMimeHeader::getValueAttributeFromKeyValue(const char* name_attr, uint32
 
       U_INTERNAL_DUMP("name = %V", name.rep)
 
-      if (name.equal(name_attr, name_attr_len, ignore_case))
+      if (UStringRep::equal_lookup(name.rep, name_attr, name_attr_len, ignore_case))
          {
          value = name_value[i+1];
 
@@ -222,7 +223,7 @@ bool UMimeHeader::getNames(const UString& cdisposition, UString& name, UString& 
       {
       for (int32_t i = 0, n = name_value.size(); i < n; i += 2)
          {
-         if (name_value[i].equal(*UString::str_name, false))
+         if (name_value[i].equal(U_CONSTANT_TO_PARAM("name")))
             {
             name = name_value[i+1];
 
@@ -232,7 +233,7 @@ bool UMimeHeader::getNames(const UString& cdisposition, UString& name, UString& 
 
             U_INTERNAL_DUMP("name = %V", name.rep)
             }
-         else if (name_value[i].equal(*UString::str_filename, false))
+         else if (name_value[i].equal(U_CONSTANT_TO_PARAM("filename")))
             {
             filename = name_value[i+1];
 
@@ -318,7 +319,7 @@ void UMimeHeader::writeHeaders(UString& buffer)
 
          tmp.setBuffer(key->size() + 2 + value->size() + 2);
 
-         tmp.snprintf("%v: %v\r\n", key, value);
+         tmp.snprintf(U_CONSTANT_TO_PARAM("%v: %v\r\n"), key, value);
 
          buffer += tmp;
          }
@@ -330,7 +331,7 @@ void UMimeHeader::writeHeaders(UString& buffer)
 
 UString UMimeHeader::getHeaders()
 {
-   U_TRACE(0, "UMimeHeader::getHeaders()")
+   U_TRACE_NO_PARAM(0, "UMimeHeader::getHeaders()")
 
    if (empty() == false)
       {

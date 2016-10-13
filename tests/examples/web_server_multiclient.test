@@ -17,9 +17,10 @@ rm -f $DOC_ROOT/web_server_multiclient.log* \
       $DOC_ROOT/trace.*userver_*.[0-9]* $DOC_ROOT/object.*userver_*.[0-9]* $DOC_ROOT/stack.*userver_*.[0-9]* $DOC_ROOT/mempool.*userver_*.[0-9]*
 
 #UTRACE="0 100M 0"
+#UTRACE_SIGNAL="0 100M -1"
 #UOBJDUMP="0 10M 100"
 #USIMERR="error.sim"
- export UTRACE UOBJDUMP USIMERR
+export UTRACE UOBJDUMP USIMERR UTRACE_SIGNAL
 
 if [ "$TERM" = "msys" ]; then
 	export TMPDIR="c:/tmp"
@@ -39,13 +40,13 @@ userver {
 #PLUGIN "nocat ssi http"
  PLUGIN_DIR     ../../../../src/ulib/net/server/plugin/.libs
  ORM_DRIVER_DIR ../../../../src/ulib/orm/driver/.libs
-#PREFORK_CHILD 0 
+ PREFORK_CHILD 0 
 }
 http {
- ALIAS [ / /index.php ]
+ ALIAS "[ / /index.php ]"
  ENABLE_INOTIFY yes
  APACHE_LIKE_LOG /var/log/httpd/access_log
- CACHE_FILE_MASK *.jpg|*.png|*.css|*.js|*.gif|inp/http/data/file1|*.*html|*.flv|*.svgz
+ CACHE_FILE_MASK inp/http/data/file1|*.flv|*.svgz
 }
 nocat {
    FW_CMD firewall/nodog.fw
