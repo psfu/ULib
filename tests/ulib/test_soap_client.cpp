@@ -42,12 +42,12 @@ public:
 
       AddMethod()
          {
-         U_TRACE_REGISTER_OBJECT(5, AddMethod, "", 0)
+         U_TRACE_CTOR(5, AddMethod, "", 0)
          }
 
       virtual ~AddMethod()
          {
-         U_TRACE_UNREGISTER_OBJECT(5, AddMethod)
+         U_TRACE_DTOR(5, AddMethod)
          }
 
       virtual UString getMethodName() const { return U_STRING_FROM_CONSTANT("add"); }
@@ -72,12 +72,12 @@ public:
 
       ReverseMethod()
          {
-         U_TRACE_REGISTER_OBJECT(5, ReverseMethod, "", 0)
+         U_TRACE_CTOR(5, ReverseMethod, "", 0)
          }
 
       virtual ~ReverseMethod()
          {
-         U_TRACE_UNREGISTER_OBJECT(5, ReverseMethod)
+         U_TRACE_DTOR(5, ReverseMethod)
          }
 
       virtual UString getMethodName() const { return U_STRING_FROM_CONSTANT("reverse"); }
@@ -130,7 +130,7 @@ public:
    };
 
 int
-U_EXPORT main (int argc, char* argv[])
+U_EXPORT main (int argc, char* argv[], char* env[])
 {
    U_ULIB_INIT(argv);
 

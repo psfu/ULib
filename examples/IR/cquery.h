@@ -26,17 +26,17 @@ public:
 
    WeightWord() : word_freq(0)
       {
-      U_TRACE_REGISTER_OBJECT(5, WeightWord, "")
+      U_TRACE_CTOR(5, WeightWord, "")
       }
 
    WeightWord(const UString& x, uint32_t f) : filename(x), word_freq(f)
       {
-      U_TRACE_REGISTER_OBJECT(5, WeightWord, "%.*S,%u", U_STRING_TO_TRACE(filename), word_freq)
+      U_TRACE_CTOR(5, WeightWord, "%.*S,%u", U_STRING_TO_TRACE(filename), word_freq)
       }
 
    WeightWord(const WeightWord& w) : filename(w.filename)
       {
-      U_TRACE_REGISTER_OBJECT(5, WeightWord, "%p", &w)
+      U_TRACE_CTOR(5, WeightWord, "%p", &w)
 
       U_MEMORY_TEST_COPY(w)
 
@@ -47,7 +47,7 @@ public:
 
    ~WeightWord()
       {
-      U_TRACE_UNREGISTER_OBJECT(5, WeightWord)
+      U_TRACE_DTOR(5, WeightWord)
       }
 
    // SERVICES
@@ -58,9 +58,9 @@ public:
 
       U_CHECK_MEMORY
 
-      char buffer[U_PATH_MAX];
+      char buffer[U_PATH_MAX+1];
 
-      uint32_t len = u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM(" %u \"%.*s\""), word_freq, U_STRING_TO_TRACE(filename));
+      uint32_t len = u__snprintf(buffer, U_PATH_MAX, U_CONSTANT_TO_PARAM(" %u \"%.*s\""), word_freq, U_STRING_TO_TRACE(filename));
 
       (void) data_buffer.append(buffer, len);
       }
@@ -118,10 +118,14 @@ public:
 
    // SERVICES
 
-   void run(const char* ptr, uint32_t len, UVector<WeightWord*>* vec = 0);
+   void run(const char* ptr, uint32_t len, UVector<WeightWord*>* vec = U_NULLPTR);
 
    static void        clear();
    static const char* checkQuoting(char* argv[], uint32_t& len); // NB: may be there are some difficult with quoting (MINGW)...
+
+#ifdef DEBUG
+   const char* dump(bool reset) const { return ""; }
+#endif
 
 protected:
    static UString* request;

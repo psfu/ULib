@@ -21,7 +21,7 @@ void USOAPEncoder::encodeArgument(const UString& argName, const UString& argType
 
    encodedValue.snprintf(U_CONSTANT_TO_PARAM("<%v xsi:type=\"xsd:%v\">%v</%v>"), argName.rep, argType.rep, argContent.rep, argName.rep);
 
-   arg.push(encodedValue);
+   arg.push_back(encodedValue);
 }
 
 UString USOAPEncoder::encodeMethod(URPCMethod& method, const UString& nsName) // namespace qualified element information
@@ -34,7 +34,7 @@ UString USOAPEncoder::encodeMethod(URPCMethod& method, const UString& nsName) //
 
    uint32_t num_arg = arg.size();
 
-   if      (num_arg  > 1) encodedValue = arg.join((const char*)0, 0U);
+   if      (num_arg  > 1) encodedValue = arg.join(0, (const char*)U_NULLPTR, 0U);
    else if (num_arg == 1) encodedValue = arg[0];
    else                   encodedValue.setEmpty();
 

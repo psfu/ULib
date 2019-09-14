@@ -18,16 +18,16 @@
 #define U_TIMEOUT_MS     (30L * 1000L) // 30 second connection/read timeout
 #define U_SSL_TIMEOUT_MS (10L * 1000L) // 10 second handshake       timeout
 
+#define U_STRING_MAX_SIZE (U_NOT_FOUND-sizeof(ustringrep)-4096U)
+
+#ifndef ENABLE_MEMPOOL
+#  define U_CAPACITY 2048
+#else
+#  define U_CAPACITY (U_MAX_SIZE_PREALLOCATE - (1 + sizeof(ustringrep))) // NB: the value must be a stack type boundary, see UStringRep::checkIfMReserve()...
+#endif
+
 // NB: to avoid mis-aligned we use 4 bytes...
 #define U_MINIZ_COMPRESS "\x89MNZ" // "\211MNZ" "\x89\x4d\x4e\x5a"
-
-#define U_PATH_MAX (1024U - (1 + sizeof(ustringrep)))
-// -------------------------------------------------------------------------------------------------------------------
-// NB: the value must be a stack type boundary, see UStringRep::checkIfMReserve()...
-// -------------------------------------------------------------------------------------------------------------------
-#define U_CAPACITY (U_MAX_SIZE_PREALLOCATE - (1 + sizeof(ustringrep))) // UStringRep::max_size(U_MAX_SIZE_PREALLOCATE)
-// -------------------------------------------------------------------------------------------------------------------
-#define U_STRING_MAX_SIZE (((U_NOT_FOUND-sizeof(ustringrep))/sizeof(char))-4096)
 
 // default move assignment operator
 #if defined(U_COMPILER_RVALUE_REFS) && \

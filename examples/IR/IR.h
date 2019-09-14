@@ -101,7 +101,7 @@ public:
 
       // register changes to constant database (CDB)
 
-      if (reset) (void) UFile::chdir(0, true);
+      if (reset) (void) UFile::chdir(U_NULLPTR, true);
 
       ((URDB*)cdb_names)->closeReorganize();
       ((URDB*)cdb_words)->closeReorganize();
@@ -111,15 +111,18 @@ public:
       {
       U_TRACE(5, "IR::deleteDB(%b)", brdb)
 
+      if (cdb_names->isMapped()) cdb_names->munmap();
+      if (cdb_words->isMapped()) cdb_words->munmap();
+
       if (brdb)
          {
-         delete (URDB*)cdb_names;
-         delete (URDB*)cdb_words;
+         U_DELETE((URDB*)cdb_names)
+         U_DELETE((URDB*)cdb_words)
          }
       else
          {
-         delete cdb_names;
-         delete cdb_words;
+         U_DELETE(cdb_names)
+         U_DELETE(cdb_words)
          }
 
       UApplication::exit_value = 0;

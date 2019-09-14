@@ -35,13 +35,13 @@ bool UMongoDBClient::connect(const char* phost, unsigned int _port)
       {
       const char* env_mongodb_host = (const char*) U_SYSCALL(getenv, "%S", "MONGODB_HOST");
 
-      if (env_mongodb_host == 0) U_RETURN(false);
+      if (env_mongodb_host == U_NULLPTR) U_RETURN(false);
 
       (void) host.assign(env_mongodb_host, u__strlen(env_mongodb_host, __PRETTY_FUNCTION__));
 
       const char* env_mongodb_port = (const char*) U_SYSCALL(getenv, "%S", "MONGODB_PORT");
 
-      if (env_mongodb_port) _port = atoi(env_mongodb_port);
+      if (env_mongodb_port) _port = u_atoi(env_mongodb_port);
       }
 
    uri.snprintf(U_CONSTANT_TO_PARAM("mongodb://%v:%u"), host.rep, _port ? _port : 27017);
@@ -93,12 +93,41 @@ void UMongoDBClient::readFromCursor()
 
       U_INTERNAL_DUMP("x = %V", x.rep);
 
-      vitem.push(x);
+      vitem.push_back(x);
       }
 
    if (U_SYSCALL(mongoc_cursor_error, "%p,%p", cursor, &error)) U_WARNING("mongoc_cursor_error(): %d.%d,%S", error.domain, error.code, error.message);
 
    U_SYSCALL_VOID(mongoc_cursor_destroy, "%p", cursor);
+}
+
+bool UMongoDBClient::remove(bson_t* selector)
+{
+   U_TRACE(0, "UMongoDBClient::remove(%p)", selector)
+
+   /**
+    * Parameters
+    *
+    * collection     A mongoc_collection_t
+    * flags          A mongoc_remove_flags_t
+    * selector       A bson_t containing the query to match documents.
+    * write_concern  A mongoc_write_concern_t or NULL.
+    * error          An optional location for a bson_error_t or NULL.
+    */
+
+   U_INTERNAL_ASSERT_POINTER(client)
+   U_INTERNAL_ASSERT_POINTER(collection)
+
+   bson_error_t error;
+
+   if (U_SYSCALL(mongoc_collection_remove, "%p,%p,%p,%p,%p,%b,%b,%b,%p,%p", collection, MONGOC_REMOVE_NONE, selector, U_NULLPTR, &error) == 0)
+      {
+      U_WARNING("mongoc_collection_remove(): %d.%d,%S", error.domain, error.code, error.message);
+
+      U_RETURN(false);
+      }
+
+   U_RETURN(true);
 }
 
 bool UMongoDBClient::find(bson_t* query, bson_t* projection, mongoc_query_flags_t flags, mongoc_read_prefs_t* read_prefs)
@@ -121,7 +150,11 @@ bool UMongoDBClient::find(bson_t* query, bson_t* projection, mongoc_query_flags_
     * read_prefs  A mongoc_read_prefs_t or NULL for default read preferences
     */
 
+#if MONGOC_CHECK_VERSION(1, 9, 0)
+   cursor = (mongoc_cursor_t*) U_SYSCALL(mongoc_collection_find_with_opts, "%p,%p,%p,%p", collection, query, U_NULLPTR, read_prefs);
+#else
    cursor = (mongoc_cursor_t*) U_SYSCALL(mongoc_collection_find, "%p,%d,%u,%u,%u,%p,%p,%p", collection, flags, 0, 0, 0, query, projection, read_prefs);
+#endif
 
    if (cursor)
       {
@@ -166,7 +199,7 @@ bool UMongoDBClient::findOne(const char* json, uint32_t len)
 
    if (bson)
       {
-      bool result = find(bson, 0);
+      bool result = find(bson);
 
       U_SYSCALL_VOID(bson_destroy, "%p", bson);
 
@@ -187,7 +220,7 @@ bool UMongoDBClient::insert(bson_t* doc)
 
    bson_error_t error;
 
-   if (U_SYSCALL(mongoc_collection_insert, "%p,%p,%p,%p,%p,%b,%b,%b,%p,%p", collection, MONGOC_INSERT_NONE, doc, 0, &error) == 0)
+   if (U_SYSCALL(mongoc_collection_insert, "%p,%p,%p,%p,%p,%b,%b,%b,%p,%p", collection, MONGOC_INSERT_NONE, doc, U_NULLPTR, &error) == 0)
       {
       U_WARNING("mongoc_collection_insert(): %d.%d,%S", error.domain, error.code, error.message);
 
@@ -206,7 +239,7 @@ bool UMongoDBClient::update(bson_t* query, bson_t* _update)
 
    bson_error_t error;
 
-   if (U_SYSCALL(mongoc_collection_update, "%p,%d,%p,%p,%p,%p", collection, MONGOC_UPDATE_NONE, query, _update, 0, &error) == 0)
+   if (U_SYSCALL(mongoc_collection_update, "%p,%d,%p,%p,%p,%p", collection, MONGOC_UPDATE_NONE, query, _update, U_NULLPTR, &error) == 0)
       {
       U_WARNING("mongoc_collection_update(): %d.%d,%S", error.domain, error.code, error.message);
 
@@ -246,7 +279,7 @@ bool UMongoDBClient::findAndModify(bson_t* query, bson_t* _update)
    bson_t reply;
    bson_error_t error;
 
-   if (U_SYSCALL(mongoc_collection_find_and_modify, "%p,%p,%p,%p,%p,%b,%b,%b,%p,%p", collection, query, 0, _update, 0, false, false, true, &reply, &error))
+   if (U_SYSCALL(mongoc_collection_find_and_modify, "%p,%p,%p,%p,%p,%b,%b,%b,%p,%p", collection, query, U_NULLPTR, _update, U_NULLPTR, false, false, true, &reply, &error))
       {
       UString x;
       size_t length;
@@ -259,7 +292,7 @@ bool UMongoDBClient::findAndModify(bson_t* query, bson_t* _update)
       U_INTERNAL_DUMP("x = %V", x.rep);
 
       vitem.clear();
-      vitem.push(x);
+      vitem.push_back(x);
 
       U_RETURN(true);
       }
@@ -313,7 +346,7 @@ bool UMongoDBClient::executeBulk(mongoc_bulk_operation_t* bulk)
       U_INTERNAL_DUMP("x = %V", x.rep);
 
       vitem.clear();
-      vitem.push(x);
+      vitem.push_back(x);
       }
 
    U_SYSCALL_VOID(bson_destroy, "%p", &reply);
@@ -344,6 +377,6 @@ const char* UMongoDBClient::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

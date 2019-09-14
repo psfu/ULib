@@ -18,7 +18,7 @@
 
 UXml2Txt::UXml2Txt(const UString& tag_list, bool _tag_to_exclude, bool _tag_output_also) : taglist(tag_list, "<>, ")
 {
-   U_TRACE_REGISTER_OBJECT(0, UXml2Txt, "%V,%b,%b", tag_list.rep, _tag_to_exclude, _tag_output_also)
+   U_TRACE_CTOR(0, UXml2Txt, "%V,%b,%b", tag_list.rep, _tag_to_exclude, _tag_output_also)
 
    tag_pos = 0;
    tag_match = false;
@@ -26,12 +26,12 @@ UXml2Txt::UXml2Txt(const UString& tag_list, bool _tag_to_exclude, bool _tag_outp
    tag_to_exclude  = (taglist.empty() == false ? _tag_to_exclude : false);
    tag_output_also = _tag_output_also;
 
-   UXMLParser::initParser(false, 0);
+   UXMLParser::initParser(false, U_NULLPTR);
 }
 
 UXml2Txt::~UXml2Txt()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UXml2Txt)
+   U_TRACE_DTOR(0, UXml2Txt)
 }
 
 void UXml2Txt::startElement(const XML_Char* name, const XML_Char** attrs)
@@ -41,7 +41,7 @@ void UXml2Txt::startElement(const XML_Char* name, const XML_Char** attrs)
    if (taglist.empty()) tag_match = true;
    else
       {
-      tag_pos   = taglist.find(UString(name));
+      tag_pos   = taglist.find(UString(name, u__strlen(name, __PRETTY_FUNCTION__)));
       tag_match = (tag_pos != U_NOT_FOUND);
       }
 
@@ -51,9 +51,9 @@ void UXml2Txt::startElement(const XML_Char* name, const XML_Char** attrs)
 
    if (tag_output_also)
       {
-      (void) output.push('<');
+      (void) output.push_back('<');
       (void) output.append(name);
-      (void) output.push('>');
+      (void) output.push_back('>');
       }
    else if (attrs)
       {
@@ -61,7 +61,7 @@ void UXml2Txt::startElement(const XML_Char* name, const XML_Char** attrs)
 
       for (int i = 0; attrs[i]; ++i)
          {
-         (void) output.push(' ');
+         (void) output.push_back(' ');
          (void) output.append(attrs[i]);
          }
       }
@@ -99,7 +99,7 @@ void UXml2Txt::endElement(const XML_Char* name)
       {
       (void) output.append(U_CONSTANT_TO_PARAM("</"));
       (void) output.append(name);
-      (void) output.push('>');
+      (void) output.push_back('>');
       }
 
    if (tag_match              &&
@@ -129,6 +129,6 @@ const char* UXml2Txt::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

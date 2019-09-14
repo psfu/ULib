@@ -46,17 +46,17 @@ public:
 
    UTransformCtx() : chain(5)
       {
-      U_TRACE_REGISTER_OBJECT(0, UTransformCtx, "")
+      U_TRACE_CTOR(0, UTransformCtx, "")
 
-      uri         = 0;
+      uri         = U_NULLPTR;
       status      = 0;
-      xptrExpr    = 0;
+      xptrExpr    = U_NULLPTR;
       enabledUris = TYPE_ANY;
       }
 
    ~UTransformCtx()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UTransformCtx)
+      U_TRACE_DTOR(0, UTransformCtx)
 
       if (uri)
          {
@@ -190,18 +190,18 @@ public:
 
    UReferenceCtx(int org)
       {
-      U_TRACE_REGISTER_OBJECT(0, UReferenceCtx, "%d", org)
+      U_TRACE_CTOR(0, UReferenceCtx, "%d", org)
 
-      id     = 0;
-      uri    = 0;
-      type   = 0;
+      id     = U_NULLPTR;
+      uri    = U_NULLPTR;
+      type   = U_NULLPTR;
       status = UNKNOWN;
       origin = org;
       }
 
    ~UReferenceCtx()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UReferenceCtx)
+      U_TRACE_DTOR(0, UReferenceCtx)
       }
 
 #ifdef DEBUG

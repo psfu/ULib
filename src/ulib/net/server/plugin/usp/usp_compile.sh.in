@@ -1,26 +1,88 @@
 #!/bin/sh
 
 # ULib - C++ application development framework
-# Version: @ULIB_VERSION@
+#
+# Version....: @ULIB_VERSION@
+# USP_LIBS...: @USP_LIBS@
+# USP_FLAGS..: @USP_FLAGS@
+# USP_LDFLAGS: @USP_LDFLAGS@
+#
+# Ex: usp_compile.sh -i /home/user/project/include -o /home/user/project/build <file.usp> so
+#
+# -i local include directory
+# -o output filepath for the .so
+#
+# It would be best if usp_compile copied the .usp to the build directory first and then compiled it.
+# This would prevent the source directory from being polluted and ensures that the usp file is in the build directory for userver to alias. 
 
-prefix=@prefix@
-libdir=@libdir@
-includedir=@includedir@
-exec_prefix=@exec_prefix@
+local_build=""
+local_includedir=""
+while getopts "i:o:" opt; do
+    case $opt in
+        i)
+	         local_includedir=-I$OPTARG
+	         ;;
+        o)
+	         local_build=$OPTARG
+	         ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            exit 1
+            ;;
+        :)
+            echo "Option -$OPTARG requires an argument." >&2
+            exit 1
+            ;;
+    esac
+done
+shift $(( OPTIND - 1 ))
+
+if [ -z "$1" ]; then
+	print "Usage: `basename $0` [ -i (local include directory) ] [ -o (output filepath for the .so) ] <file.usp> [so|dll]"
+fi
 
 dirn=`dirname $1`
-basen=`basename $1`
+basen=$(basename $1 .usp)
+
+file="$dirn/$basen"
+
+if [ -n "$local_build" ]; then
+	cp $file.usp $local_build
+	file=$basen
+	dirn=$local_build
+	cd $local_build
+fi
 
 libsuffix=$2
 test "$libsuffix" || libsuffix=so
 
-export UMEMPOOL="0,0,0,48,-20,-20,-20,-20,0"
-export PATH="/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin"
+if [ -d .libs ]; then
+	cp -a .libs libs.orig
+fi
 
-${prefix}/bin/usp_translator $1.usp &&
-${prefix}/bin/usp_libtool.sh --silent --tag=CXX --mode=compile \
-	@CXX@ -I${includedir} -DHAVE_CONFIG_H @CPPFLAGS@ @CXXFLAGS@ @USP_FLAGS@ -MT $1.lo -MD -MP -c -o $1.lo $1.cpp &&
-${prefix}/bin/usp_libtool.sh --silent --tag=CXX --mode=link \
-	@CXX@ @CPPFLAGS@ @LDFLAGS@ @USP_LDFLAGS@ -o $1.la -rpath ${prefix}/libexec/ulib/usp \
-	-module -export-dynamic -avoid-version -no-undefined $1.lo @USP_LIBS@ -l@ULIB@ @ULIB_LIBS@ &&
-mv $1.usp ${dirn}/.libs; rm -rf $1.d $1.la $1.lo $1.o $1.cpp; mv ${dirn}/.libs/${basen}.usp ${dirn}/.libs/${basen}.$libsuffix ${dirn}; rm -rf ${dirn}/.libs
+if [ ! -d @ULIB_PREFIXDIR@/include/ulib ]; then
+	ULIB=../../../../lib@ULIB@.la
+	USP_TRANSLATOR=./usp_translator
+	USP_LIBTOOL=../../../../../../libtool
+	ULIB_INCLUDE=-I../../../../../../include
+else
+	ULIB='@ULIB_PREFIXDIR@/lib/lib@ULIB@.la'
+	ULIB_INCLUDE=-I@ULIB_PREFIXDIR@/include
+	USP_LIBTOOL=@ULIB_PREFIXDIR@/bin/usp_libtool.sh
+	USP_TRANSLATOR=@ULIB_PREFIXDIR@/bin/usp_translator
+fi
+
+export UMEMPOOL="0,0,0,48,-20,-20,-20,-20,0"
+export PATH="/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin:@ULIB_PREFIXDIR@/bin"
+
+${USP_TRANSLATOR} ${local_includedir} $file.usp &&
+${USP_LIBTOOL} --silent --tag=CXX --mode=compile \
+	@CXX@ ${local_includedir} ${ULIB_INCLUDE} -DHAVE_CONFIG_H @CPPFLAGS@ @CXXFLAGS@ @USP_FLAGS@ ${USP_FLAGS} -MT $basen.lo -MD -MP -c -o $basen.lo $basen.cpp &&
+${USP_LIBTOOL} --silent --tag=CXX --mode=link \
+	@CXX@ @CPPFLAGS@ @LDFLAGS@ @USP_LDFLAGS@ ${USP_LDFLAGS} -o $basen.la -rpath @ULIB_MODULEDIR@/usp \
+	-module -export-dynamic -avoid-version -no-undefined $basen.lo @USP_LIBS@ ${USP_LIBS} ${ULIB} @ULIB_LIBS@ &&
+mv $file.usp .libs; rm -rf $basen.d $basen.la $basen.lo $basen.o $basen.cpp; mv .libs/${basen}.usp .libs/${basen}.${libsuffix} ${dirn}; rm -rf .libs
+
+if [ -d libs.orig ]; then
+	mv libs.orig .libs
+fi

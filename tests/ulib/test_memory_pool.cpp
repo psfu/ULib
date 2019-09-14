@@ -38,7 +38,6 @@ static void print_size()
    U_PRINT_SIZEOF(UFtpClient);
 // U_PRINT_SIZEOF(UFuncSlot);
    U_PRINT_SIZEOF(UHashMap<UString>);
-   U_PRINT_SIZEOF(UHashMapNode);
    U_PRINT_SIZEOF(UHttpClient<UTCPSocket>);
    U_PRINT_SIZEOF(UIPAddress);
 #ifdef HAVE_LDAP
@@ -206,7 +205,7 @@ U_EXPORT main(int argc, char** argv)
 #  define U_NUM_ENTRY_MEM_BLOCK 32
 
    int i, j, k;
-   int n = U_NUM_ENTRY_MEM_BLOCK * (argc > 1 ? atoi(argv[1]) : 1);
+   int n = U_NUM_ENTRY_MEM_BLOCK * (argc > 1 ? u_atoi(argv[1]) : 1);
 
    char* vptr[n];
    UString* obj[n];
@@ -223,7 +222,7 @@ U_EXPORT main(int argc, char** argv)
             {
             vptr[k] = new char[3 << j];
 
-            U_NEW(UString, obj[k], UString(U_CONSTANT_TO_PARAM("allocated")));
+            U_NEW_STRING(obj[k], UString(U_CONSTANT_TO_PARAM("allocated")));
             }
 
          for (k = 0; k < n; ++k)

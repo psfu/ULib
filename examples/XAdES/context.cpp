@@ -32,70 +32,70 @@ void UTransformCtx::registerDefault()
 
    U_INTERNAL_ASSERT_POINTER(enabledTransforms)
 
-   enabledTransforms->push(UString(UTranformBase64::_name));               // "base64"
-   enabledTransforms->push(UString(UTranformBase64::_href));
+   enabledTransforms->push_back(UString(UTranformBase64::_name, strlen(UTranformBase64::_name)));               // "base64"
+   enabledTransforms->push_back(UString(UTranformBase64::_href, strlen(UTranformBase64::_href)));
 
-   enabledTransforms->push(UString(UTranformInclC14N::_name));             // "c14n"
-   enabledTransforms->push(UString(UTranformInclC14N::_href));
+   enabledTransforms->push_back(UString(UTranformInclC14N::_name, strlen(UTranformInclC14N::_name)));             // "c14n"
+   enabledTransforms->push_back(UString(UTranformInclC14N::_href, strlen(UTranformInclC14N::_href)));
 
-   enabledTransforms->push(UString(UTranformXPointer::_name));             // "xpointer"
-   enabledTransforms->push(UString(UTranformXPointer::_href));
+   enabledTransforms->push_back(UString(UTranformXPointer::_name, strlen(UTranformXPointer::_name)));             // "xpointer"
+   enabledTransforms->push_back(UString(UTranformXPointer::_href, strlen(UTranformXPointer::_href)));
 
    /*
-   enabledTransforms->push(UString(UTranformEnveloped::_name));            // "enveloped-signature"
-   enabledTransforms->push(UString(UTranformInclC14NWithComment::_name));  // "c14n-with-comments"
-   enabledTransforms->push(UString(UTranformInclC14N11::_name));           // "c14n11"
-   enabledTransforms->push(UString(UTranformInclC14N11WithComment::_name));// "c14n11-with-comments"
-   enabledTransforms->push(UString(UTranformExclC14N::_name));             // "exc-c14n"
-   enabledTransforms->push(UString(UTranformExclC14NWithComment::_name));  // "exc-c14n-with-comments"
-   enabledTransforms->push(UString(UTranformXPath::_name));                // "xpath"
-   enabledTransforms->push(UString(UTranformXPath2::_name));               // "xpath2"
-   enabledTransforms->push(UString(UTranformXslt::_name));                 // "xslt"
+   enabledTransforms->push_back(UString(UTranformEnveloped::_name));            // "enveloped-signature"
+   enabledTransforms->push_back(UString(UTranformInclC14NWithComment::_name));  // "c14n-with-comments"
+   enabledTransforms->push_back(UString(UTranformInclC14N11::_name));           // "c14n11"
+   enabledTransforms->push_back(UString(UTranformInclC14N11WithComment::_name));// "c14n11-with-comments"
+   enabledTransforms->push_back(UString(UTranformExclC14N::_name));             // "exc-c14n"
+   enabledTransforms->push_back(UString(UTranformExclC14NWithComment::_name));  // "exc-c14n-with-comments"
+   enabledTransforms->push_back(UString(UTranformXPath::_name));                // "xpath"
+   enabledTransforms->push_back(UString(UTranformXPath2::_name));               // "xpath2"
+   enabledTransforms->push_back(UString(UTranformXslt::_name));                 // "xslt"
    */
 
-   enabledTransforms->push(UString(UTranformSha1::_name));                 // "sha1"
-   enabledTransforms->push(UString(UTranformSha1::_href));  
+   enabledTransforms->push_back(UString(UTranformSha1::_name, strlen(UTranformSha1::_name)));                 // "sha1"
+   enabledTransforms->push_back(UString(UTranformSha1::_href, strlen(UTranformSha1::_href)));  
 
-   enabledTransforms->push(UString(UTranformSha256::_name));               // "sha256"
-   enabledTransforms->push(UString(UTranformSha256::_href));  
+   enabledTransforms->push_back(UString(UTranformSha256::_name, strlen(UTranformSha256::_name)));               // "sha256"
+   enabledTransforms->push_back(UString(UTranformSha256::_href, strlen(UTranformSha256::_href)));  
 
-   enabledTransforms->push(UString(UTranformRsaMd5::_name));               // "rsa-md5"
-   enabledTransforms->push(UString(UTranformRsaMd5::_href));
+   enabledTransforms->push_back(UString(UTranformRsaMd5::_name, strlen(UTranformRsaMd5::_name)));               // "rsa-md5"
+   enabledTransforms->push_back(UString(UTranformRsaMd5::_href, strlen(UTranformRsaMd5::_href)));
 
-   enabledTransforms->push(UString(UTranformRsaSha1::_name));              // "rsa-sha1"
-   enabledTransforms->push(UString(UTranformRsaSha1::_href));
+   enabledTransforms->push_back(UString(UTranformRsaSha1::_name, strlen(UTranformRsaSha1::_name)));              // "rsa-sha1"
+   enabledTransforms->push_back(UString(UTranformRsaSha1::_href, strlen(UTranformRsaSha1::_href)));
 
-   enabledTransforms->push(UString(UTranformRsaSha256::_name));            // "rsa-sha256"
-   enabledTransforms->push(UString(UTranformRsaSha256::_href));
+   enabledTransforms->push_back(UString(UTranformRsaSha256::_name, strlen(UTranformRsaSha256::_name)));            // "rsa-sha256"
+   enabledTransforms->push_back(UString(UTranformRsaSha256::_href, strlen(UTranformRsaSha256::_href)));
 
    /*
-   enabledTransforms->push(UString(UTranform::_name));                     // "aes128-cbc"
-   enabledTransforms->push(UString(UTranform::_name));                     // "aes192-cbc"
-   enabledTransforms->push(UString(UTranform::_name));                     // "aes256-cbc"
-   enabledTransforms->push(UString(UTranform::_name));                     // "kw-aes128"
-   enabledTransforms->push(UString(UTranform::_name));                     // "kw-aes192"
-   enabledTransforms->push(UString(UTranform::_name));                     // "kw-aes256"
-   enabledTransforms->push(UString(UTranform::_name));                     // "tripledes-cbc"
-   enabledTransforms->push(UString(UTranform::_name));                     // "kw-tripledes"
-   enabledTransforms->push(UString(UTranform::_name));                     // "dsa-sha1"
-   enabledTransforms->push(UString(UTranform::_name));                     // "hmac-md5"
-   enabledTransforms->push(UString(UTranform::_name));                     // "hmac-ripemd160"
-   enabledTransforms->push(UString(UTranform::_name));                     // "hmac-sha1"
-   enabledTransforms->push(UString(UTranform::_name));                     // "hmac-sha224"
-   enabledTransforms->push(UString(UTranform::_name));                     // "hmac-sha256"
-   enabledTransforms->push(UString(UTranform::_name));                     // "hmac-sha384"
-   enabledTransforms->push(UString(UTranform::_name));                     // "hmac-sha512"
-   enabledTransforms->push(UString(UTranform::_name));                     // "md5"
-   enabledTransforms->push(UString(UTranform::_name));                     // "ripemd160"
-   enabledTransforms->push(UString(UTranform::_name));                     // "rsa-ripemd160"
-   enabledTransforms->push(UString(UTranform::_name));                     // "rsa-sha224"
-   enabledTransforms->push(UString(UTranform::_name));                     // "rsa-sha384"
-   enabledTransforms->push(UString(UTranform::_name));                     // "rsa-sha512"
-   enabledTransforms->push(UString(UTranform::_name));                     // "rsa-1_5"
-   enabledTransforms->push(UString(UTranform::_name));                     // "rsa-oaep-mgf1p"
-   enabledTransforms->push(UString(UTranform::_name));                     // "sha224"
-   enabledTransforms->push(UString(UTranform::_name));                     // "sha384"
-   enabledTransforms->push(UString(UTranform::_name));                     // "sha512"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "aes128-cbc"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "aes192-cbc"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "aes256-cbc"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "kw-aes128"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "kw-aes192"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "kw-aes256"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "tripledes-cbc"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "kw-tripledes"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "dsa-sha1"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "hmac-md5"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "hmac-ripemd160"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "hmac-sha1"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "hmac-sha224"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "hmac-sha256"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "hmac-sha384"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "hmac-sha512"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "md5"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "ripemd160"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "rsa-ripemd160"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "rsa-sha224"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "rsa-sha384"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "rsa-sha512"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "rsa-1_5"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "rsa-oaep-mgf1p"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "sha224"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "sha384"
+   enabledTransforms->push_back(UString(UTranform::_name));                     // "sha512"
    */
 }
 
@@ -107,7 +107,7 @@ UBaseTransform* UTransformCtx::findByHref(const char* href)
 
    uint32_t i = enabledTransforms->find(href, u__strlen(href, __PRETTY_FUNCTION__));
 
-   if (i == U_NOT_FOUND) U_RETURN_POINTER(0, UBaseTransform);
+   if (i == U_NOT_FOUND) U_RETURN_POINTER(U_NULLPTR, UBaseTransform);
 
    UBaseTransform* ptr;
 
@@ -121,7 +121,7 @@ UBaseTransform* UTransformCtx::findByHref(const char* href)
       case 11: U_NEW(UTranformRsaMd5,    ptr, UTranformRsaMd5);    break; // "rsa-md5"
       case 13: U_NEW(UTranformRsaSha1,   ptr, UTranformRsaSha1);   break; // "rsa-sha1"
       case 15: U_NEW(UTranformRsaSha256, ptr, UTranformRsaSha256); break; // "rsa-sha256"
-      default:                           ptr = 0;                  break;
+      default:                           ptr = U_NULLPTR;          break;
       }
 
    U_INTERNAL_ASSERT_POINTER(ptr)
@@ -169,11 +169,11 @@ UBaseTransform* UTransformCtx::nodeRead(xmlNodePtr node, int usage)
             U_RETURN_POINTER(id, UBaseTransform);
             }
 
-         delete id;
+         U_DELETE(id)
          }
       }
 
-   U_RETURN_POINTER(0, UBaseTransform);
+   U_RETURN_POINTER(U_NULLPTR, UBaseTransform);
 }
 
 // Reads transforms from the <dsig:Transform/> children of the @node and 
@@ -190,9 +190,9 @@ bool UTransformCtx::nodesListRead(xmlNodePtr node, int usage)
       {
       UBaseTransform* id = nodeRead(cur, usage);
 
-      if (id == 0) U_RETURN(false);
+      if (id == U_NULLPTR) U_RETURN(false);
 
-      chain.push(id);
+      chain.push_back(id);
 
       cur = UXML2Node::getNextSibling(cur->next);
       }
@@ -204,24 +204,24 @@ bool UTransformCtx::nodesListRead(xmlNodePtr node, int usage)
 
 UDSIGContext::UDSIGContext()
 {
-   U_TRACE_REGISTER_OBJECT(0, UDSIGContext, "")
+   U_TRACE_CTOR(0, UDSIGContext, "")
 
-   U_INTERNAL_ASSERT_EQUALS(pthis, 0)
+   U_INTERNAL_ASSERT_EQUALS(pthis, U_NULLPTR)
 
-   id                   = 0;
+   id                   = U_NULLPTR;
    pthis                = this;
    status               = UReferenceCtx::UNKNOWN;  // the <dsig:Signature/> processing status.
    operation            = 0;                       // the operation: sign or verify.
-   signMethod           = 0;                       // the pointer to signature transform.
-   c14nMethod           = 0;                       // the pointer to c14n transform.
-   keyInfoNode          = 0;                       // the pointer to <dsig:keyInfo/> node.
-   signValueNode        = 0;                       // the pointer to <dsig:SignatureValue/> node.
-   signedInfoNode       = 0;                       // the pointer to <dsig:signedInfo/> node.
+   signMethod           = U_NULLPTR;               // the pointer to signature transform.
+   c14nMethod           = U_NULLPTR;               // the pointer to c14n transform.
+   keyInfoNode          = U_NULLPTR;               // the pointer to <dsig:keyInfo/> node.
+   signValueNode        = U_NULLPTR;               // the pointer to <dsig:SignatureValue/> node.
+   signedInfoNode       = U_NULLPTR;               // the pointer to <dsig:signedInfo/> node.
    enabledReferenceUris = 0;                       // the URI types allowed for <dsig:Reference/> node.
 
    // Registers the default transforms compiled-in handlers.
 
-   U_INTERNAL_ASSERT_EQUALS(UTransformCtx::enabledTransforms, 0)
+   U_INTERNAL_ASSERT_EQUALS(UTransformCtx::enabledTransforms, U_NULLPTR)
 
    U_NEW(UVector<UString>, UTransformCtx::enabledTransforms, UVector<UString>);
 
@@ -229,7 +229,7 @@ UDSIGContext::UDSIGContext()
 
    // Registers the default compiled-in I/O handlers.
 
-   U_INTERNAL_ASSERT_EQUALS(UTranformInputURI::allIOCallbacks, 0)
+   U_INTERNAL_ASSERT_EQUALS(UTranformInputURI::allIOCallbacks, U_NULLPTR)
 
    U_NEW(UVector<UIOCallback*>, UTranformInputURI::allIOCallbacks, UVector<UIOCallback*>);
 
@@ -240,7 +240,7 @@ UDSIGContext::UDSIGContext()
 
    U_NEW(UIOCallback, p, UIOCallback(xmlIOFTPMatch, xmlIOFTPOpen, xmlIOFTPRead, xmlIOFTPClose));
 
-   UTranformInputURI::allIOCallbacks->push(p);
+   UTranformInputURI::allIOCallbacks->push_back(p);
 #endif
 
 #ifdef LIBXML_HTTP_ENABLED
@@ -248,19 +248,19 @@ UDSIGContext::UDSIGContext()
 
    U_NEW(UIOCallback, p, UIOCallback(xmlIOHTTPMatch, xmlIOHTTPOpen, xmlIOHTTPRead, xmlIOHTTPClose));
 
-   UTranformInputURI::allIOCallbacks->push(p);
+   UTranformInputURI::allIOCallbacks->push_back(p);
 #endif
 
    U_NEW(UIOCallback, p, UIOCallback(xmlFileMatch, xmlFileOpen, xmlFileRead, xmlFileClose));
 
-   UTranformInputURI::allIOCallbacks->push(p);
+   UTranformInputURI::allIOCallbacks->push_back(p);
 }
 
 UDSIGContext::~UDSIGContext()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UDSIGContext)
+   U_TRACE_DTOR(0, UDSIGContext)
 
-   delete UTransformCtx::enabledTransforms;
+   U_DELETE(UTransformCtx::enabledTransforms)
 
 #ifdef LIBXML_FTP_ENABLED       
    U_SYSCALL_VOID_NO_PARAM(xmlNanoFTPCleanup);
@@ -269,7 +269,7 @@ UDSIGContext::~UDSIGContext()
    U_SYSCALL_VOID_NO_PARAM(xmlNanoHTTPCleanup);
 #endif
 
-   delete UTranformInputURI::allIOCallbacks;
+   U_DELETE(UTranformInputURI::allIOCallbacks)
 }
 
 /**
@@ -318,7 +318,7 @@ bool UDSIGContext::processManifestNode(xmlNodePtr node)
 
       /* add to the list */
 
-      manifestReferences.push(ref);
+      manifestReferences.push_back(ref);
 
       /* process */
 
@@ -440,7 +440,7 @@ bool UDSIGContext::processSignatureNode(xmlNodePtr signature, const char*& alg, 
    U_TRACE(0, "UDSIGContext::processSignatureNode(%p,%p,%.*S)", signature, alg, U_STRING_TO_TRACE(data))
 
    U_INTERNAL_ASSERT_POINTER(signature)
-   U_INTERNAL_ASSERT_EQUALS(signValueNode, 0)
+   U_INTERNAL_ASSERT_EQUALS(signValueNode, U_NULLPTR)
    U_INTERNAL_ASSERT(operation == UBaseTransform::VERIFY)
    U_INTERNAL_ASSERT_EQUALS(status, UReferenceCtx::UNKNOWN)
 
@@ -476,7 +476,7 @@ bool UDSIGContext::processSignatureNode(xmlNodePtr signature, const char*& alg, 
    else
       {
       cur         = keyInfoNode;
-      keyInfoNode = 0;
+      keyInfoNode = U_NULLPTR;
       }
 
    // next nodes are optional Object nodes
@@ -590,7 +590,7 @@ bool UDSIGContext::verify(UXML2Document& document, const char*& alg, UString& da
 
    /* read signature info */
 
-   if (signature == 0 ||
+   if (signature == U_NULLPTR ||
        processSignatureNode(signature, alg, data) == false) U_RETURN(false);
 
    /* references processing might change the status */
@@ -665,16 +665,16 @@ bool UReferenceCtx::processNode(xmlNodePtr node)
       {
       UBaseTransform* digestMethod = UTransformCtx::nodeRead(cur, UBaseTransform::DIGEST);
 
-      if (digestMethod == 0) U_RETURN(false);
+      if (digestMethod == U_NULLPTR) U_RETURN(false);
 
-      transformCtx.chain.push(digestMethod);
+      transformCtx.chain.push_back(digestMethod);
 
       cur = UXML2Node::getNextSibling(cur->next);
       }
 
    // last node is required DigestValue
 
-   xmlNodePtr digestValueNode = 0;
+   xmlNodePtr digestValueNode = U_NULLPTR;
 
    if (UXML2Node::checkNodeName(cur, (const xmlChar*)"DigestValue",
                                      (const xmlChar*)"http://www.w3.org/2000/09/xmldsig#"))
@@ -688,7 +688,7 @@ bool UReferenceCtx::processNode(xmlNodePtr node)
 
    if (cur) U_RETURN(false);
 
-   if (digestValueNode == 0) U_RETURN(false);
+   if (digestValueNode == U_NULLPTR) U_RETURN(false);
 
    // verify Reference node content
 
@@ -753,16 +753,16 @@ bool UDSIGContext::processSignedInfoNode(const char*& alg, UString& data)
 
    c14nMethod = UTransformCtx::nodeRead(cur, UBaseTransform::C14N);
 
-   if (c14nMethod == 0) U_RETURN(false);
+   if (c14nMethod == U_NULLPTR) U_RETURN(false);
 
-   transformCtx.chain.push(c14nMethod);
+   transformCtx.chain.push_back(c14nMethod);
 
    alg = UXML2Node::getProp(cur, "Algorithm");
 
-   unsigned char** inclusive_namespaces = 0;
+   unsigned char** inclusive_namespaces = U_NULLPTR;
 
    int mode          = (strncmp(alg, U_CONSTANT_TO_PARAM("http://www.w3.org/TR/2001/REC-xml-c14n-20010315")) == 0 ? 0 : 2),
-       with_comments = (mode == 2 && strstr(alg, "#WithComments") != 0);
+       with_comments = (mode == 2 && strstr(alg, "#WithComments") != U_NULLPTR);
 
    // next node is required SignatureMethod
 
@@ -773,13 +773,13 @@ bool UDSIGContext::processSignedInfoNode(const char*& alg, UString& data)
 
    signMethod = UTransformCtx::nodeRead(cur, UBaseTransform::SIGNATURE);
 
-   if (signMethod == 0) U_RETURN(false);
+   if (signMethod == U_NULLPTR) U_RETURN(false);
 
    alg = UXML2Node::getProp(cur, "Algorithm");
    alg = strchr(alg, '-') + 1;
    alg = strchr(alg, '-') + 1;
 
-   transformCtx.chain.push(signMethod);
+   transformCtx.chain.push_back(signMethod);
 
    signMethod->operation = UDSIGContext::pthis->operation;
 
@@ -798,7 +798,7 @@ bool UDSIGContext::processSignedInfoNode(const char*& alg, UString& data)
 
       /* add to the list */
 
-      signedInfoReferences.push(ref);
+      signedInfoReferences.push_back(ref);
 
       /* process */
 
@@ -874,7 +874,7 @@ bool UTransformCtx::setURI(const char* _uri, xmlNodePtr node)
 
    int uriType = 0;
 
-   if (          _uri  == 0 ||
+   if (          _uri  == U_NULLPTR ||
        u__strlen(_uri, __PRETTY_FUNCTION__) == 0)
       {
       uriType = EMPTY;
@@ -902,7 +902,7 @@ bool UTransformCtx::setURI(const char* _uri, xmlNodePtr node)
 
    const char* xptr = strchr(_uri, '#');
 
-   if (xptr == 0)
+   if (xptr == U_NULLPTR)
       {
       UBaseTransform* uriTransform;
 
@@ -996,7 +996,7 @@ const char* UTransformCtx::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* UReferenceCtx::dump(bool reset) const
@@ -1011,7 +1011,7 @@ const char* UReferenceCtx::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* UDSIGContext::dump(bool reset) const
@@ -1026,7 +1026,7 @@ const char* UDSIGContext::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 #endif

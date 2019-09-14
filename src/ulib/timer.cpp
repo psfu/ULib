@@ -17,23 +17,6 @@ int     UTimer::mode;
 UTimer* UTimer::pool;
 UTimer* UTimer::first;
 
-void UTimer::init(Type _mode)
-{
-   U_TRACE(0, "UTimer::init(%d)", _mode)
-
-   if (u_start_time     == 0 &&
-       u_setStartTime() == false)
-      {
-      U_ERROR("UTimer::init(%d): system date not updated", _mode);
-      }
-
-   if ((mode = _mode) != NOSIGNAL)
-      {
-           if (_mode ==  SYNC) UInterrupt::setHandlerForSignal(SIGALRM, (sighandler_t)UTimer::handlerAlarm);
-      else if (_mode == ASYNC) UInterrupt::insert(             SIGALRM, (sighandler_t)UTimer::handlerAlarm); // async signal
-      }
-}
-
 U_NO_EXPORT void UTimer::insertEntry()
 {
    U_TRACE_NO_PARAM(0, "UTimer::insertEntry()")
@@ -62,7 +45,7 @@ U_NO_EXPORT void UTimer::insertEntry()
       {
       // The list is empty
 
-      next  = 0;
+      next  = U_NULLPTR;
       first = this;
       }
 
@@ -79,7 +62,7 @@ void UTimer::insert(UEventTime* a)
 
    UTimer* item;
 
-   if (pool == 0 ||
+   if (pool == U_NULLPTR ||
        mode != NOSIGNAL)
       {
       U_NEW(UTimer, item, UTimer);
@@ -95,6 +78,12 @@ void UTimer::insert(UEventTime* a)
    (item->alarm = a)->setTimeToExpire();
 
    item->insertEntry();
+
+#ifdef DEBUG
+   item = first;
+
+   for (uint32_t i = 0; item; ++i, item = item->next) U_INTERNAL_DUMP("item[%u] = %p", i, item)
+#endif
 }
 
 void UTimer::callHandlerTimeout()
@@ -220,7 +209,7 @@ void UTimer::setTimer()
    U_INTERNAL_ASSERT(UInterrupt::timerval.it_value.tv_sec  >= 0 &&
                      UInterrupt::timerval.it_value.tv_usec >= 0)
 
-   (void) U_SYSCALL(setitimer, "%d,%p,%p", ITIMER_REAL, &UInterrupt::timerval, 0);
+   (void) U_SYSCALL(setitimer, "%d,%p,%p", ITIMER_REAL, &UInterrupt::timerval, U_NULLPTR);
 }
 
 void UTimer::erase(UEventTime* palarm)
@@ -254,34 +243,49 @@ void UTimer::clear()
 
    U_INTERNAL_DUMP("mode = %d first = %p pool = %p", mode, first, pool)
 
+   UTimer* next;
+   UTimer* item;
+
    if (mode != NOSIGNAL)
       {
       UInterrupt::timerval.it_value.tv_sec  =
       UInterrupt::timerval.it_value.tv_usec = 0L;
 
-      (void) U_SYSCALL(setitimer, "%d,%p,%p", ITIMER_REAL, &UInterrupt::timerval, 0);
+      (void) U_SYSCALL(setitimer, "%d,%p,%p", ITIMER_REAL, &UInterrupt::timerval, U_NULLPTR);
       }
 
    if (first)
       {
-      for (UTimer* item = first; item; item = item->next)
-         {
-         delete item->alarm;
-         delete item;
-         }
+      next = first;
+             first = U_NULLPTR;
 
-      first = 0;
+      do {
+         item = next;
+                next = item->next;
+
+         U_INTERNAL_DUMP("item->alarm = %p next = %p", item->alarm, next)
+
+      // U_DELETE(item->alarm)
+         U_DELETE(item)
+         }
+      while (next);
       }
 
    if (pool)
       {
-      for (UTimer* item = pool; item; item = item->next)
-         {
-         delete item->alarm;
-         delete item;
-         }
+      next = pool;
+             pool = U_NULLPTR;
 
-      pool = 0;
+      do {
+         item = next;
+                next = item->next;
+
+         U_INTERNAL_DUMP("item->alarm = %p next = %p", item->alarm, next)
+
+      // U_DELETE(item->alarm)
+         U_DELETE(item)
+         }
+      while (next);
       }
 }
 
@@ -372,7 +376,7 @@ const char* UTimer::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #  endif
 #endif

@@ -12,10 +12,13 @@
 #endif
 
 #ifdef U_STDCPP_ENABLE
-#undef min
+#  undef min
 using std::min;
-#include <fstream>
-#include <iomanip>
+#  include <fstream>
+#  include <iomanip>
+#  if defined(HAVE_CXX11)
+#  include <unordered_map>
+#  endif
 #endif
 
 #define TEST_MEMMOVE
@@ -219,12 +222,12 @@ static void test_capacity_01()
    U_ASSERT( sz01 > 0 )
 
    sz01 = str01.size() + 5;
-   str01.resize(sz01);
+   str01.resize(sz01, '\0');
    sz02 = str01.size();
    U_ASSERT( sz01 == sz02 )
 
    sz01 = str01.size() - 5;
-   str01.resize(sz01);
+   str01.resize(sz01, '\0');
    sz02 = str01.size();
    U_ASSERT( sz01 == sz02 )
 
@@ -248,12 +251,12 @@ static void test_capacity_01()
    U_ASSERT( sz03 > 0 )
 
    sz03 = str02.size() + 5;
-   str02.resize(sz03);
+   str02.resize(sz03, '\0');
    sz04 = str02.size();
    U_ASSERT( sz03 == sz04 )
 
    sz03 = str02.size() - 5;
-   str02.resize(sz03);
+   str02.resize(sz03, '\0');
    sz04 = str02.size();
    U_ASSERT( sz03 == sz04 )
 
@@ -1485,23 +1488,191 @@ void U_EXPORT check_mmap(uint32_t map_size)
 #define U_STR3 "ã~C~Uã~C¬ã~C¼ã~C| ã~C¯ã~C¼ã~B¯ã~A®ã~C~Yã~C³ã~C~Aã~C~^ã~C¼ã~B¯"
             // "\343~C~U\343~C\254\343~C\274\343~C| \343~C\257\343~C\274\343~B\257\343~A\256\343~C~Y\343~C\263\343~C~A\343~C~^\343~C\274\343~B\257"
 
+//#define U_USE_STRTOD // Parse number in full precision (but slower)
+
 int
-U_EXPORT main (int argc, char* argv[])
+U_EXPORT main(int argc, char* argv[])
 {
    U_ULIB_INIT(argv);
 
    U_TRACE(5, "main(%d)", argc)
 
+#if defined(U_STDCPP_ENABLE) && defined(HAVE_CXX11)
+   std::unordered_map<UString, uint64_t> arounds;
+#endif
+
+   const char* ptr = ".banner.swpx" + U_CONSTANT_SIZE(".banner.swpx") - sizeof(".swp");
+
+   U_INTERNAL_DUMP("u_isSuffixSwap(%S)", ptr)
+
+   U_INTERNAL_ASSERT(u_isSuffixSwap(ptr))
+
+   /*
+   double val1 = U_STRING_FROM_CONSTANT("0").strtod();
+   u__printf(1, U_CONSTANT_TO_PARAM("0 = %lf %g"), val1, val1);
+   UString data = U_STRING_FROM_CONSTANT("0$&$&$&$&$&$&$&$&$&$&fileName");
+   UVector<UString> vec(data, "$&$&$");
+   for (auto part : vec) cout << "part = " << part << '\n';
+   exit(0);
+   */
+
+   U_ASSERT( U_STRING_FROM_CONSTANT("0.0").strtod() == 0.0 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1.0").strtod() == 1.0 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-1.0").strtod() == -1.0 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-0.0").strtod() == -0.0 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1.89").strtod() == 1.89 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1e30").strtod() == 1e30 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1000").strtod() == 1000.0 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1.2345").strtod() == 1.2345 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("5e-324").strtod() == 5e-324 ) // Min subnormal positive double
+   U_ASSERT( U_STRING_FROM_CONSTANT("-1E-10").strtod() == -1e-10 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("0.9199").strtod() == 0.9199 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("0.0000001").strtod() == 1e-7 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("0.000001").strtod() == 0.000001 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-1E10").strtod() == -10000000000 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-1E10").strtod() == -10000000000 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-1e10").strtod() == -10000000000 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-1E+10").strtod() == -10000000000 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1.2345678").strtod() == 1.2345678 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1234567.8").strtod() == 1234567.8 )
+   U_ASSERT( U_STRING_FROM_CONSTANT(".123456789").strtod() == 0.123456789 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("0.123456789012").strtod() == 0.123456789012 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("3.50582559e-71").strtod() == 3.50582559e-71 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-79.39773355813419").strtod() == -79.39773355813419 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-1.79769e+308").strtod() == -1.7976900000000001e+308 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("18014398509481993.0").strtod() == 18014398509481993.0 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1.234567890123456e30").strtod() == 1.234567890123456e30 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-9223372036854775807").strtod() == -9223372036854775807 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1.234567890123456e30").strtod() == 1.234567890123456e30 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("18446744073709551616").strtod() == 1.8446744073709552e+19 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("45913141877270640000.0").strtod() == 4.5913141877270643e+19 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("-9223372036854775809").strtod() == -9.223372036854775809e+18 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("2.2250738585072014e-308").strtod() == 2.2250738585072014e-308 ) // Min normal positive double
+   U_ASSERT( U_STRING_FROM_CONSTANT("10141204801825834086073718800384").strtod() == 1.0141204801825834e+31 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("10141204801825835211973625643008").strtod() == 1.0141204801825835e+31 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("10141204801825834649023672221696").strtod() == 1.0141204801825835e+31 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("5708990770823838890407843763683279797179383808").strtod() == 5.7089907708238389e+45 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("5708990770823839524233143877797980545530986496").strtod() == 5.7089907708238395e+45 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("5708990770823839207320493820740630171355185152").strtod() == 5.7089907708238395e+45 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").strtod() == 1e+308 )
+
+   U_ASSERT( U_STRING_FROM_CONSTANT("-2.22507e-308").strtod() == -2.2250699999999998e-308 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("7.8459735791271921E65").strtod() == 7.8459735791271921E65 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("2.225073858507201e-308").strtod() == 2.225073858507201e-308 ) // Max subnormal positive double
+   U_ASSERT( U_STRING_FROM_CONSTANT("1.7976931348623157e308").strtod() == 1.7976931348623157e308 ) // Max double
+#ifdef U_USE_STRTOD
+   U_ASSERT( U_STRING_FROM_CONSTANT("0.999999999999999944488848768742172978818416595458984375").strtod() == 1 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("0.999999999999999944488848768742172978818416595458984376").strtod() == 1 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("1.00000000000000011102230246251565404236316680908203126").strtod() == 1.0000000000000002 )
+   U_ASSERT( U_STRING_FROM_CONSTANT("0.999999999999999944488848768742172978818416595458984374").strtod() == 0.99999999999999989 )
+#endif
+#ifndef __INTEL_COMPILER
+   U_ASSERT( U_STRING_FROM_CONSTANT("3.08984926168550152811E-32").strtod() == 3.08984926168550152811E-32 )
+#endif
+
+   int i;
+   UString x(100U), y, z;
+
+   for (i = -310; i < 310; ++i)
+      {
+      x.snprintf(U_CONSTANT_TO_PARAM("23456789012E%d"), i);
+
+      x.strtod();
+      }
+
+#ifdef U_STDCPP_ENABLE
+   UString expressions;
+
+   expressions = U_STRING_FROM_CONSTANT("2 + 3 + 5"); // = 10
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("2 * 3 + 5"); // = 11
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("2 * (3 + 5)"); // = 16
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("2 * (2*(2*(2+1)))"); // = 24
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("10 % 3"); // = 1
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("true || false"); // = true
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("false || ! (false && 1)"); // = true
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("3 > 2 && 1 <= (3-2)"); // = true
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("false"); // = false
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+   expressions = U_STRING_FROM_CONSTANT("rand() == 0"); // = false
+   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+
+   // expressions = U_STRING_FROM_CONSTANT("/pippo/pluto == UStringExt::expandEnvironmentVar('$HOME', 5, 0)/pluto"); // = false
+   // cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
+
+   int year = 0;
+   char sep = 0;
+   UString month(U_CAPACITY);
+   istrstream istrm(U_CONSTANT_TO_PARAM("enero :2001"));
+
+   istrm >> month
+         >> sep
+         >> year;
+
+   U_ASSERT( sep == ':' )
+   U_ASSERT( year == 2001 )
+   U_ASSERT( month.shrink() == false )
+   U_ASSERT( month.size() == 5 )
+   U_ASSERT( month.capacity() == (U_STACK_TYPE_4 - (1 + sizeof(UStringRep))) )
+
+   istrstream istrs02(U_CONSTANT_TO_PARAM("\"DEBUG=1 \\\n"
+                                          "  FW_CONF=etc/nodog_fw.conf \\\n"
+                                          "  AllowedWebHosts=159.213.0.0/16 \\\n"
+                                          "  InternalDevice=ath0 ath0 \\\n"
+                                          "  LocalNetwork=10.30.1.0/24 10.1.0.1/16 \\\n"
+                                          "  AuthServiceAddr=http://www.auth-firenze.com/login http://localhost\""));
+
+   z.get(istrs02);
+
+   z = UStringExt::prepareForEnvironmentVar(z);
+
+   U_ASSERT( z == U_STRING_FROM_CONSTANT("DEBUG=1\n"
+                                         "FW_CONF=etc/nodog_fw.conf\n"
+                                         "AllowedWebHosts=159.213.0.0/16\n"
+                                         "'InternalDevice=ath0 ath0'\n"
+                                         "'LocalNetwork=10.30.1.0/24 10.1.0.1/16'\n"
+                                         "'AuthServiceAddr=http://www.auth-firenze.com/login http://localhost'\n") )
+
+   y = UStringExt::getEnvironmentVar(U_CONSTANT_TO_PARAM("LocalNetwork"), &z);
+
+   U_ASSERT( y == U_STRING_FROM_CONSTANT("10.30.1.0/24 10.1.0.1/16") )
+#endif
+
+   UCrono crono;
+   UString z1, value = U_STRING_FROM_CONSTANT("0.0");
+
+   y = U_STRING_FROM_CONSTANT("0.0000001");
+
+   UString new_value(U_CAPACITY, U_CONSTANT_TO_PARAM("%.*s; %v"), U_STRING_TO_TRACE(y), value.rep);
+
+   value = new_value;
+
+   U_INTERNAL_DUMP("value(%u): = %.*S", value.size(), U_STRING_TO_TRACE(value))
+
+   U_ASSERT( value == U_STRING_FROM_CONSTANT("0.0000001; 0.0") )
+
+   bool ok = u_isUTF8((const unsigned char*)U_CONSTANT_TO_PARAM("..M-^X@M-/..M-^X@1M-/..\xC3\xBC\x88\x01\x0BM-^X@M-/..M-^X@M-/..M-^X@M-/../winnt/system32/cmd.exe"));
+
+   U_INTERNAL_ASSERT_EQUALS(ok, false)
+
    UString buffer(U_CAPACITY), encoded(U_CAPACITY);
 
-   UString z1 = UStringExt::prepareForEnvironmentVar(U_STRING_FROM_CONSTANT("MasqueradeDevice=eth0 'AuthServiceAddr=http://wifi-aaa2.comune.fi.it' FullPrivateNetwork=172.16.0.0/12 'LocalNetwork=172.16.13.0/24 172.17.13.0/24' 'InternalDevice=br-lan br-wds' 'ExternalDevice=eth0 tun0 tun2'"));
+   z1 = UStringExt::prepareForEnvironmentVar(U_STRING_FROM_CONSTANT("MasqueradeDevice=eth0 'AuthServiceAddr=http://wifi-aaa2.comune.fi.it' FullPrivateNetwork=172.16.0.0/12 "
+                                             "'LocalNetwork=172.16.13.0/24 172.17.13.0/24' 'InternalDevice=br-lan br-wds' 'ExternalDevice=eth0 tun0 tun2'"));
 
-   bool ok = ( z1 == U_STRING_FROM_CONSTANT("MasqueradeDevice=eth0\n"
-                                            "'AuthServiceAddr=http://wifi-aaa2.comune.fi.it'\n"
-                                            "FullPrivateNetwork=172.16.0.0/12\n"
-                                            "'LocalNetwork=172.16.13.0/24 172.17.13.0/24'\n"
-                                            "'InternalDevice=br-lan br-wds'\n"
-                                            "'ExternalDevice=eth0 tun0 tun2'\n") );
+   ok = ( z1 == U_STRING_FROM_CONSTANT("MasqueradeDevice=eth0\n"
+                                       "'AuthServiceAddr=http://wifi-aaa2.comune.fi.it'\n"
+                                       "FullPrivateNetwork=172.16.0.0/12\n"
+                                       "'LocalNetwork=172.16.13.0/24 172.17.13.0/24'\n"
+                                       "'InternalDevice=br-lan br-wds'\n"
+                                       "'ExternalDevice=eth0 tun0 tun2'\n") );
 
    U_INTERNAL_ASSERT( ok )
 
@@ -1531,11 +1702,11 @@ U_EXPORT main (int argc, char* argv[])
 
    U_ASSERT_EQUALS( buffer, U_STRING_FROM_CONSTANT("<tr><td>11</td><td>&lt;script&gt;alert(&quot;This should not be displayed in a browser alert box.&quot;);&lt;/script&gt;</td></tr>") )
 
-// return 0;
+   // return 0;
 
    check_mmap(21 * U_2M);
 
-// return 0;
+   // return 0;
 
    U_ASSERT( UServices::dosMatchExtWithOR( U_CONSTANT_TO_PARAM("10.8.0.2"),   U_CONSTANT_TO_PARAM("10.8.[0-1].[1-2][0-9][0-9]|10.8.[0-1].[1-9][0-9]|10.8.[0-1].[0-9]"), 0) == true )
 
@@ -1548,35 +1719,16 @@ U_EXPORT main (int argc, char* argv[])
    UVector<UString> vec;
 
    U_ASSERT_EQUALS( vec.loadFromData(U_STRING_FROM_CONSTANT(
-"#dc:9f:db:30:63:27 172.16.13.253 Member   ### wdsRepWinetown-r29587_picoM2\n"
-"\n"
-"## wdsRep: wan@eth0, br-lan@wlan0+wlan0-1\n"
-"#\n"
-"00:27:22:9a:d9:bd 172.16.13.252 Member   ### wdsRepLab16-r29587_picoM2\n"
-"\n"
-"## wdsRep: br-lan@eth0+wlan0+wlan0-1\n"
-"#\n"
-"#00:27:22:9b:d9:bd 172.16.13.252 Member   ### wdsRepLab16-r29587_picoM2\n"
+   "#dc:9f:db:30:63:27 172.16.13.253 Member   ### wdsRepWinetown-r29587_picoM2\n"
+   "\n"
+   "## wdsRep: wan@eth0, br-lan@wlan0+wlan0-1\n"
+   "#\n"
+   "00:27:22:9a:d9:bd 172.16.13.252 Member   ### wdsRepLab16-r29587_picoM2\n"
+   "\n"
+   "## wdsRep: br-lan@eth0+wlan0+wlan0-1\n"
+   "#\n"
+   "#00:27:22:9b:d9:bd 172.16.13.252 Member   ### wdsRepLab16-r29587_picoM2\n"
    )), 3 )
-
-   int year = 0;
-   char sep = 0;
-   UString month(U_CAPACITY);
-#ifdef U_STDCPP_ENABLE
-   istrstream istrm(U_CONSTANT_TO_PARAM("enero :2001"));
-
-   istrm >> month
-         >> sep
-         >> year;
-
-   U_ASSERT( sep == ':' )
-   U_ASSERT( year == 2001 )
-
-   U_ASSERT( month.shrink() == false )
-
-   U_ASSERT( month.size() == 5 )
-   U_ASSERT( month.capacity() == (U_STACK_TYPE_4 - (1 + sizeof(UStringRep))) )
-#endif
 
    U_INTERNAL_DUMP("u__ct_tab['\\r'] = %d %B", u__ct_tab['\r'], u__ct_tab['\r'])
    U_INTERNAL_DUMP("u__ct_tab['\\n'] = %d %B", u__ct_tab['\n'], u__ct_tab['\n'])
@@ -1606,40 +1758,38 @@ U_EXPORT main (int argc, char* argv[])
    U_INTERNAL_DUMP("u__ct_tab[ '\000'] = %d %B", u_cttab('\000'), u_cttab('\000'))
    U_INTERNAL_DUMP("u__istext('\000') = %b", u__istext('\000'))
 
-   UString z;
-
    U_INTERNAL_ASSERT( u_isText(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR0)) == false )
-   U_INTERNAL_ASSERT( u_isUTF8(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR0)) == true )
+   U_INTERNAL_ASSERT( u_isUTF8(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR0)) )
    U_INTERNAL_ASSERT( u_isUTF16( (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR0)) == false )
    U_INTERNAL_ASSERT( u_isBinary((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR0)) == false )
- 
+
    // NB: in UTF-8 the character ü is encoded as two bytes C3 (hex) and BC (hex)
 
    U_INTERNAL_ASSERT( u_isText(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR1)) == false )
-   U_INTERNAL_ASSERT( u_isUTF8(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR1)) == true )
+   U_INTERNAL_ASSERT( u_isUTF8(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR1)) )
    U_INTERNAL_ASSERT( u_isUTF16( (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR1)) == false )
    U_INTERNAL_ASSERT( u_isBinary((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR1)) == false )
- 
+
    z = UString::fromUTF8((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR1));
 
    U_INTERNAL_ASSERT( z.isText()   == false )
    U_INTERNAL_ASSERT( z.isUTF8()   == false )
    U_INTERNAL_ASSERT( z.isUTF16()  == false )
-   U_INTERNAL_ASSERT( z.isBinary() == true )
+   U_INTERNAL_ASSERT( z.isBinary() )
 
    U_INTERNAL_ASSERT( UString::toUTF8((const unsigned char*)U_STRING_TO_PARAM(z)) == U_STRING_FROM_CONSTANT(U_STR1) )
 
    U_INTERNAL_ASSERT( u_isText(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR2)) == false )
    U_INTERNAL_ASSERT( u_isUTF8(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR2)) == false )
    U_INTERNAL_ASSERT( u_isUTF16( (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR2)) == false )
-   U_INTERNAL_ASSERT( u_isBinary((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR2)) == true )
+   U_INTERNAL_ASSERT( u_isBinary((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR2)) )
 
    z = UString::fromUTF8((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR2));
 
    U_INTERNAL_ASSERT( z.isUTF8()   == false )
    U_INTERNAL_ASSERT( z.isUTF16()  == false )
    U_INTERNAL_ASSERT( z.isText()   == false )
-   U_INTERNAL_ASSERT( z.isBinary() == true )
+   U_INTERNAL_ASSERT( z.isBinary() )
 
    z = UString::toUTF8((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR3));
 
@@ -1648,10 +1798,10 @@ U_EXPORT main (int argc, char* argv[])
    U_INTERNAL_ASSERT( u_isText(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR3)) == false )
    U_INTERNAL_ASSERT( u_isUTF8(  (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR3)) == false )
    U_INTERNAL_ASSERT( u_isUTF16( (const unsigned char*)U_CONSTANT_TO_PARAM(U_STR3)) == false )
-   U_INTERNAL_ASSERT( u_isBinary((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR3)) == true )
+   U_INTERNAL_ASSERT( u_isBinary((const unsigned char*)U_CONSTANT_TO_PARAM(U_STR3)) )
 
    U_INTERNAL_ASSERT( z.isText()   == false )
-   U_INTERNAL_ASSERT( z.isUTF8()   == true )
+   U_INTERNAL_ASSERT( z.isUTF8() )
    U_INTERNAL_ASSERT( z.isUTF16()  == false )
    U_INTERNAL_ASSERT( z.isBinary() == false )
 
@@ -1672,12 +1822,11 @@ U_EXPORT main (int argc, char* argv[])
    cout << z << "\n";
    */
 
-   UCrono crono;
-   UString x = U_STRING_FROM_CONSTANT("172.31.1.0/24 172.31.2.0/24  172.31.3.0/24 \t\t\t\t\t\t\t\t\t\t\t\t\t"
-                                      "172.31.4.0/24 172.31.5.0/24  172.31.6.0/24 \t\t\t\t\t\t\t\t\t\t\t\t\t172.31.7.0/24");
+   x = U_STRING_FROM_CONSTANT("172.31.1.0/24 172.31.2.0/24  172.31.3.0/24 \t\t\t\t\t\t\t\t\t\t\t\t\t"
+                              "172.31.4.0/24 172.31.5.0/24  172.31.6.0/24 \t\t\t\t\t\t\t\t\t\t\t\t\t172.31.7.0/24");
 
-              vec.clear();
-   int i, n = vec.split(x);
+           vec.clear();
+   int n = vec.split(x);
 
    U_INTERNAL_ASSERT_EQUALS(n, 7)
 
@@ -1694,57 +1843,57 @@ U_EXPORT main (int argc, char* argv[])
 
    vec.clear();
 
-   n = (argc > 1 ? atoi(argv[1]) : 1);
+   n = (argc > 1 ? u_atoi(argv[1]) : 1);
 
    crono.start();
 
    for (i = 0; i < n; ++i)
       {
-#ifdef TEST_MEMMOVE
+   #ifdef TEST_MEMMOVE
       test_memmove_01();
-#endif
-#ifdef TEST_ASSIGN
+#  endif
+#  ifdef TEST_ASSIGN
       test_assign_01();
-#endif
-#ifdef TEST_CAPACITY
+#  endif
+#  ifdef TEST_CAPACITY
       test_capacity_01();
       test_capacity_02();
-#endif
-#ifdef TEST_COMPARE
+#  endif
+#  ifdef TEST_COMPARE
       test_compare_01();
-#endif
-#ifdef TEST_CONSTRUCTORS
+#  endif
+#  ifdef TEST_CONSTRUCTORS
       test_constructors_01();
       test_constructors_02();
       test_constructors_03();
-#endif
-#ifdef TEST_ACCESS
+#  endif
+#  ifdef TEST_ACCESS
       test_access_01();
-#endif
-#ifdef TEST_FIND
+#  endif
+#  ifdef TEST_FIND
       test_find_01();
       test_rfind_01();
-#endif
-#ifdef TEST_INSERT
+#  endif
+#  ifdef TEST_INSERT
       test_insert_01();
-#endif
-#ifdef TEST_REPLACE
+#  endif
+#  ifdef TEST_REPLACE
       test_replace_01();
-#endif
-#ifdef TEST_NOT_MEMBER
+#  endif
+#  ifdef TEST_NOT_MEMBER
       test_not_member_01();
-#endif
-#ifdef TEST_OPERATIONS
+#  endif
+#  ifdef TEST_OPERATIONS
       test_operations_01();
-#endif
-#ifdef TEST_SUBSTR
+#  endif
+#  ifdef TEST_SUBSTR
       test_substr_01();
-#endif
-#if defined(TEST_CLASS) && defined(U_STD_STRING)
+#  endif
+#  if defined(TEST_CLASS) && defined(U_STD_STRING)
       test_class_01();
       test_class_02();
-#endif
-#ifdef TEST_STREAM
+#  endif
+#  ifdef TEST_STREAM
       test_stream_01();
       test_stream_04(1);      // expected_size == 4
       test_stream_04(1000);   // expected_size == 2002
@@ -1756,12 +1905,12 @@ U_EXPORT main (int argc, char* argv[])
       test_stream_07();
       test_stream_08();
       test_stream_09();
-#endif
+#  endif
       }
 
    x = U_STRING_FROM_CONSTANT("/mnt/mirror/home/stefano/spool/cross");
 
-   UString y = UStringExt::basename(x);
+   y = UStringExt::basename(x);
 
    U_ASSERT( y == "cross" )
 
@@ -1818,6 +1967,60 @@ U_EXPORT main (int argc, char* argv[])
 
    U_ASSERT( z == "############################################################################################################################ellllo")
 
+   y = U_STRING_FROM_CONSTANT(" uno due tre quattro cinque \n"
+                              " uno due tre quattro cinque \n"
+                              " uno due tre quattro cinque \n"
+                              " uno due tre quattro cinque \n"
+                              " uno due tre quattro cinque \n");
+
+   z = UStringExt::substitute(y, U_CONSTANT_TO_PARAM("uno"), U_CONSTANT_TO_PARAM("primo"));
+
+   U_ASSERT(z == " primo due tre quattro cinque \n"
+                 " primo due tre quattro cinque \n"
+                 " primo due tre quattro cinque \n"
+                 " primo due tre quattro cinque \n"
+                 " primo due tre quattro cinque \n")
+
+   z = U_STRING_FROM_CONSTANT("uno primo due secondo tre terzo quattro quarto cinque quinto");
+
+   vec.clear();
+
+   (void) vec.split(z);
+
+   y = UStringExt::substitute(y, vec);
+
+   vec.clear();
+
+   U_ASSERT(y == " primo secondo terzo quarto quinto \n"
+                 " primo secondo terzo quarto quinto \n"
+                 " primo secondo terzo quarto quinto \n"
+                 " primo secondo terzo quarto quinto \n"
+                 " primo secondo terzo quarto quinto \n")
+
+   z = U_STRING_FROM_CONSTANT("5 Bob Apples");
+
+   (void) vec.split(z);
+
+   y = UStringExt::substituteIds(U_CONSTANT_TO_PARAM("$1 purchased $0 $2. Thanks $1!"), vec);
+
+   vec.clear();
+
+   U_ASSERT_EQUALS(y, "Bob purchased 5 Apples. Thanks Bob!")
+
+   z = U_STRING_FROM_CONSTANT("0 1 2 3 4 5 6 7 8 9 5 Bob Apples");
+
+   (void) vec.split(z);
+
+   y = UStringExt::substituteIds(U_CONSTANT_TO_PARAM("$11 purchased $10 $12. Thanks $11!"), vec);
+
+   vec.clear();
+
+   U_ASSERT_EQUALS(y, "Bob purchased 5 Apples. Thanks Bob!")
+
+   y = UStringExt::eraseIds(U_CONSTANT_TO_PARAM("$11 purchased $10 $12. Thanks $11!"));
+
+   U_ASSERT_EQUALS(y, " purchased  . Thanks !")
+
    y = U_STRING_FROM_CONSTANT("Hello\n\n");
 
    z = UStringExt::dos2unix(y, true);
@@ -1844,9 +2047,9 @@ U_EXPORT main (int argc, char* argv[])
    U_ASSERT( UStringExt::dirname(z)  == U_STRING_FROM_CONSTANT("/dir") )
    U_ASSERT( UStringExt::basename(z) == U_STRING_FROM_CONSTANT("base.suffix") )
 
-   const char* ptr = u_getsuffix(U_CONSTANT_TO_PARAM("/dir/base.suffix/www"));
+   ptr = u_getsuffix(U_CONSTANT_TO_PARAM("/dir/base.suffix/www"));
 
-   U_INTERNAL_ASSERT_EQUALS( ptr, 0 )
+   U_INTERNAL_ASSERT_EQUALS( ptr, U_NULLPTR )
 
    ptr = u_getsuffix(U_CONSTANT_TO_PARAM("/dir/base.suffix"));
 
@@ -1900,7 +2103,7 @@ U_EXPORT main (int argc, char* argv[])
 
    /* recursively expand variables if needed
 
-#define ENV_1     \
+   #define ENV_1     \
    "HOME=$HOME\n" \
    "PATH=$PATH\n" \
    "BRUTTOBUCO=$BRUTTOBUCO\n" \
@@ -1920,7 +2123,7 @@ U_EXPORT main (int argc, char* argv[])
 
    z = UStringExt::expandEnvironmentVar(U_STRING_FROM_CONSTANT(ENV_1), 0);
 
-#define ENV_2    \
+   #define ENV_2    \
    "HOME=1000\n" \
    "PATH=da qualche parte\n" \
    "BRUTTOBUCO=\n" \
@@ -1930,47 +2133,17 @@ U_EXPORT main (int argc, char* argv[])
    */
 
 #ifdef USE_LIBZ
-#  define TEXT3 \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: l3C83MYF002034: DSN: User unknown" \
-"Apr 12 10:03:22 www sm-mta[2031]: l3C834YF002031: from=<tddiaz@thai.com>, size=2426, class=0, nrcpts=1, msgid=<c69d01c77cd8$9471501e$6aa9eea9@thai.com>, proto=SMTP, daemon=MTA, relay=adsl-d36.87-197-150.t-com.sk [87.197.150.36]\n" \
-"Apr 12 10:03:22 www sm-mta[2034]: l3C834YF002031: to=<marcodd@unirel.it>, delay=00:00:13, xdelay=00:00:00, mailer=cyrusv2, pri=122426, relay=localhost, dsn=5.1.1, stat=User unknown\n"
+   z = U_STRING_FROM_CONSTANT("########################################################################################################################"
+                              "########################################################################################################################"
+                              "########################################################################################################################");
 
-   z = U_STRING_FROM_CONSTANT(TEXT3);
-
-   x = UStringExt::deflate(z, 1);
+   x = UStringExt::deflate(z);
 
    y = UStringExt::gunzip(x);
 
    U_ASSERT( z == y )
 
-   x = UStringExt::deflate(z, 2);
+   x = UStringExt::deflate(z, Z_BEST_COMPRESSION);
 
    y = UStringExt::gunzip(x);
 
@@ -1986,7 +2159,7 @@ U_EXPORT main (int argc, char* argv[])
    U_ASSERT( UStringExt::isEmailAddress( U_STRING_FROM_CONSTANT("69d01c77cd8$9471501e$6aa9eea9@thai.com"))  == true )
    U_ASSERT( UStringExt::isEmailAddress( U_STRING_FROM_CONSTANT("69d01c77cd8$9471501e@6aa9eea9@thai.com")) == false )
 
-   z = UString((void*)"buffer occupato");
+   z = UString((void*)U_CONSTANT_TO_PARAM("buffer occupato"));
    y = z;
 
    z.setBuffer(100);
@@ -2002,34 +2175,6 @@ U_EXPORT main (int argc, char* argv[])
 
    U_INTERNAL_ASSERT( U_STRING_FROM_CONSTANT("           \n\t\r").isWhiteSpace() )
    U_INTERNAL_ASSERT( U_STRING_FROM_CONSTANT("gXWUj7VekBdkycg3Z9kXuglV9plUl2cs4XkNLSDhe5VHRgE03e63VypMChCWDGI=").isBase64() )
-
-#ifdef U_STDCPP_ENABLE
-   UString expressions;
-
-   expressions = U_STRING_FROM_CONSTANT("2 + 3 + 5"); // = 10
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("2 * 3 + 5"); // = 11
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("2 * (3 + 5)"); // = 16
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("2 * (2*(2*(2+1)))"); // = 24
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("10 % 3"); // = 1
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("true || false"); // = true
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("false || ! (false && 1)"); // = true
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("3 > 2 && 1 <= (3-2)"); // = true
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("false"); // = false
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-   expressions = U_STRING_FROM_CONSTANT("rand() == 0"); // = false
-   cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-
-// expressions = U_STRING_FROM_CONSTANT("/pippo/pluto == UStringExt::expandEnvironmentVar('$HOME', 5, 0)/pluto"); // = false
-// cout << UStringExt::evalExpression(expressions, UString::getStringNull()) << "\n";
-#endif
 
 #ifdef USE_LIBPCRE
    // date (YYYY/MM/DD) --> (DD/MM/YYYY)
@@ -2097,30 +2242,6 @@ U_EXPORT main (int argc, char* argv[])
    U_ASSERT( z == U_STRING_FROM_CONSTANT("HOME=TSA\nOPENSSL=bin/openssl\nOPENSSL_CNF=CA/openssl.cnf\n'UTRACE=0 5M 0'\n"
                                          "TSA_CACERT=CA/cacert.pem\nTSA_CERT=CA/server.crt\nTSA_KEY=CA/server.key\n") )
 
-#ifdef U_STDCPP_ENABLE
-   istrstream istrs02(U_CONSTANT_TO_PARAM("\"DEBUG=1 \\\n"
-                                          "  FW_CONF=etc/nodog_fw.conf \\\n"
-                                          "  AllowedWebHosts=159.213.0.0/16 \\\n"
-                                          "  InternalDevice=ath0 ath0 \\\n"
-                                          "  LocalNetwork=10.30.1.0/24 10.1.0.1/16 \\\n"
-                                          "  AuthServiceAddr=http://www.auth-firenze.com/login http://localhost\""));
-
-   z.get(istrs02);
-
-   z = UStringExt::prepareForEnvironmentVar(z);
-
-   U_ASSERT( z == U_STRING_FROM_CONSTANT("DEBUG=1\n"
-                                         "FW_CONF=etc/nodog_fw.conf\n"
-                                         "AllowedWebHosts=159.213.0.0/16\n"
-                                         "'InternalDevice=ath0 ath0'\n"
-                                         "'LocalNetwork=10.30.1.0/24 10.1.0.1/16'\n"
-                                         "'AuthServiceAddr=http://www.auth-firenze.com/login http://localhost'\n") )
-#endif
-
-   y = UStringExt::getEnvironmentVar(U_CONSTANT_TO_PARAM("LocalNetwork"), &z);
-
-   U_ASSERT( y == U_STRING_FROM_CONSTANT("10.30.1.0/24 10.1.0.1/16") )
-
    z = UStringExt::prepareForEnvironmentVar(UFile::contentOf(U_STRING_FROM_CONSTANT("inp/environment.conf")));
 
    y = U_STRING_FROM_CONSTANT("DIR_WEB=$HOME/www\n"
@@ -2172,26 +2293,24 @@ U_EXPORT main (int argc, char* argv[])
 
    U_ASSERT( z == y )
 
-/*
+   /*
    y = z = UFile::contentOf(U_STRING_FROM_CONSTANT("inp/livevalidation_standalone.compressed.js"));
 
    z = UStringExt::minifyCssJs(z);
 
-   (void) UFile::writeToTmp(U_STRING_TO_PARAM(z), O_RDWR | O_TRUNC, U_CONSTANT_TO_PARAM("livevalidation_standalone.compressed.js"), 0);
-
    U_ASSERT( z == y )
-*/
+   */
 
    crono.stop();
 
    printf("Time Consumed for (%d) iteration = %ld ms\n", n, crono.getTimeElapsed());
 
-/*
+   /*
    check DEAD OF SOURCE STRING WITH CHILD ALIVE...
 
    y = U_STRING_FROM_CONSTANT("I am the source string");
    z = y.substr(17U);
 
    y.clear();
-*/
+   */
 }

@@ -19,10 +19,13 @@
 #ifdef USE_LIBSSL
 #  include <openssl/pem.h>
 #endif
+#ifdef USE_LIBBROTLI
+#  include <brotli/encode.h>
+#  include <brotli/decode.h>
+#endif
 
 class U_EXPORT UStringExt {
 public:
-
 #ifdef USE_LIBSSL
    static UString BIOtoString(BIO* bio);
    static UString ASN1TimetoString(ASN1_GENERALIZEDTIME* t);
@@ -34,7 +37,11 @@ public:
 #endif
 
 #ifdef USE_LIBEXPAT // to strip out the HTML tags
-   static UString stripTags(const UString& html, UString* list_tags_allowed = 0);
+   static UString stripTags(const UString& html, UString* list_tags_allowed = U_NULLPTR);
+#endif
+
+#ifndef U_LOG_DISABLE
+   static const char* deflate_agent;
 #endif
 
    static bool isDelimited(const UString& s, const char* delimiter = "()")
@@ -64,16 +71,30 @@ public:
    static UString   compress(const UString& s) { return   compress(U_STRING_TO_PARAM(s)); }
    static UString decompress(const UString& s) { return decompress(U_STRING_TO_PARAM(s)); }
 
-   // GZIP method
+   static uint32_t ratio, ratio_threshold;
 
-   static bool isGzip(const char* s)        { return (u_get_unalignedp16(s) == U_MULTICHAR_CONSTANT16('\x1F','\x8B')); }
-   static bool isGzip(const UString& s)     { return isGzip(s.data()); }
+   static bool isGzip(const char* s)    { return (u_get_unalignedp16(s) == U_MULTICHAR_CONSTANT16('\x1F','\x8B')); }
+   static bool isGzip(const UString& s) { return isGzip(s.data()); }
 
-   static UString deflate(const char* s, uint32_t n, int type);         // .gz   compress
-   static UString  gunzip(const char* s, uint32_t n, uint32_t sz_orig); // .gz uncompress
+   static UString gunzip(const char* s, uint32_t n, uint32_t sz_orig); // .gz uncompress
+   static UString gunzip(const UString& s, uint32_t sz_orig = 0) { return  gunzip(U_STRING_TO_PARAM(s), sz_orig); }
 
-   static UString deflate(const UString& s, int type)             { return deflate(U_STRING_TO_PARAM(s), type); }
-   static UString  gunzip(const UString& s, uint32_t sz_orig = 0) { return  gunzip(U_STRING_TO_PARAM(s), sz_orig); }
+#ifdef USE_LIBZ
+   static UString deflate(const char* s, uint32_t n, uint32_t quality = 0); // .gz compress (0 => zopfli)
+   static UString deflate(const UString& s, uint32_t quality = 0) { return deflate(U_STRING_TO_PARAM(s), quality); }
+#endif
+
+   static bool isBrotli(const char* s)    { return false; } // (u_get_unalignedp32(s) == U_MULTICHAR_CONSTANT32('\xCE','\xB2','\xCF','\x81'))
+   static bool isBrotli(const UString& s) { return isBrotli(s.data()); }
+
+   static UString unbrotli(const char* s, uint32_t n);
+   static UString unbrotli(const UString& s) { return unbrotli(U_STRING_TO_PARAM(s)); }
+
+#ifdef USE_LIBBROTLI
+   static UString brotli(const char* s, uint32_t n, uint32_t quality = BROTLI_MAX_QUALITY, uint32_t mode = BROTLI_MODE_TEXT, uint32_t lgwin = BROTLI_DEFAULT_WINDOW);
+   static UString brotli(const UString& s,          uint32_t quality = BROTLI_MAX_QUALITY, uint32_t mode = BROTLI_MODE_TEXT, uint32_t lgwin = BROTLI_DEFAULT_WINDOW)
+      { return brotli(U_STRING_TO_PARAM(s), quality, mode, lgwin); }
+#endif
 
    // Convert numeric to string
 
@@ -92,7 +113,7 @@ public:
       {
       U_TRACE(0, "UStringExt::numberToString(%u)", n)
 
-      UString x(10U);
+      UString x(22U);
 
       x.setFromNumber32(n);
 
@@ -108,7 +129,7 @@ public:
       UString x(32U);
       char* ptr = x.data();
 
-      ptr[(x.rep->_length = u_dtoa(n, ptr))] = '\0';
+      ptr[(x.rep->_length = (u_dtoa(n, ptr) - ptr))] = '\0';
 
       U_RETURN_STRING(x);
       }
@@ -128,29 +149,10 @@ public:
       U_RETURN_STRING(x);
       }
 
-   static void appendNumber32(UString& s, uint32_t number)
-      {
-      U_TRACE(0, "UStringExt::appendNumber32(%V,%u)", s.rep, number)
-
-      uint32_t sz = s.size();
-      char* ptr   = s.c_pointer(sz);
-
-      s.rep->_length = sz + u_num2str32(number, ptr);
-
-      U_INTERNAL_ASSERT(s.invariant())
-      }
-
-   static void appendNumber64(UString& s, uint64_t number)
-      {
-      U_TRACE(0, "UStringExt::appendNumber64(%V,%llu)", s.rep, number)
-
-      uint32_t sz = s.size();
-      char* ptr   = s.c_pointer(sz);
-
-      s.rep->_length = sz + u_num2str64(number, ptr);
-
-      U_INTERNAL_ASSERT(s.invariant())
-      }
+   static void appendNumber32( UString& s, uint32_t number) { s.appendNumber32( number); }
+   static void appendNumber32s(UString& s,  int32_t number) { s.appendNumber32s(number); }
+   static void appendNumber64( UString& s, uint64_t number) { s.appendNumber64( number); }
+   static void appendNumber64s(UString& s,  int64_t number) { s.appendNumber64s(number); }
 
    // convert letter to upper or lower case
 
@@ -192,80 +194,55 @@ public:
    // manage pathname
 
    static UString  dirname(const char* s, uint32_t n);
-   static UString basename(const char* s, uint32_t n);
+   static UString basename(const char* s, uint32_t n)
+      {
+      U_TRACE(0, "UStringExt::basename(%.*S,%u)", n, s, n)
+
+      const char* ptr = u_basename(s, n);
+
+      return UString(ptr, n-(ptr-s));
+      }
 
    static UString  dirname(const UString& s) { return  dirname(U_STRING_TO_PARAM(s)); }
    static UString basename(const UString& s) { return basename(U_STRING_TO_PARAM(s)); }
 
-   static uint32_t getBaseNameLen(const UString& s)
+   static uint32_t getBaseNameLen(const char* s, uint32_t n)
       {
-      U_TRACE(0, "UStringExt::getBaseNameLen(%V)", s.rep)
+      U_TRACE(0, "UStringExt::getBaseNameLen(%.*S,%u)", n, s, n)
 
-      uint32_t len = s.size(),
-               pos = s.rfind('/'); // Find last '/'
-
-      if (pos != U_NOT_FOUND) len -= pos + 1;
-
-      U_RETURN(len);
+      return n-(u_basename(s, n)-s);
       }
+
+   static uint32_t getBaseNameLen(const UString& s) { return getBaseNameLen(U_STRING_TO_PARAM(s)); }
 
    // check if string s1 start with string s2
-
-   static bool startsWith(const UString& s1, const UString& s2)
-      {
-      U_TRACE(0, "UStringExt::startsWith(%V,%V)", s1.rep, s2.rep)
-
-      if (u_startsWith(U_STRING_TO_PARAM(s1), U_STRING_TO_PARAM(s2))) U_RETURN(true);
-
-      U_RETURN(false);
-      }
-
-   static bool startsWith(const UString& s1, const char* s2, uint32_t n2)
-      {
-      U_TRACE(0, "UStringExt::startsWith(%V,%.*S,%u)", s1.rep, n2, s2, n2)
-
-      if (u_startsWith(U_STRING_TO_PARAM(s1), s2, n2)) U_RETURN(true);
-
-      U_RETURN(false);
-      }
 
    static bool startsWith(const char* s1, uint32_t n1, const char* s2, uint32_t n2)
       {
       U_TRACE(0, "UStringExt::startsWith(%.*S,%u,%.*S,%u)", n1, s1, n1, n2, s2, n2)
 
-      if (u_startsWith(s1, n1, s2, n2)) U_RETURN(true);
+      if (n1 >= n2 && u_startsWith(s1, n1, s2, n2)) U_RETURN(true);
 
       U_RETURN(false);
       }
+
+   static bool startsWith(const UString& s1, const UString& s2)           { return startsWith(U_STRING_TO_PARAM(s1), U_STRING_TO_PARAM(s2)); }
+   static bool startsWith(const UString& s1, const char* s2, uint32_t n2) { return startsWith(U_STRING_TO_PARAM(s1), s2, n2); }
 
    // check if string s1 terminate with string s2
-
-   static bool endsWith(const UString& s1, const UString& s2)
-      {
-      U_TRACE(0, "UStringExt::endsWith(%V,%V)", s1.rep, s2.rep)
-
-      if (u_endsWith(U_STRING_TO_PARAM(s1), U_STRING_TO_PARAM(s2))) U_RETURN(true);
-
-      U_RETURN(false);
-      }
-
-   static bool endsWith(const UString& s1, const char* s2, uint32_t n2)
-      {
-      U_TRACE(0, "UStringExt::endsWith(%V,%.*S,%u)", s1.rep, n2, s2, n2)
-
-      if (u_endsWith(U_STRING_TO_PARAM(s1), s2, n2)) U_RETURN(true);
-
-      U_RETURN(false);
-      }
 
    static bool endsWith(const char* s1, uint32_t n1, const char* s2, uint32_t n2)
       {
       U_TRACE(0, "UStringExt::endsWith(%.*S,%u,%.*S,%u)", n1, s1, n1, n2, s2, n2)
 
-      if (u_endsWith(s1, n1, s2, n2)) U_RETURN(true);
+      if (n1 >= n2 && u_endsWith(s1, n1, s2, n2)) U_RETURN(true);
 
       U_RETURN(false);
       }
+
+   static bool endsWith(const UString& s1,           const UString& s2)           { return endsWith(U_STRING_TO_PARAM(s1), U_STRING_TO_PARAM(s2)); }
+   static bool endsWith(const UString& s1,           const char* s2, uint32_t n2) { return endsWith(U_STRING_TO_PARAM(s1), s2, n2); }
+   static bool endsWith(const char* s1, uint32_t n1, const UString& s2)           { return endsWith(s1, n1,                U_STRING_TO_PARAM(s2)); }
 
    // SUBSTITUTE: replace all occurrences of 'a' with 'b'
 
@@ -276,13 +253,23 @@ public:
    static UString substitute(const UString& s,          const char* a, uint32_t n1,       char  b)              { return substitute(U_STRING_TO_PARAM(s),  a, n1, &b,  1); }
    static UString substitute(const UString& s,          const char* a, uint32_t n1, const char* b, uint32_t n2) { return substitute(U_STRING_TO_PARAM(s),  a, n1,  b, n2); }
 
-   static UString substitute(const UString& s, const UString& a, const UString& b) { return substitute(U_STRING_TO_PARAM(s), U_STRING_TO_PARAM(a), U_STRING_TO_PARAM(b)); }
+   static UString substitute(const char* s, uint32_t n, const UString& a, const UString& b) { return substitute(s, n,                 U_STRING_TO_PARAM(a), U_STRING_TO_PARAM(b)); }
+   static UString substitute(const UString& s,          const UString& a, const UString& b) { return substitute(U_STRING_TO_PARAM(s), U_STRING_TO_PARAM(a), U_STRING_TO_PARAM(b)); }
+
+   static UString substitute(const char* s, uint32_t n, UVector<UString>& vec);
+   static UString substitute(const UString& s,          UVector<UString>& vec) { return substitute(U_STRING_TO_PARAM(s), vec); }
+
+   static UString substituteIds(const char* s, uint32_t n, UVector<UString>& vec);
+   static UString substituteIds(const UString& s,          UVector<UString>& vec) { return substituteIds(U_STRING_TO_PARAM(s), vec); }
 
    // ERASE
 
-   static UString erase(const UString& s, char a)                     { return substitute(U_STRING_TO_PARAM(s), &a, 1,                0, 0); } 
-   static UString erase(const UString& s, const UString& a)           { return substitute(U_STRING_TO_PARAM(s), U_STRING_TO_PARAM(a), 0, 0); }
-   static UString erase(const UString& s, const char* a, uint32_t n1) { return substitute(U_STRING_TO_PARAM(s), a, n1,                0, 0); }
+   static UString erase(const UString& s, char a)                     { return substitute(U_STRING_TO_PARAM(s), &a, 1,                U_NULLPTR, 0); } 
+   static UString erase(const UString& s, const UString& a)           { return substitute(U_STRING_TO_PARAM(s), U_STRING_TO_PARAM(a), U_NULLPTR, 0); }
+   static UString erase(const UString& s, const char* a, uint32_t n1) { return substitute(U_STRING_TO_PARAM(s), a, n1,                U_NULLPTR, 0); }
+
+   static UString eraseIds(const char* s, uint32_t len);
+   static UString eraseIds(const UString& s)             { return eraseIds(U_STRING_TO_PARAM(s)); }
 
    // dos2unix: '\n' <=> '\r\n' convertor
 
@@ -318,7 +305,7 @@ public:
       {
       U_TRACE_NO_PARAM(0, "UStringExt::getPidProcess()")
 
-      UString value(10U);
+      UString value(22U);
 
       U_MEMCPY(value.data(), u_pid_str, u_pid_str_len);
 
@@ -332,11 +319,29 @@ public:
    // Within a string we can count number of occurrence of another string by using substr_count function.
    // This function takes the main string and the search string as inputs and returns number of time search string is found inside the main string
 
-   static uint32_t substr_count(const char* s, uint32_t n, const char* a, uint32_t n1) __pure;
+   static __pure uint32_t substr_count(const char* s, uint32_t n, const char* a, uint32_t n1)
+      {
+      U_TRACE(0, "UStringExt::substr_count(%.*S,%u,%.*S,%u)", n, s, n, n1, a, n1)
 
-   static uint32_t substr_count(const UString& s,       char  a)             { return substr_count(U_STRING_TO_PARAM(s), &a, 1); }
-   static uint32_t substr_count(const UString& s, const char* a, uint32_t n) { return substr_count(U_STRING_TO_PARAM(s),  a, n); }
-   static uint32_t substr_count(const UString& s, const UString& a)          { return substr_count(U_STRING_TO_PARAM(s), U_STRING_TO_PARAM(a)); }
+      uint32_t num    = 0;
+      const char* ptr = s;
+      const char* end = s + n;
+
+      while (true)
+         {
+         ptr = (const char*) u_find(ptr, end - ptr, a, n1);
+
+         if (ptr == U_NULLPTR) U_RETURN(num);
+
+         ++num;
+
+         ptr += n1;
+         }
+      }
+
+   static __pure uint32_t substr_count(const UString& s,       char  a)             { return substr_count(U_STRING_TO_PARAM(s), &a, 1); }
+   static __pure uint32_t substr_count(const UString& s, const char* a, uint32_t n) { return substr_count(U_STRING_TO_PARAM(s),  a, n); }
+   static __pure uint32_t substr_count(const UString& s, const UString& a)          { return substr_count(U_STRING_TO_PARAM(s), U_STRING_TO_PARAM(a)); }
 
    // manage escaping for delimiter character
 
@@ -400,7 +405,11 @@ public:
       {
       U_TRACE(0, "UStringExt::qscompver(%p,%p)", p, q)
 
+#  ifndef U_STDCPP_ENABLE
       return compareversion(U_STRING_TO_PARAM(**(UStringRep**)p), U_STRING_TO_PARAM(**(UStringRep**)q));
+#  else
+      return (compareversion(U_STRING_TO_PARAM(*(UStringRep*)p), U_STRING_TO_PARAM(*(UStringRep*)q)) < 0);
+#  endif
       }
 
    // Verifies that the passed string is actually an e-mail address

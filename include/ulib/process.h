@@ -32,6 +32,7 @@
 #define U_FAILED_NONE  0
 #define U_FAILED_SOME  2
 #define U_FAILED_ALL   3
+#define U_FAILED_ALARM 4
 
 class UCommand;
 class UServer_Base;
@@ -49,7 +50,7 @@ public:
 
    UProcess()
       {
-      U_TRACE_REGISTER_OBJECT(0, UProcess, "", 0)
+      U_TRACE_CTOR(0, UProcess, "")
 
       _pid    = (pid_t)-1;
       status  = 0;
@@ -58,7 +59,7 @@ public:
 
    ~UProcess()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UProcess)
+      U_TRACE_DTOR(0, UProcess)
       }
 
    // FORK
@@ -80,8 +81,28 @@ public:
 
    // WAIT
 
-   void wait();
-   int  waitAll(int timeoutMS = 0);
+   void wait()
+      {
+      U_TRACE_NO_PARAM(0, "UProcess::wait()")
+
+      U_CHECK_MEMORY
+
+      if (running &&
+          UProcess::waitpid(_pid, &status, 0) == _pid)
+         {
+         running = false;
+         }
+
+#  ifdef DEBUG
+      char buffer[128];
+
+      (void) exitInfo(buffer, status);
+
+      U_INTERNAL_DUMP("status = %d, %S", status, buffer)
+#  endif
+      }
+
+   int waitAll(int timeoutMS = 0);
 
    static uint32_t removeZombies()
       {
@@ -90,13 +111,13 @@ public:
       uint32_t n = 0;
 
 #  ifndef _MSWINDOWS_
-      while (U_SYSCALL(waitpid, "%d,%p,%d", -1, 0, WNOHANG) > 0) ++n;
+      while (U_SYSCALL(waitpid, "%d,%p,%d", -1, U_NULLPTR, WNOHANG) > 0) ++n;
 #  endif
 
       U_RETURN(n);
       }
 
-   static int waitpid(pid_t pid = -1, int* status = 0, int options = WNOHANG);
+   static int waitpid(pid_t pid = -1, int* status = U_NULLPTR, int options = WNOHANG);
 
    // STATUS CHILD
 
@@ -124,9 +145,28 @@ public:
 
    // services for EXEC
 
-   static void nice(int inc);
-   static void kill(pid_t pid, int sig);
-   static void setProcessGroup(pid_t pid = 0, pid_t pgid = 0);
+   static void nice(int inc)
+      {
+      U_TRACE(1, "UProcess::nice(%d)", inc)
+
+      (void) U_SYSCALL(nice, "%d", inc);
+      }
+
+   static void kill(pid_t pid, int sig)
+      {
+      U_TRACE(1, "UProcess::kill(%d,%d)", pid, sig)
+
+      (void) U_SYSCALL(kill, "%d,%d", pid, sig);
+      }
+
+   static void setProcessGroup(pid_t pid = 0, pid_t pgid = 0)
+      {
+      U_TRACE(1, "UProcess::setProcessGroup(%d,%d)", pid, pgid)
+
+#  ifndef _MSWINDOWS_
+      (void) U_SYSCALL(setpgid, "%d,%d", pid, pgid);
+#  endif
+      }
 
    // exec with internal vfork() with management of file descriptors for child I/O redirection...
 

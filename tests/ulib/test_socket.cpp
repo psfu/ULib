@@ -156,7 +156,7 @@ static void TCPEchoServer(unsigned int iPortNumber, bool bIPv6)
       cout << "Host name       = " << cServerSocket.localIPAddress().getHostName()                         << '\n'
            << "Host address    = " << cServerSocket.localIPAddress().getAddressString()                    << '\n'
            << "Node name       = " << USocketExt::getNodeName()                                            << '\n'
-           << "MAC address     = " << pcClientSocket->getMacAddress("eth0")                                << '\n'
+           << "MAC address     = " << USocketExt::getMacAddress(pcClientSocket, "eth0")                    << '\n'
            << "Network device  = " << USocketExt::getNetworkDevice("eth0")                                 << '\n'
            << "Gateway address = " << USocketExt::getGatewayAddress(U_CONSTANT_TO_PARAM("192.168.1.0/24")) << '\n'
            << "Network address = " << USocketExt::getNetworkAddress(fd, "eth0")                            << "\n\n";
@@ -270,7 +270,7 @@ static void UDPEchoServer(unsigned int iPortNumber, bool bIPv6)
 
    UUDPSocket cServerSocket(bIPv6);
 
-   cServerSocket.setServer(iPortNumber);
+   cServerSocket.setServer(iPortNumber, U_NULLPTR);
    cServerSocket.reusePort(O_RDWR | O_CLOEXEC);
    cServerSocket.setLocal();
 
@@ -414,7 +414,7 @@ int U_EXPORT main(int iArgC, char** ppcArgV)
 
       (void) paddr->setHostName(hostname);
 
-      vaddr.push(paddr);
+      vaddr.push_back(paddr);
 
       UPing sockp(2000, bUseIPv6);
 

@@ -17,7 +17,7 @@ UString URPCEncoder::encodeMethod(URPCMethod& method, const UString& nsName) // 
 {
    U_TRACE(0, "URPCEncoder::encodeMethod(%p,%V)", &method, nsName.rep)
 
-   encodedValue.setEmpty();
+   encodedValue.setEmptyForce();
 
    method.encode(); // Encode the method by virtual method...
 
@@ -45,6 +45,6 @@ const char* URPCEncoder::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

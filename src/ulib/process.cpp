@@ -29,31 +29,6 @@ PROCESS_INFORMATION  UProcess::aProcessInformation;
 
 int UProcess::filedes[6];
 
-// services for EXEC
-
-void UProcess::kill(pid_t pid, int sig)
-{
-   U_TRACE(1, "UProcess::kill(%d,%d)", pid, sig)
-
-   (void) U_SYSCALL(kill, "%d,%d", pid, sig);
-}
-
-void UProcess::nice(int inc)
-{
-   U_TRACE(1, "UProcess::nice(%d)", inc)
-
-   (void) U_SYSCALL(nice, "%d", inc);
-}
-
-void UProcess::setProcessGroup(pid_t pid, pid_t pgid)
-{
-   U_TRACE(1, "UProcess::setProcessGroup(%d,%d)", pid, pgid)
-
-#ifndef _MSWINDOWS_
-   (void) U_SYSCALL(setpgid, "%d,%d", pid, pgid);
-#endif
-}
-
 bool UProcess::fork()
 {
    U_TRACE_NO_PARAM(1, "UProcess::fork()")
@@ -62,13 +37,16 @@ bool UProcess::fork()
 
    _pid = U_FORK();
 
-   if (child()) u_setPid();
+   if ((running = (_pid != -1)))
+      {
+      if (child()) u_setPid();
 
-   running = (_pid != -1);
+      U_INTERNAL_DUMP("_pid = %u u_pid = %u %%P = %P running = %b", _pid, u_pid, running)
 
-   U_INTERNAL_DUMP("%P running = %b", running)
+      U_RETURN(true);
+      }
 
-   U_RETURN(running);
+   U_RETURN(false);
 }
 
 // inlining failed in call to 'UProcess::setStdInOutErr(bool, bool, bool)': call is unlikely and code size would grow
@@ -103,11 +81,11 @@ U_NO_EXPORT void UProcess::setStdInOutErr(bool fd_stdin, bool fd_stdout, bool fd
 #  else
       U_INTERNAL_ASSERT_MAJOR(filedes[0], STDERR_FILENO)
 
-#     ifndef HAVE_DUP3
+#    ifndef HAVE_DUP3
       (void) U_SYSCALL(dup2, "%d,%d",    filedes[0], STDIN_FILENO);
-#     else
+#    else
       (void) U_SYSCALL(dup3, "%d,%d,%d", filedes[0], STDIN_FILENO, O_CLOEXEC);
-#     endif
+#    endif
 
       U_INTERNAL_ASSERT_EQUALS(::fcntl(STDIN_FILENO,F_GETFD,FD_CLOEXEC), 0)
 #  endif
@@ -135,11 +113,11 @@ U_NO_EXPORT void UProcess::setStdInOutErr(bool fd_stdin, bool fd_stdout, bool fd
 #  else
       U_INTERNAL_ASSERT_MAJOR(filedes[3], STDOUT_FILENO)
 
-#     ifndef HAVE_DUP3
+#    ifndef HAVE_DUP3
       (void) U_SYSCALL(dup2, "%d,%d",    filedes[3], STDOUT_FILENO);
-#     else
+#    else
       (void) U_SYSCALL(dup3, "%d,%d,%d", filedes[3], STDOUT_FILENO, O_CLOEXEC);
-#     endif
+#    endif
 
       U_INTERNAL_ASSERT_EQUALS(::fcntl(STDOUT_FILENO,F_GETFD,FD_CLOEXEC), 0)
 #  endif
@@ -167,11 +145,11 @@ U_NO_EXPORT void UProcess::setStdInOutErr(bool fd_stdin, bool fd_stdout, bool fd
 #  else
       U_INTERNAL_ASSERT(filedes[5] >= STDIN_FILENO)
 
-#     ifndef HAVE_DUP3
+#    ifndef HAVE_DUP3
       (void) U_SYSCALL(dup2, "%d,%d",    filedes[5], STDERR_FILENO);
-#     else
+#    else
       (void) U_SYSCALL(dup3, "%d,%d,%d", filedes[5], STDERR_FILENO, O_CLOEXEC);
-#     endif
+#    endif
 
       U_INTERNAL_ASSERT_EQUALS(::fcntl(STDERR_FILENO,F_GETFD,FD_CLOEXEC), 0)
 #  endif
@@ -235,11 +213,11 @@ void UProcess::pipe(int fdp)
 
    int* fds = filedes + (fdp * 2); // fds[0] is for READING, fds[1] is for WRITING
 
-#  ifndef HAVE_PIPE2
+# ifndef HAVE_PIPE2
    (void) U_SYSCALL(pipe, "%p",     fds);
-#  else
+# else
    (void) U_SYSCALL(pipe2, "%p,%d", fds, O_CLOEXEC);
-#  endif
+# endif
 
    U_INTERNAL_DUMP("filedes[%d,%d] = { %d, %d }", (fdp * 2), (fdp * 2) + 1, fds[0], fds[1])
 }
@@ -254,33 +232,33 @@ pid_t UProcess::execute(const char* pathname, char* argv[], char* envp[], bool f
 
    U_INTERNAL_ASSERT_POINTER(argv)
    U_DUMP_EXEC(argv, envp)
-   U_INTERNAL_ASSERT_EQUALS(strcmp(argv[0],u_basename(pathname)), 0)
+   U_INTERNAL_ASSERT_EQUALS(strcmp(argv[0], u_basename(pathname, u__strlen(pathname, __PRETTY_FUNCTION__))), 0)
 
    (void) U_SYSCALL(memset, "%p,%d,%lu",        &aStartupInfo, 0, sizeof(STARTUPINFO));
    (void) U_SYSCALL(memset, "%p,%d,%lu", &aProcessInformation, 0, sizeof(PROCESS_INFORMATION));
 
-   /*
-   typedef struct _STARTUPINFO {
-   DWORD cb;            // Size of the structure, in bytes
-   LPTSTR lpReserved;
-   LPTSTR lpDesktop;
-   LPTSTR lpTitle;
-   DWORD dwX;
-   DWORD dwY;
-   DWORD dwXSize;
-   DWORD dwYSize;
-   DWORD dwXCountChars;
-   DWORD dwYCountChars;
-   DWORD dwFillAttribute;
-   DWORD dwFlags;
-   WORD wShowWindow;
-   WORD cbReserved2;
-   LPBYTE lpReserved2;
-   HANDLE hStdInput;
-   HANDLE hStdOutput;
-   HANDLE hStdError;
-   } STARTUPINFO, *LPSTARTUPINFO;
-   */
+   /**
+    * typedef struct _STARTUPINFO {
+    * DWORD cb; // Size of the structure, in bytes
+    * LPTSTR lpReserved;
+    * LPTSTR lpDesktop;
+    * LPTSTR lpTitle;
+    * DWORD dwX;
+    * DWORD dwY;
+    * DWORD dwXSize;
+    * DWORD dwYSize;
+    * DWORD dwXCountChars;
+    * DWORD dwYCountChars;
+    * DWORD dwFillAttribute;
+    * DWORD dwFlags;
+    * WORD wShowWindow;
+    * WORD cbReserved2;
+    * LPBYTE lpReserved2;
+    * HANDLE hStdInput;
+    * HANDLE hStdOutput;
+    * HANDLE hStdError;
+    * } STARTUPINFO, *LPSTARTUPINFO;
+    */
 
    aStartupInfo.cb          = sizeof(STARTUPINFO);
    aStartupInfo.dwFlags     = STARTF_USESHOWWINDOW;
@@ -399,14 +377,14 @@ pid_t UProcess::execute(const char* pathname, char* argv[], char* envp[], bool f
 
    if (fRet)
       {
-      /*
-      typedef struct _PROCESS_INFORMATION {
-      HANDLE hProcess;
-      HANDLE hThread;
-      DWORD dwProcessId;
-      DWORD dwThreadId;
-      } PROCESS_INFORMATION;
-      */
+      /**
+       * typedef struct _PROCESS_INFORMATION {
+       * HANDLE hProcess;
+       * HANDLE hThread;
+       * DWORD dwProcessId;
+       * DWORD dwThreadId;
+       * } PROCESS_INFORMATION;
+       */
 
       U_INTERNAL_DUMP("dwProcessId = %p hProcess = %p hThread = %p", aProcessInformation.dwProcessId,
                                                                      aProcessInformation.hProcess,
@@ -464,11 +442,11 @@ pid_t UProcess::execute(const char* pathname, char* argv[], char* envp[], bool f
 
    U_INTERNAL_ASSERT_POINTER(argv)
    U_DUMP_EXEC(argv, envp)
-   U_INTERNAL_ASSERT_EQUALS(strcmp(u_basename(pathname), argv[0]), 0)
+   U_INTERNAL_ASSERT_EQUALS(strcmp(argv[0], u_basename(pathname, u__strlen(pathname, __PRETTY_FUNCTION__))), 0)
 
    pid_t pid;
 
-#  ifdef HAVE_POSIX_SPAWN
+# ifdef HAVE_POSIX_SPAWN
    posix_spawn_file_actions_t action;
 
    (void) U_SYSCALL(posix_spawn_file_actions_init, "%p", &action);
@@ -509,10 +487,10 @@ pid_t UProcess::execute(const char* pathname, char* argv[], char* envp[], bool f
       if (filedes[4] > STDERR_FILENO) (void) U_SYSCALL(posix_spawn_file_actions_addclose, "%p,%d", &action, filedes[4]);
       }
 
-   (void) U_SYSCALL(posix_spawn, "%p,%S,%p,%p,%p,%p", &pid, pathname, &action, 0, argv, envp);
+   (void) U_SYSCALL(posix_spawn, "%p,%S,%p,%p,%p,%p", &pid, pathname, &action, U_NULLPTR, argv, envp);
 
    (void) U_SYSCALL(posix_spawn_file_actions_destroy, "%p", &action);
-#  else
+# else
    pid = U_VFORK();
 
    if (pid == 0) // child
@@ -525,10 +503,10 @@ pid_t UProcess::execute(const char* pathname, char* argv[], char* envp[], bool f
    // parent
 
    if (u_exec_failed) U_RETURN(-1);
-#  endif
+# endif
 
    U_RETURN(pid);
-   }
+}
 #endif
 
 /**
@@ -581,45 +559,20 @@ loop:
    U_RETURN(result);
 }
 
-void UProcess::wait()
-{
-   U_TRACE_NO_PARAM(0, "UProcess::wait()")
-
-   U_CHECK_MEMORY
-
-   if (running)
-      {
-      waitpid(_pid, &status, 0);
-
-      running = false;
-      }
-
-#ifdef DEBUG
-   char buffer[128];
-
-   (void) exitInfo(buffer, status);
-
-   U_INTERNAL_DUMP("status = %d, %S", status, buffer)
-#endif
-}
-
 int UProcess::waitAll(int timeoutMS)
 {
    U_TRACE(1, "UProcess::waitAll(%d)", timeoutMS)
 
-   if (timeoutMS) UInterrupt::setAlarm(timeoutMS);
-
-   wait();
+   U_INTERNAL_DUMP("Call   waitAll(%2D)")
 
 #ifdef DEBUG
    char buffer[128];
 #endif
-   int result = (status ? U_FAILED_ALL    // (status != 0) -> failed
-                        : U_FAILED_NONE); // (status == 0) -> success
+   int lpid, result = U_FAILED_NONE;
 
    if (timeoutMS) UInterrupt::setAlarm(timeoutMS);
 
-   while (UProcess::waitpid(-1, &status, 0) > 0)
+   while ((lpid = UProcess::waitpid(-1, &status, 0)) > 0)
       {
       if ((status == 0 && result == U_FAILED_ALL) || // (status == 0) -> success
           (status != 0 && result == U_FAILED_NONE))  // (status != 0) -> failed
@@ -630,7 +583,21 @@ int UProcess::waitAll(int timeoutMS)
       U_DUMP("result = %b status = %d, %S", result, status, exitInfo(buffer))
       }
 
-   if (timeoutMS) UInterrupt::resetAlarm();
+   U_INTERNAL_DUMP("Return waitAll(%2D)")
+
+   if (timeoutMS)
+      {
+      if (lpid == -1     &&
+          errno == EINTR &&
+          UInterrupt::flag_alarm)
+         {
+         U_DEBUG("UProcess::waitAll(%d): alarm expired", timeoutMS);
+
+         U_RETURN(U_FAILED_ALARM);
+         }
+
+      UInterrupt::resetAlarm();
+      }
 
    U_RETURN(result);
 }
@@ -690,6 +657,6 @@ const char* UProcess::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

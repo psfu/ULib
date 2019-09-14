@@ -151,6 +151,10 @@ public:
       count.RilevazioneVirusInp      += c.count.RilevazioneVirusInp;
       count.RilevazioneVirusOut      += c.count.RilevazioneVirusOut;
       }
+
+#ifdef DEBUG
+   const char* dump(bool reset) const { return ""; }
+#endif
 };
 
 typedef UVector<CasellaIdCounter*> VCasellaIdCounter;
@@ -168,8 +172,8 @@ public:
 
       if (gds)
          {
-         delete gds;
-         delete table;
+         U_DELETE(gds)
+         U_DELETE(table)
          }
       }
 
@@ -230,7 +234,7 @@ public:
       U_RETURN(false);
       }
 
-   static bool casellaUpdate(const UString& key)
+   static bool casellaUpdate(UString& key)
       {
       U_TRACE(5, "Application::casellaUpdate(%.*S)", U_STRING_TO_TRACE(key))
 
@@ -246,9 +250,9 @@ public:
             {
             vc = new VCasellaIdCounter();
 
-            key.duplicate(); // NB: need duplicate string because depends on mmap()'s content of document...
+            table->duplicate(); // NB: need duplicate string because depends on mmap()'s content of document...
 
-            table->insertAfterFind(key, vc);
+            table->insertAfterFind(vc);
             }
 
          CasellaIdCounter* c;
@@ -380,7 +384,7 @@ public:
 
          if (*ptipo == ' ')
             {
-            (void) callForAllEntryField(U_destinatari, Application::casellaUpdate);
+            (void) callForAllEntryField(U_destinatari, (bPFstr)Application::casellaUpdate);
 
             return;
             }
@@ -417,7 +421,7 @@ public:
 
       // setting for messaggi
 
-      table = new UHashMap<VCasellaIdCounter*>(U_GET_NEXT_PRIME_NUMBER(16 * 1024), true); // ignore case
+      table = new UHashMap<VCasellaIdCounter*>(u_nextPowerOfTwo(16 * 1024), true); // ignore case
 
       PEC_report::parse       = Application::parseLineForMessaggi;
       PEC_report::change_file = Application::reportNumCaselle;

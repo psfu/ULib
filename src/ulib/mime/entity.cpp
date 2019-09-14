@@ -21,16 +21,16 @@
 
 UMimeEntity::UMimeEntity() : content(U_CAPACITY)
 {
-   U_TRACE_REGISTER_OBJECT(0, UMimeEntity, "")
+   U_TRACE_CTOR(0, UMimeEntity, "")
 
-   header       = 0;
+   header       = U_NULLPTR;
    startHeader  = endHeader = 0;
    parse_result = false;
 }
 
 UMimeEntity::UMimeEntity(const UString& _data) : data(_data)
 {
-   U_TRACE_REGISTER_OBJECT(0, UMimeEntity, "%V", _data.rep)
+   U_TRACE_CTOR(0, UMimeEntity, "%V", _data.rep)
 
    startHeader  = 0;
    parse_result = false;
@@ -42,7 +42,7 @@ UMimeEntity::UMimeEntity(const UString& _data) : data(_data)
 
 UMimeEntity::UMimeEntity(const char* ptr, uint32_t len) : data(ptr, len)
 {
-   U_TRACE_REGISTER_OBJECT(0, UMimeEntity, "%.*S,%u", len, ptr, len)
+   U_TRACE_CTOR(0, UMimeEntity, "%.*S,%u", len, ptr, len)
 
    startHeader  = 0;
    parse_result = false;
@@ -480,7 +480,7 @@ bool UMimeMultipart::parse(bool digest)
          (void) item->header->setHeaderIfAbsent(U_CONSTANT_TO_PARAM("Content-Type"), item->content_type);
          }
 
-      bodypart.push(item);
+      bodypart.push_back(item);
 
       pos = (bfind ? boundaryEnd : endPos);
       }
@@ -551,7 +551,7 @@ const char* UMimeEntity::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* UMimeMessage::dump(bool reset) const
@@ -570,7 +570,7 @@ const char* UMimeMessage::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* UMimeMultipart::dump(bool _reset) const
@@ -592,7 +592,7 @@ const char* UMimeMultipart::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #  endif
 #endif

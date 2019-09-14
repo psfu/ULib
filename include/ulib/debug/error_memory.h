@@ -25,7 +25,9 @@ public:
    // CONSTRUCTOR
 
     UMemoryError() {                                                                    _this = (void*)U_CHECK_MEMORY_SENTINEL; }
-   ~UMemoryError() { U_ASSERT_MACRO(invariant(), "ERROR ON MEMORY", getErrorType(this)) _this = 0; }
+   ~UMemoryError() { U_ASSERT_MACRO(invariant(), "ERROR ON MEMORY", getErrorType(this)) _this = U_NULLPTR; }
+
+    UMemoryError(const UMemoryError& m) { _this = m._this; }
 
    // ASSIGNMENT
 
@@ -42,11 +44,6 @@ public:
    bool invariant() const { return (_this == (void*)U_CHECK_MEMORY_SENTINEL); }
 
    const char* getErrorType(const void* pobj) const;
-
-private:
-   static char* pbuffer;
-
-   friend void ULib_init();
 };
 
 #endif

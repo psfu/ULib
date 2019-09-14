@@ -9,12 +9,12 @@ public:
 
    UUnixClientImage() : UClientImage<UUnixSocket>()
       {
-      U_TRACE_REGISTER_OBJECT(5, UUnixClientImage, "", 0)
+      U_TRACE_CTOR(5, UUnixClientImage, "", 0)
       }
 
    ~UUnixClientImage()
       {
-      U_TRACE_UNREGISTER_OBJECT(5, UUnixClientImage)
+      U_TRACE_DTOR(5, UUnixClientImage)
       }
 
    // DEBUG
@@ -33,7 +33,7 @@ protected:
 
       if (UClientImage_Base::manageRead() == U_NOTIFIER_DELETE) U_RETURN(U_NOTIFIER_DELETE);
 
-      if (U_ClientImage_state == U_PLUGIN_HANDLER_GO_ON)
+      if (U_ClientImage_state == U_PLUGIN_HANDLER_OK)
          {
          *UClientImage_Base::wbuffer = *UClientImage_Base::rbuffer;
 
@@ -47,18 +47,21 @@ protected:
 U_MACROSERVER(UUnixServer, UUnixClientImage, UUnixSocket);
 
 int
-U_EXPORT main (int argc, char* argv[])
+U_EXPORT main (int argc, char* argv[], char* env[])
 {
    U_ULIB_INIT(argv);
 
    U_TRACE(5,"main(%d)",argc)
 
    UFileConfig fcg;
-   UUnixServer s(0);
-   UUnixSocket::setPath(argv[1]);
+   UUnixServer s(U_NULLPTR);
    UString plugin_dir(argv[2]), plugin_list(argv[3]);
 
    UServer_Base::bipc = true;
+
+   (void) s.name_sock->assign(argv[1]);
+
+   UUnixSocket::setPath(s.name_sock->data());
 
    if (argv[4])
       {
@@ -66,7 +69,7 @@ U_EXPORT main (int argc, char* argv[])
 
       (void) fcg.open(x);
 
-      s.cfg = &fcg;
+      s.pcfg = &fcg;
       }
 
    s.loadPlugins(plugin_dir, plugin_list);

@@ -4,11 +4,17 @@ MAINTAINERCLEANFILES = Makefile.in Makefile
 
 EXTRA_DIST = base/* container/* db/* debug/* dynamic/* flex/* internal/* ldap/* mime/* net/* pcre/* \
 			 	 replace/* ssl/* ssh/* ui/* utility/* xml/expat/* xml/libxml2/* zip/* lemon/*.cpp \
-				 orm/driver/*.cpp orm/driver/Makefile.* \
+				 orm/driver/*.cpp orm/driver/Makefile.* orm/driver/libpq \
              net/server/plugin/*.cpp net/server/plugin/Makefile.* \
-				 *.cpp all_c.c ULib.pc.in ULib.rc.in utility/*_store.bin
+				 *.cpp all_c.c ULib.pc.in ULib.rc.in utility/bin
 
-DEFAULT_INCLUDES = -I. -I$(top_builddir)/include
+if HAVE_PGSQL
+if STATIC_ORM_DRIVER_PGSQL
+SUBDIRS = orm/driver/libpq
+endif
+endif
+
+DEFAULT_INCLUDES = -I. -I$(top_builddir)/include @FSTACKINCLUDES@
 
 pkgconfigdir 	= $(libdir)/pkgconfig
 pkgconfig_DATA = ULib.pc
@@ -20,15 +26,14 @@ pkgconfig_DATA = ULib.pc
 SRC_C = base/base.c base/base_error.c base/hash.c base/utility.c base/miniz/miniz.c base/xxhash/xxhash.c \
 		  base/coder/cbase64.c base/coder/cquoted_printable.c base/coder/curl_coder.c base/coder/cxml_coder.c base/coder/cescape.c base/coder/chexdump.c
 
-SRC_CPP = internal/common.cpp \
+SRC_CPP = internal/common.cpp internal/error.cpp \
 			 ui/dialog.cpp db/cdb.cpp db/rdb.cpp \
-			 debug/debug_common.cpp debug/error.cpp \
 			 dynamic/dynamic.cpp dynamic/plugin.cpp \
 			 mime/header.cpp mime/entity.cpp mime/multipart.cpp \
 			 container/vector.cpp container/hash_map.cpp container/tree.cpp \
 			 utility/interrupt.cpp utility/services.cpp utility/semaphore.cpp utility/base64.cpp \
 			 utility/lock.cpp utility/string_ext.cpp utility/socket_ext.cpp utility/uhttp.cpp \
-			 utility/data_session.cpp utility/ring_buffer.cpp utility/websocket.cpp utility/dir_walk.cpp \
+			 utility/data_session.cpp utility/ring_buffer.cpp utility/websocket.cpp utility/dir_walk.cpp utility/bit_array.cpp \
 			 lemon/expression.cpp \
 			 orm/orm.cpp orm/orm_driver.cpp \
 			 net/ipaddress.cpp net/socket.cpp net/ping.cpp \
@@ -39,8 +44,8 @@ SRC_CPP = internal/common.cpp \
 			 net/client/smtp.cpp net/client/ftp.cpp net/client/pop3.cpp net/client/imap.cpp \
 			 net/client/http.cpp net/client/client.cpp net/client/redis.cpp net/client/elasticsearch.cpp \
 			 net/ipt_ACCOUNT.cpp \
-			 json/value.cpp \
-			 query/query_parser.cpp  event/event_time.cpp \
+			 json/value.cpp serialize/flatbuffers.cpp \
+			 query/query_parser.cpp event/event_time.cpp event/event_db.cpp \
 			 timeval.cpp timer.cpp notifier.cpp string.cpp file.cpp process.cpp file_config.cpp log.cpp \
 			 options.cpp application.cpp cache.cpp date.cpp url.cpp tokenizer.cpp command.cpp
 
@@ -66,7 +71,7 @@ endif
 
 if DEBUG
 SRC_C   += base/base_trace.c
-SRC_CPP += debug/trace.cpp debug/error_memory.cpp debug/error_simulation.cpp
+SRC_CPP += debug/debug_common.cpp debug/trace.cpp debug/error_memory.cpp debug/error_simulation.cpp
 if STDCPP
 SRC_CPP += debug/objectDB.cpp
 endif
@@ -175,7 +180,7 @@ endif
 
 if SSL
 SRC_C   += base/ssl/cdes3.c base/ssl/dgst.c
-SRC_CPP += ssl/certificate.cpp ssl/pkcs7.cpp ssl/crl.cpp ssl/pkcs10.cpp net/client/twilio.cpp \
+SRC_CPP += ssl/certificate.cpp ssl/pkcs7.cpp ssl/crl.cpp ssl/pkcs10.cpp net/client/twilio.cpp net/client/uwebsocket.cpp \
 		     ssl/mime/mime_pkcs7.cpp ssl/net/sslsocket.cpp ssl/net/ssl_session.cpp utility/des3.cpp
 if SSL_TS
 SRC_CPP += ssl/timestamp.cpp
@@ -240,6 +245,9 @@ endif
 if STATIC_HANDLER_NOCAT
 SRC_CPP += net/server/plugin/mod_nocat.cpp
 endif
+if STATIC_HANDLER_NODOG
+SRC_CPP += net/server/plugin/mod_nodog.cpp
+endif
 
 if STATIC_HANDLER_SOCKET
 SRC_CPP += net/server/plugin/mod_socket.cpp
@@ -289,9 +297,6 @@ endif
 
 # Handler static orm driver
 
-#lib@ULIB@_la_CXXFLAGS =
-lib@ULIB@_la_LDFLAGS = @ULIB_LIBS@ -version-info 1:0:0 -release @ULIB_VERSION@
-
 if STATIC_ORM_DRIVER_SQLITE
 SRC_CPP += orm/driver/orm_driver_sqlite.cpp
 endif
@@ -300,8 +305,18 @@ if STATIC_ORM_DRIVER_MYSQL
 SRC_CPP += orm/driver/orm_driver_mysql.cpp
 endif
 
+lib@ULIB@_la_LDFLAGS = @ULIB_LIBS@
+
 if STATIC_ORM_DRIVER_PGSQL
 SRC_CPP += orm/driver/orm_driver_pgsql.cpp
+lib@ULIB@_la_LDFLAGS += $(top_builddir)/src/ulib/orm/driver/libpq/libpq.la
+endif
+
+lib@ULIB@_la_LDFLAGS += -version-info 1:0:0 -release @ULIB_VERSION@
+
+if MINGW
+lib@ULIB@_la_LDFLAGS 	 += -export-symbols $(srcdir)/@ULIB@.def -no-undefined -Wl,ULib-win32-res.o
+lib@ULIB@_la_DEPENDENCIES = ULib-win32-res.o
 endif
 
 # Handler static http servlet
@@ -333,7 +348,7 @@ dist-hook:
 
 clean-local:
 	@cd $(top_builddir)/src/ulib/net/server/plugin/usp; $(MAKE) $(AM_MAKEFLAGS) clean 
-	-rm -rf core .libs *.bb* *.da *.la gmon.out *.gc* */*.gc* */*/*.gc* */*/*/*.gc* */*/*/*/*.gc*
+	-rm -rf core .libs *.bb* *.da *.la gmon.out
 
 ## ----------------------------------------------------------------------------------------------------
 ## usp section
@@ -372,11 +387,6 @@ endif
 ##
 ##all: .libs/lib@ULIB@.so
 ##endif
-
-if MINGW
-lib@ULIB@_la_LDFLAGS 	 += -export-symbols $(srcdir)/@ULIB@.def -no-undefined -Wl,ULib-win32-res.o
-lib@ULIB@_la_DEPENDENCIES = ULib-win32-res.o
-endif
 
 ULib-win32-res.o: ULib.rc
 	$(WINDRES) $< $@

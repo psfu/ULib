@@ -2,46 +2,48 @@
 
 #include <ulib/file.h>
 #include <ulib/tokenizer.h>
+#include <ulib/json/value.h>
 
 int
-U_EXPORT main (int argc, char* argv[])
+U_EXPORT main (int argc, char* argv[], char* env[])
 {
    U_ULIB_INIT(argv);
 
    U_TRACE(5, "main(%d)", argc)
 
+   UTokenizer t;
    UString dati, y, z = U_STRING_FROM_CONSTANT("mnt mirror home stefano spool cross");
 
-   UTokenizer t(z);
+   t.setData(z);
 
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("mnt") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("mirror") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("home") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("stefano") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("spool") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("cross") )
    U_ASSERT( t.next(y,(bool*)0) == false )
 
    t.setData(z);
    t.setDelimiter(" \t\n");
 
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("mnt") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("mirror") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("home") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("stefano") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("spool") )
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("cross") )
    U_ASSERT( t.next(y,(bool*)0) == false )
 
@@ -50,7 +52,7 @@ U_EXPORT main (int argc, char* argv[])
    t.setData(z1);
    t.setDelimiter(0);
 
-   U_ASSERT( t.next(y,(bool*)0) == true )
+   U_ASSERT( t.next(y,(bool*)0) )
    U_ASSERT( y         == U_STRING_FROM_CONSTANT("spool cross") )
    U_ASSERT( t.next(y,(bool*)0) == false )
 
@@ -62,18 +64,18 @@ U_EXPORT main (int argc, char* argv[])
 
    bool bgroup = false;
 
-   U_ASSERT( t.next(y,&bgroup)  == true )
-   U_ASSERT( bgroup             == true )
-   U_ASSERT( y                  == U_STRING_FROM_CONSTANT("pippo OR pluto") )
-   U_ASSERT( t.next(y,&bgroup)  == true )
-   U_ASSERT( y                  == U_STRING_FROM_CONSTANT("AND") )
-   U_ASSERT( bgroup             == false )
-   U_ASSERT( t.next(y,&bgroup)  == true )
-   U_ASSERT( y                  == U_STRING_FROM_CONSTANT("NOT") )
-   U_ASSERT( bgroup             == false )
-   U_ASSERT( t.next(y,&bgroup)  == true )
-   U_ASSERT( y                  == U_STRING_FROM_CONSTANT("paperino AND paperone") )
-   U_ASSERT( bgroup             == true )
+   U_ASSERT( t.next(y,&bgroup) )
+   U_ASSERT( bgroup )
+   U_ASSERT( y == U_STRING_FROM_CONSTANT("pippo OR pluto") )
+   U_ASSERT( t.next(y,&bgroup) )
+   U_ASSERT( y == U_STRING_FROM_CONSTANT("AND") )
+   U_ASSERT( bgroup == false )
+   U_ASSERT( t.next(y,&bgroup) )
+   U_ASSERT( y == U_STRING_FROM_CONSTANT("NOT") )
+   U_ASSERT( bgroup == false )
+   U_ASSERT( t.next(y,&bgroup) )
+   U_ASSERT( y == U_STRING_FROM_CONSTANT("paperino AND paperone") )
+   U_ASSERT( bgroup )
    U_ASSERT( t.next(y,(bool*)0) == false )
 
    t.setGroup(0);
@@ -123,13 +125,13 @@ U_EXPORT main (int argc, char* argv[])
 
    t.setData(U_STRING_FROM_CONSTANT(" ( $QUERY_STRING  =  'submitted' ) "));
 
-   while (t.getTokenId(0) > 0);
+   while (t.getTokenId(0) > 0) {}
 
    U_ASSERT( t.getTokenId(0) == 0 )
 
    t.setData(U_STRING_FROM_CONSTANT(" ( ${QUERY_STRING}  !=  submitted ) "));
 
-   while (t.getTokenId(0) > 0);
+   while (t.getTokenId(0) > 0) {}
 
    U_ASSERT( t.getTokenId(0) == 0 )
 

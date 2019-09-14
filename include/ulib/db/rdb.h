@@ -19,6 +19,12 @@
 #include <ulib/utility/string_ext.h>
 #include <ulib/utility/data_session.h>
 
+#ifdef _MSWINDOWS_
+#  include <ws2tcpip.h>
+#else
+#  include <netinet/in.h>
+#endif
+
 /**
  * @class URDB
  *
@@ -72,23 +78,25 @@ public:
 
    URDB(int _ignore_case = false) : UCDB(_ignore_case)
       {
-      U_TRACE_REGISTER_OBJECT(0, URDB, "%d", _ignore_case)
+      U_TRACE_CTOR(0, URDB, "%d", _ignore_case)
 
-      pnode = 0;
+      plock = U_NULLPTR;
+      pnode = U_NULLPTR;
        node = 0;
 
-      key1.dptr  = 0;
+      key1.dptr  = U_NULLPTR;
       key1.dsize = 0;
       }
 
    URDB(const UString& pathdb, int _ignore_case) : UCDB(pathdb, _ignore_case)
       {
-      U_TRACE_REGISTER_OBJECT(0, URDB, "%V,%d", pathdb.rep, _ignore_case)
+      U_TRACE_CTOR(0, URDB, "%V,%d", pathdb.rep, _ignore_case)
 
-      pnode = 0;
+      plock = U_NULLPTR;
+      pnode = U_NULLPTR;
        node = 0;
 
-      key1.dptr  = 0;
+      key1.dptr  = U_NULLPTR;
       key1.dsize = 0;
       }
 
@@ -98,19 +106,25 @@ public:
 #endif
    ~URDB()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, URDB)
+      U_TRACE_DTOR(0, URDB)
+
+      if (preclock)
+         {
+         delete[] preclock;
+                  preclock = U_NULLPTR;
+         }
       }
 
    // Open a Reliable DataBase
 
-   bool open(                       uint32_t log_size = 1024 * 1024, bool btruncate = false, bool cdb_brdonly = true, bool breference = true);
-   bool open(const UString& pathdb, uint32_t log_size = 1024 * 1024, bool btruncate = false, bool cdb_brdonly = true, bool breference = true)
+   bool open(                       uint32_t log_size = 1024 * 1024, bool btruncate = false, bool cdb_brdonly = true, bool breference = true, sem_t* psem = &nolock);
+   bool open(const UString& pathdb, uint32_t log_size = 1024 * 1024, bool btruncate = false, bool cdb_brdonly = true, bool breference = true, sem_t* psem = &nolock)
       {
       U_TRACE(0, "URDB::open(%V,%u,%b,%b,%b)", pathdb.rep, log_size, btruncate, cdb_brdonly, breference)
 
       UFile::setPath(pathdb);
 
-      return URDB::open(log_size, btruncate, cdb_brdonly, breference);
+      return URDB::open(log_size, btruncate, cdb_brdonly, breference, psem);
       }
 
    void reset();
@@ -164,7 +178,14 @@ public:
    // -3: there is not enough (virtual) memory available on writing journal
    // ---------------------------------------------------------------------
 
-   int remove(const UString& _key);
+   int remove(const UString& _key)
+      {
+      U_TRACE(0, "URDB::remove(%V)", _key.rep)
+
+      UCDB::setKey(_key);
+
+      return remove();
+      }
 
    int remove(const char* _key, uint32_t keylen)
       {
@@ -187,12 +208,24 @@ public:
    // -4: flag was RDB_INSERT and the new key already existed
    // ----------------------------------------------------------------------
 
-   int substitute(const UString& _key, const UString& new_key, const UString& _data, int flag = RDB_INSERT);
+   int substitute(const UString& _key, const UString& new_key, const UString& _data, int _flag = RDB_INSERT)
+      {
+      U_TRACE(0, "URDB::substitute(%V,%V,%V,%d)", _key.rep, new_key.rep, _data.rep, _flag)
+
+      UCDB::setKey(_key);
+      UCDB::setData(_data);
+      UCDB::datum key2 = { (void*) new_key.data(), new_key.size() };
+
+      return substitute(&key2, _flag);
+      }
 
    bool fetch();
-   bool find(const UString& _key)                   { return find(U_STRING_TO_PARAM(_key)); }
-   bool find(const char*    _key, uint32_t keylen);
+   bool find(const char* key, uint32_t keylen);
 
+   bool find(const UString& _key) { return find(U_STRING_TO_PARAM(_key)); }
+
+   UFile&   getJournal()            { return journal; }
+   uint32_t getJournalSize()        { return journal.st_size; }
    uint32_t getCapacity() const     { return RDB_capacity(this); }
    uint32_t getDataSize() const     { return RDB_node_data_sz(this); }
    void*    getDataPointer() const  { return RDB_node_data(this); }
@@ -236,10 +269,20 @@ public:
 
    // LOCK
 
-   void   lock() { _lock.lock(); }
-   void unlock() { _lock.unlock(); }
+   void   lockRecord();
+   void unlockRecord()
+      {
+      U_TRACE_NO_PARAM(0, "URDB::unlockRecord()")
 
-   void setShared(sem_t* psem, char* spinlock);
+      U_INTERNAL_ASSERT_POINTER(plock)
+
+      plock->unlock();
+      }
+
+   static void initRecordLock();
+
+   void   lock() { if (_lock.sem) _lock.lock(); }
+   void unlock() { if (_lock.sem) _lock.unlock(); }
 
    // TRANSACTION
 
@@ -251,9 +294,9 @@ public:
 
    void getKeys(UVector<UString>& vec);
 
-   void callForAllEntry(      iPFprpr function, UVector<UString>* v  = 0);
+   void callForAllEntry(      iPFprpr function, UVector<UString>* v  = U_NULLPTR);
    void callForAllEntryDelete(iPFprpr function);
-   void callForAllEntrySorted(iPFprpr function, qcompare compare_obj = 0);
+   void callForAllEntrySorted(iPFprpr function, qcompare compare_obj = U_NULLPTR);
 
    // PRINT
 
@@ -274,6 +317,7 @@ public:
 
 protected:
    ULock _lock;
+   ULock* plock;
    UFile journal;
 
    // ----------------------------------------------------------------------------------------------------------------
@@ -288,15 +332,12 @@ protected:
    // ----------------------------------------------------------------------------------------------------------------
 
    typedef struct rdb_datum {
-      uint32_t dptr;
-      uint32_t dsize;
+      uint32_t dptr, dsize;
    } rdb_datum;
 
    typedef struct rdb_cache_node {
-      rdb_datum key;
-      rdb_datum data;
-      uint32_t left;  // Two cache_node 'pointer' of the binary search tree
-      uint32_t right; // behind every entry of the hash table
+      rdb_datum key, data;
+      uint32_t left, right; // Two cache_node 'pointer' of the binary search tree behind every entry of the hash table
    } cache_node;
 
    typedef struct rdb_cache_struct {
@@ -353,6 +394,9 @@ protected:
 
           char* parseLine(const char* ptr) { return parseLine(ptr, &key, &data); }
 
+   static sem_t nolock;
+   static ULock* preclock;
+
 private:
    uint32_t* pnode;
    uint32_t   node; // RDB_node
@@ -396,13 +440,7 @@ private:
 template <> class U_EXPORT URDBObjectHandler<UDataStorage*> : public URDB {
 public:
 
-   URDBObjectHandler(const UString& pathdb, int _ignore_case, const UDataStorage* ptr) : URDB(pathdb, _ignore_case)
-      {
-      U_TRACE_REGISTER_OBJECT(0, URDBObjectHandler<UDataStorage*>, "%V,%d,%p", pathdb.rep, _ignore_case, ptr)
-
-      pDataStorage = (UDataStorage*)ptr;
-      brecfound    = false;
-      }
+   URDBObjectHandler(const UString& pathdb, int _ignore_case, void* ptr, bool _bdirect = false);
 
    // coverity[VIRTUAL_DTOR]
 #ifdef U_COVERITY_FALSE_POSITIVE
@@ -410,7 +448,22 @@ public:
 #endif
    ~URDBObjectHandler()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, URDBObjectHandler<UDataStorage*>)
+      U_TRACE_DTOR(0, URDBObjectHandler<UDataStorage*>)
+
+#  ifdef DEBUG
+      if (bdirect == false &&
+          pDataStorage     &&
+          pDataStorage->recdata)
+         {
+         uint32_t sz = pDataStorage->size();
+
+         U_INTERNAL_DUMP("pDataStorage->recdata(%u) = %p", sz, pDataStorage->recdata)
+
+         U_INTERNAL_ASSERT_MAJOR(sz, 0)
+
+         UMemoryPool::_free(pDataStorage->recdata, sz);
+         }
+#  endif
       }
 
    // SERVICES
@@ -418,7 +471,22 @@ public:
    void close();
 
    bool getDataStorage();
-   bool putDataStorage();
+   bool getDataStorage(const char* s, uint32_t n);
+
+   bool getDataStorage(in_addr_t client)
+      {
+      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::getDataStorage(%u)", client)
+
+      U_CHECK_MEMORY
+
+      U_cdb_no_hash(this) = true;
+
+      bool result = getDataStorage((const char*)&client, sizeof(in_addr_t));
+
+      U_cdb_no_hash(this) = false;
+
+      U_RETURN(result);
+      }
 
    bool getDataStorage(const UString& _key)
       {
@@ -433,19 +501,6 @@ public:
       return getDataStorage();
       }
 
-   bool getDataStorage(const char* s, uint32_t n)
-      {
-      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::getDataStorage(%.*S,%u)", n, s, n)
-
-      U_CHECK_MEMORY
-
-      U_INTERNAL_ASSERT_POINTER(pDataStorage)
-
-      pDataStorage->setKeyIdDataSession(s, n);
-
-      return getDataStorage();
-      }
-
    bool putDataStorage(const UString& _key)
       {
       U_TRACE(0, "URDBObjectHandler<UDataStorage*>::putDataStorage(%V)", _key.rep)
@@ -455,8 +510,10 @@ public:
       U_INTERNAL_ASSERT_POINTER(pDataStorage)
       U_INTERNAL_ASSERT_EQUALS(_key, pDataStorage->keyid)
 
-      return putDataStorage();
+      return putDataStorage(RDB_INSERT_WITH_PADDING);
       }
+
+   bool putDataStorage(int op = RDB_INSERT_WITH_PADDING);
 
    bool insertDataStorage(int op)
       {
@@ -465,29 +522,17 @@ public:
       U_CHECK_MEMORY
 
       U_INTERNAL_ASSERT_POINTER(pDataStorage)
+      U_ASSERT(pDataStorage->isDataSession())
 
       data_buffer = pDataStorage->toBuffer();
       data_len    = UDataStorage::buffer_len;
 
-      return _insertDataStorage(op);
+      return _insertDataStorage(U_STRING_TO_PARAM(pDataStorage->keyid), op);
       }
 
-   bool insertDataStorage(const UString& _key, int _flag = RDB_INSERT_WITH_PADDING)
+   bool insertDataStorage(const char* s, uint32_t n, int _flag = RDB_INSERT) // SSL session cache...
       {
-      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::insertDataStorage(%V,%d)", _key.rep, _flag)
-
-      U_CHECK_MEMORY
-
-      U_INTERNAL_ASSERT_POINTER(pDataStorage)
-
-      pDataStorage->setKeyIdDataSession(_key);
-
-      return insertDataStorage(_flag);
-      }
-
-   void insertDataStorage(const char* s, uint32_t n)
-      {
-      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::insertDataStorage(%.*S,%u)", n, s, n)
+      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::insertDataStorage(%.*S,%u,%d)", n, s, n, _flag)
 
       U_CHECK_MEMORY
 
@@ -495,47 +540,120 @@ public:
 
       pDataStorage->setKeyIdDataSession(s, n);
 
-      (void) insertDataStorage(RDB_INSERT); // SSL session cache...
+      return insertDataStorage(_flag);
+      }
+
+   bool insertDataStorage(const UString& _key, int _flag = RDB_INSERT_WITH_PADDING)
+      {
+      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::insertDataStorage(%V,%d)", _key.rep, _flag)
+
+      return insertDataStorage(U_STRING_TO_PARAM(_key), _flag);
+      }
+
+   void setPointerToDataStorage()
+      {
+      U_TRACE_NO_PARAM(0, "URDBObjectHandler<UDataStorage*>::setPointerToDataStorage()")
+
+      U_INTERNAL_ASSERT(bdirect)
+      U_INTERNAL_ASSERT_POINTER(pDataStorage)
+
+      *(char**)pDataStorage = recval.data();
+      }
+
+   bool insertDataStorage(void* drec, uint32_t dlen, const char* s, uint32_t n, int op)
+      {
+      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::insertDataStorage(%p,%u,%.*S,%u,%d)", drec, dlen, n, s, n, op)
+
+      data_buffer = (char*)drec;
+      data_len    = dlen;
+
+      if (_insertDataStorage(s, n, op))
+         {
+         setPointerToDataStorage();
+
+         U_ASSERT(recval.equal(data_buffer, dlen))
+
+         U_RETURN(true);
+         }
+
+      U_RETURN(false);
+      }
+
+   bool insertDataStorage(void* drec, uint32_t dlen, in_addr_t client, int op)
+      {
+      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::insertDataStorage(%p,%u,%u,%d)", drec, dlen, client, op)
+
+      U_CHECK_MEMORY
+
+      U_cdb_no_hash(this) = true;
+
+      bool result = insertDataStorage(drec, dlen, (const char*)&client, sizeof(in_addr_t), op);
+
+      U_cdb_no_hash(this) = false;
+
+      U_RETURN(result);
       }
 
    UString getKeyID() const { return pDataStorage->keyid; }
    void  resetKeyID() const {        pDataStorage->keyid.clear(); }
 
    bool          isRecordFound() const     { return brecfound; }
+   UString       getRecordValue() const    { return recval; }
    UDataStorage* getPointerToDataStorage() { return pDataStorage; }
 
-   void setPointerToDataStorage(UDataStorage* ptr)  { pDataStorage = ptr; }
+   void setPointerToDataStorage(UDataStorage* ptr)
+      {
+      U_TRACE(0, "URDBObjectHandler<UDataStorage*>::setPointerToDataStorage(%p)", ptr)
+
+      pDataStorage = ptr;
+
+#  ifdef DEBUG
+      if (bdirect == false &&
+          ptr              &&
+          ptr->recdata)
+         {
+         uint32_t sz = ptr->size();
+
+         U_INTERNAL_DUMP("pDataStorage->recdata(%u) = %p", sz, ptr->recdata)
+
+         U_INTERNAL_ASSERT_MAJOR(sz, 0)
+         }
+#  endif
+      }
 
    // Call function for all entry
 
-   void callForAllEntry(iPFprpr function, vPF function_no_lock = 0, qcompare compare_obj = 0);
+   void callForAllEntry(iPFprpr function, vPF function_no_lock = U_NULLPTR, qcompare compare_obj = U_NULLPTR);
 
-   void callForAllEntryWithSetEntry(vPFprpr function, vPF function_no_lock = 0, qcompare compare_obj = 0)
+   void callForAllEntryWithSetEntry(vPFprpr function, vPF function_no_lock = U_NULLPTR, qcompare compare_obj = U_NULLPTR)
       { bsetEntry = true; callForAllEntry((iPFprpr)function, function_no_lock, compare_obj); bsetEntry = false; }
 
-   void callForAllEntryWithVector(iPFprpr function, vPF function_no_lock = (vPF)-1, qcompare compare_obj = 0) { callForAllEntry(function, function_no_lock, compare_obj); }
+   void callForAllEntryWithVector(iPFprpr function, vPF function_no_lock = (vPF)-1, qcompare compare_obj = U_NULLPTR) { callForAllEntry(function, function_no_lock, compare_obj); }
 
 #ifdef DEBUG
    const char* dump(bool _reset) const;
 #endif
 
+protected:
    UString recval;
    UDataStorage* pDataStorage;
-   bool brecfound;
-protected:
+   bool brecfound, bdirect;
+
    static bool bsetEntry;
    static char* data_buffer;
    static uint32_t data_len;
    static iPFpvpv ds_function_to_call;
    static URDBObjectHandler<UDataStorage*>* pthis;
 
-   bool _insertDataStorage(int op);
+   bool _insertDataStorage(const char* s, uint32_t n, int op);
 
           void setEntry(     UStringRep* key, UStringRep* data);
    static int callEntryCheck(UStringRep* key, UStringRep* data);
 
 private:
    U_DISALLOW_COPY_AND_ASSIGN(URDBObjectHandler<UDataStorage*>)
+
+   friend class UServer_Base;
 };
 
 template <class T> class U_EXPORT URDBObjectHandler<T*> : public URDBObjectHandler<UDataStorage*> {
@@ -543,12 +661,12 @@ public:
 
    URDBObjectHandler(const UString& pathdb, int _ignore_case, const T* ptr) : URDBObjectHandler<UDataStorage*>(pathdb, _ignore_case, ptr)
       {
-      U_TRACE_REGISTER_OBJECT(0, URDBObjectHandler<T*>, "%V,%d,%p", pathdb.rep, _ignore_case, ptr)
+      U_TRACE_CTOR(0, URDBObjectHandler<T*>, "%V,%d,%p", pathdb.rep, _ignore_case, ptr)
       }
 
    ~URDBObjectHandler()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, URDBObjectHandler<T*>)
+      U_TRACE_DTOR(0, URDBObjectHandler<T*>)
       }
 
    // SERVICES

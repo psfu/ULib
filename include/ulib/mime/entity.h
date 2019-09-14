@@ -53,7 +53,7 @@ public:
 
    UMimeEntity(const UMimeEntity& item) : data(item.data), content_type(item.content_type), content(item.content)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMimeEntity, "%p", &item)
+      U_TRACE_CTOR(0, UMimeEntity, "%p", &item)
 
       U_INTERNAL_ASSERT_POINTER(item.header)
 
@@ -63,14 +63,14 @@ public:
 
       header = item.header; // NB: move...
 
-      ((UMimeEntity*)&item)->header = 0;
+      ((UMimeEntity*)&item)->header = U_NULLPTR;
       }
 
    ~UMimeEntity()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UMimeEntity)
+      U_TRACE_DTOR(0, UMimeEntity)
 
-      if (header) delete header;
+      if (header) U_DELETE(header)
       }
 
    bool isEmpty()
@@ -274,19 +274,19 @@ public:
 
    UMimeMessage(UMimeEntity& item) : UMimeEntity(item), rfc822(UMimeEntity::content)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMimeMessage, "%p", &item)
+      U_TRACE_CTOR(0, UMimeMessage, "%p", &item)
 
       U_ASSERT(UMimeEntity::isMessage())
       }
 
    UMimeMessage(const UString& _data) : UMimeEntity(_data), rfc822(UMimeEntity::content)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMimeMessage, "%V", _data.rep)
+      U_TRACE_CTOR(0, UMimeMessage, "%V", _data.rep)
       }
 
    ~UMimeMessage()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UMimeMessage)
+      U_TRACE_DTOR(0, UMimeMessage)
       }
 
    UMimeEntity& getRFC822() { return rfc822; }
@@ -326,16 +326,16 @@ public:
 
    UMimeMultipart() : UMimeEntity()
       {
-      U_TRACE_REGISTER_OBJECT(0, UMimeMultipart, "", 0)
+      U_TRACE_CTOR(0, UMimeMultipart, "")
 
-      buf = bbuf = 0;
-      isFinal = false;
+      buf = bbuf = U_NULLPTR;
       blen = boundaryStart = boundaryEnd = endPos = 0;
+      isFinal = false;
       }
 
    UMimeMultipart(UMimeEntity& item) : UMimeEntity(item)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMimeMultipart, "%p", &item)
+      U_TRACE_CTOR(0, UMimeMultipart, "%p", &item)
 
       U_ASSERT(UMimeEntity::isMultipart())
 
@@ -344,14 +344,14 @@ public:
 
    UMimeMultipart(const UString& _data) : UMimeEntity(_data)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMimeMultipart, "%V", _data.rep)
+      U_TRACE_CTOR(0, UMimeMultipart, "%V", _data.rep)
 
       init();
       }
 
    ~UMimeMultipart()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UMimeMultipart)
+      U_TRACE_DTOR(0, UMimeMultipart)
 
       setEmpty();
 

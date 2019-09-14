@@ -18,6 +18,7 @@
 "purpose 'simple http client...'\n" \
 "option c config  1 'path of configuration file' ''\n" \
 "option u upload  1 'path of file to upload to url' ''\n" \
+"option r resume  0 'resume previous upload' ''\n" \
 "option o output  1 'path of file to write output' ''\n" \
 "option q queue   1 'time polling of queue mode' ''\n" \
 "option s stdin   0 'read the request to send from standard input' ''\n" \
@@ -32,15 +33,14 @@ public:
       {
       U_TRACE(5, "Application::Application()")
 
-      client           = 0;
-      follow_redirects = false;
+      client = U_NULLPTR;
       }
 
    ~Application()
       {
       U_TRACE(5, "Application::~Application()")
 
-      delete client;
+      U_DELETE(client)
       }
 
    void run(int argc, char* argv[], char* env[])
@@ -51,23 +51,27 @@ public:
 
       // manage options
 
+      const char* p;
       time_t queue_time = 0;
       UString outpath, result, req(U_CAPACITY);
-      bool ok = false, include = false, bstdin = false;
+      bool ok = false, include = false, bstdin = false, bresume = false;
 
       if (UApplication::isOptions())
          {
          cfg_str    =  opt['c'];
          upload     =  opt['u'];
-         bstdin     = (opt['s'] == U_STRING_FROM_CONSTANT("1"));
-         include    = (opt['i'] == U_STRING_FROM_CONSTANT("1"));
+         bstdin     = (opt['s'] == *UString::str_one);
+         bresume    = (opt['r'] == *UString::str_one);
+         include    = (opt['i'] == *UString::str_one);
          outpath    =  opt['o'];
-         queue_time =  opt['q'].strtol(10);
+         queue_time =  opt['q'].strtoul();
          }
 
       // manage arg operation
 
-      UString url(argv[optind++]);
+      p = argv[optind];
+
+      UString url(p, strlen(p));
 
       // manage file configuration
 
@@ -85,7 +89,7 @@ public:
       // PID_FILE     write pid on file indicated
       // RES_TIMEOUT  timeout for response from server
       //
-      // LOG_FILE     locations   for file log
+      // LOG_FILE     locations for file log
       //
       // CERT_FILE    certificate of client
       // KEY_FILE     private key of client
@@ -102,13 +106,8 @@ public:
 
       client = new UHttpClient<USSLSocket>(&cfg);
 
-      user             = cfg.at(U_CONSTANT_TO_PARAM("USER"));
-      password         = cfg.at(U_CONSTANT_TO_PARAM("PASSWORD_AUTH"));
-      follow_redirects = cfg.readBoolean(U_CONSTANT_TO_PARAM("FOLLOW_REDIRECTS"));
-
-      client->setFollowRedirects(follow_redirects);
-      client->getResponseHeader()->setIgnoreCase(true);
-      client->setRequestPasswordAuthentication(user, password);
+      client->setFollowRedirects(cfg.readBoolean(U_CONSTANT_TO_PARAM("FOLLOW_REDIRECTS")));
+      client->setRequestPasswordAuthentication(cfg.at(U_CONSTANT_TO_PARAM("USER")), cfg.at(U_CONSTANT_TO_PARAM("PASSWORD_AUTH")));
 
       UApplication::exit_value = 1;
 
@@ -116,7 +115,7 @@ loop: if (upload)
          {
          UFile file(upload);
 
-         if (client->upload(url, file)) ok = true;
+         if (client->uploadByPUT(url, file, bresume)) ok = true;
          }
       else if (client->connectServer(url))
          {
@@ -154,7 +153,7 @@ loop: if (upload)
 
       if (queue_time)
          {
-         U_INTERNAL_ASSERT_EQUALS(UClient_Base::queue_dir, 0)
+         U_INTERNAL_ASSERT_EQUALS(UClient_Base::queue_dir, U_NULLPTR)
 
          UTimeVal to_sleep(queue_time / 10L);
 
@@ -239,10 +238,9 @@ loop: if (upload)
       }
 
 private:
-   UHttpClient<USSLSocket>* client;
    UFileConfig cfg;
-   UString cfg_str, upload, user, password;
-   bool follow_redirects;
+   UString cfg_str, upload;
+   UHttpClient<USSLSocket>* client;
 
 #ifndef U_COVERITY_FALSE_POSITIVE
    U_DISALLOW_COPY_AND_ASSIGN(Application)

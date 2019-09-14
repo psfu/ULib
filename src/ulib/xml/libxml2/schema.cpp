@@ -18,16 +18,16 @@
 
 UXML2Schema::UXML2Schema(const UString& xmldoc)
 {
-   U_TRACE_REGISTER_OBJECT(0, UXML2Schema, "%V", xmldoc.rep)
+   U_TRACE_CTOR(0, UXML2Schema, "%V", xmldoc.rep)
 
    xmlSchemaParserCtxtPtr context = (xmlSchemaParserCtxtPtr) U_SYSCALL(xmlSchemaNewMemParserCtxt, "%S,%u", U_STRING_TO_PARAM(xmldoc));
 
-   U_SYSCALL_VOID(xmlSchemaSetParserErrors, "%p,%p,%p,%p", context, (xmlSchemaValidityErrorFunc)NULL, (xmlSchemaValidityWarningFunc)NULL, NULL);
+   U_SYSCALL_VOID(xmlSchemaSetParserErrors, "%p,%p,%p,%p", context, (xmlSchemaValidityErrorFunc)U_NULLPTR, (xmlSchemaValidityWarningFunc)U_NULLPTR, U_NULLPTR);
 
 // xmlGenericError        = foo;
-   xmlGenericErrorContext = NULL;
+   xmlGenericErrorContext = U_NULLPTR;
 
-   ctxt  = 0;
+   ctxt  = U_NULLPTR;
    impl_ = (xmlSchemaPtr) U_SYSCALL(xmlSchemaParse, "%p", context);
 
    U_SYSCALL_VOID(xmlSchemaFreeParserCtxt, "%p", context);
@@ -36,13 +36,13 @@ UXML2Schema::UXML2Schema(const UString& xmldoc)
       {
       ctxt = (xmlSchemaValidCtxtPtr) U_SYSCALL(xmlSchemaNewValidCtxt, "%p", impl_);
 
-      U_SYSCALL_VOID(xmlSchemaSetValidErrors, "%p,%p,%p,%p", ctxt, (xmlSchemaValidityErrorFunc)NULL, (xmlSchemaValidityWarningFunc)NULL, NULL);
+      U_SYSCALL_VOID(xmlSchemaSetValidErrors, "%p,%p,%p,%p", ctxt, (xmlSchemaValidityErrorFunc)U_NULLPTR, (xmlSchemaValidityWarningFunc)U_NULLPTR, U_NULLPTR);
       }
 }
 
 UXML2Schema::~UXML2Schema()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UXML2Schema)
+   U_TRACE_DTOR(0, UXML2Schema)
 
              U_SYSCALL_VOID(xmlSchemaFree,          "%p", impl_);
    if (ctxt) U_SYSCALL_VOID(xmlSchemaFreeValidCtxt, "%p", ctxt);
@@ -69,13 +69,13 @@ bool UXML2Schema::validate(UXML2Document& doc)
 
    U_INTERNAL_ASSERT_POINTER(impl_)
 
-   bool reuse = (ctxt != 0);
+   bool reuse = (ctxt != U_NULLPTR);
 
    if (reuse == false)
       {
       ctxt = (xmlSchemaValidCtxtPtr) U_SYSCALL(xmlSchemaNewValidCtxt, "%p", impl_);
 
-      U_SYSCALL_VOID(xmlSchemaSetValidErrors, "%p,%p,%p,%p", ctxt, (xmlSchemaValidityErrorFunc)NULL, (xmlSchemaValidityWarningFunc) NULL, NULL);
+      U_SYSCALL_VOID(xmlSchemaSetValidErrors, "%p,%p,%p,%p", ctxt, (xmlSchemaValidityErrorFunc)U_NULLPTR, (xmlSchemaValidityWarningFunc)U_NULLPTR, U_NULLPTR);
       }
 
    bool result = (U_SYSCALL(xmlSchemaValidateDoc, "%p,%p", ctxt, doc.cobj()) == 0);
@@ -84,7 +84,7 @@ bool UXML2Schema::validate(UXML2Document& doc)
       {
       U_SYSCALL_VOID(xmlSchemaFreeValidCtxt, "%p", ctxt);
 
-      ctxt = 0;
+      ctxt = U_NULLPTR;
       }
 
    U_RETURN(result);
@@ -105,6 +105,6 @@ const char* UXML2Schema::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

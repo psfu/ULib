@@ -35,13 +35,10 @@ int main(int argc, char* argv[])
 {
    int n_cmp;
    unsigned len;
-   char l_err_buffer[256];
 
    u_init_ulib(argv);
    u_init_ulib_hostname();
    u_init_ulib_username();
-
-   u_err_buffer = l_err_buffer;
 
 #ifdef __MINGW32__
    n_cmp = 8;
@@ -59,7 +56,7 @@ int main(int argc, char* argv[])
    u__snprintf(buffer, 4096, U_CONSTANT_TO_PARAM("%U %H"), 0);
    if (strcasecmp(buf, buffer)) goto failed;
 
-   sprintf(buf, "%s", u_basename(argv[0]));
+   sprintf(buf, "%s", u_basename(argv[0], strlen(argv[0])));
    u__snprintf(buffer, 4096, U_CONSTANT_TO_PARAM("%N"), 0);
    if (strcmp(buf, buffer)) goto failed;
 
@@ -133,7 +130,7 @@ int main(int argc, char* argv[])
    strcpy(buffer, "\"stringa che continua...\"");
    if (strcmp(buf, buffer)) goto failed;
 
-   if (u_rmatch(U_CONSTANT_TO_PARAM("1234567890#Envelope"), U_CONSTANT_TO_PARAM("#Envelope")) == false) goto failed;
+   if (u_endsWith(U_CONSTANT_TO_PARAM("1234567890#Envelope"), U_CONSTANT_TO_PARAM("#Envelope")) == false) goto failed;
 
    if (u_runAsUser("mail", true))
       {

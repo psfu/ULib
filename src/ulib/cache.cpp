@@ -19,7 +19,7 @@
 
 UCache::~UCache()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UCache)
+   U_TRACE_DTOR(0, UCache)
 
    if (fd != -1)
       {
@@ -39,7 +39,7 @@ U_NO_EXPORT void UCache::init(UFile& _x, uint32_t size, bool bexist, bool brdonl
 
    (void) _x.memmap(PROT_READ | (brdonly ? 0 : PROT_WRITE));
 
-   char* ptr = _x.getMap();
+   char* ptr = _x.resetMap();
 
    info = (cache_info*)ptr;
       x =              ptr + sizeof(UCache::cache_info);
@@ -63,9 +63,9 @@ U_NO_EXPORT void UCache::init(UFile& _x, uint32_t size, bool bexist, bool brdonl
       }
 }
 
-bool UCache::open(const UString& path, uint32_t size, const UString* environment)
+bool UCache::open(const UString& path, uint32_t size, const UString* environment, bool btemp)
 {
-   U_TRACE(0, "UCache::open(%V,%u,%p)", path.rep, size, environment)
+   U_TRACE(0, "UCache::open(%V,%u,%p,%b)", path.rep, size, environment, btemp)
 
    U_CHECK_MEMORY
 
@@ -74,6 +74,8 @@ bool UCache::open(const UString& path, uint32_t size, const UString* environment
    if (_x.creat(O_RDWR))
       {
       init(_x, size, (_x.size() ? true : ((void)_x.ftruncate(size), false)), false);
+
+      if (btemp) (void) _x._unlink();
 
       U_RETURN(true);
       }
@@ -96,6 +98,10 @@ bool UCache::open(const UString& path, const UString& dir, const UString* enviro
 #  ifdef DEBUG
       dir_template       = _y.getPath();
       dir_template_mtime = _y.st_mtime;
+
+      U_INTERNAL_DUMP("dir_template = %V", dir_template.rep)
+
+      U_INTERNAL_ASSERT(dir_template)
 #  endif
 
       bool exist = true;
@@ -162,15 +168,6 @@ bool UCache::open(const UString& path, const UString& dir, const UString* enviro
    U_RETURN(false);
 }
 
-inline uint32_t UCache::hash(const char* key, uint32_t keylen)
-{
-   U_TRACE(0, "UCache::hash(%.*S,%u)", keylen, key, keylen)
-
-   uint32_t keyhash = u_cdb_hash((unsigned char*)key, keylen, -1) * sizeof(uint32_t) % info->hsize;
-
-   U_RETURN(keyhash);
-}
-
 char* UCache::add(const char* key, uint32_t keylen, uint32_t datalen, uint32_t _ttl)
 {
    U_TRACE(0, "UCache::add(%.*S,%u,%u,%u)", keylen, key, keylen, datalen, _ttl)
@@ -194,7 +191,7 @@ char* UCache::add(const char* key, uint32_t keylen, uint32_t datalen, uint32_t _
             {
             U_ERROR("Cache exhausted");
 
-            U_RETURN((char*)0);
+            U_RETURN((char*)U_NULLPTR);
             }
 
          info->unused = info->writer;
@@ -355,15 +352,20 @@ UString UCache::getContent(const char* key, uint32_t keylen)
    U_TRACE(0, "UCache::getContent(%.*S,%u)", keylen, key, keylen)
 
 #ifdef DEBUG
-   struct stat st;
-   UString buffer(U_PATH_MAX);
+   U_INTERNAL_DUMP("dir_template = %V", dir_template.rep)
 
-   buffer.snprintf(U_CONSTANT_TO_PARAM("%v/%.*s"), dir_template.rep, keylen, key);
-
-   if (U_SYSCALL(stat, "%S,%p", buffer.data(), &st) == 0 &&
-       st.st_mtime >= dir_template_mtime)
+   if (dir_template)
       {
-      return UFile::contentOf(buffer);
+      struct stat st;
+      UString buffer(U_PATH_MAX);
+
+      buffer.snprintf(U_CONSTANT_TO_PARAM("%v/%.*s"), dir_template.rep, keylen, key);
+
+      if (U_SYSCALL(stat, "%S,%p", buffer.data(), &st) == 0 &&
+          st.st_mtime >= dir_template_mtime)
+         {
+         return UFile::contentOf(buffer);
+         }
       }
 #endif
 
@@ -535,7 +537,7 @@ const char* UCache::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #  endif
 #endif

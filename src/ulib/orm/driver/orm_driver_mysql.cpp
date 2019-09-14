@@ -22,7 +22,7 @@ U_CREAT_FUNC(orm_driver_mysql, UOrmDriverMySql)
 
 UOrmDriverMySql::~UOrmDriverMySql()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UOrmDriverMySql)
+   U_TRACE_DTOR(0, UOrmDriverMySql)
 }
 
 void UOrmDriverMySql::handlerError()
@@ -60,23 +60,24 @@ void UOrmDriverMySql::handlerError()
       U_ENTRY(CR_NAMEDPIPESETSTATE_ERROR),
       U_ENTRY(CR_CANT_READ_CHARSET),
       U_ENTRY(CR_NET_PACKET_TOO_LARGE),
+      U_ENTRY(CR_SSL_CONNECTION_ERROR),
+      U_ENTRY(CR_MALFORMED_PACKET),
+      U_ENTRY(CR_NO_PREPARE_STMT),
+      U_ENTRY(CR_PARAMS_NOT_BOUND),
+      U_ENTRY(CR_INVALID_PARAMETER_NO),
+      U_ENTRY(CR_INVALID_BUFFER_USE),
+      U_ENTRY(CR_UNSUPPORTED_PARAM_TYPE),
+      U_ENTRY(CR_SHARED_MEMORY_CONNECTION),
+      /*
       U_ENTRY(CR_EMBEDDED_CONNECTION),
       U_ENTRY(CR_PROBE_SLAVE_STATUS),
       U_ENTRY(CR_PROBE_SLAVE_HOSTS),
       U_ENTRY(CR_PROBE_SLAVE_CONNECT),
       U_ENTRY(CR_PROBE_MASTER_CONNECT),
-      U_ENTRY(CR_SSL_CONNECTION_ERROR),
-      U_ENTRY(CR_MALFORMED_PACKET),
       U_ENTRY(CR_WRONG_LICENSE),
       U_ENTRY(CR_NULL_POINTER),
-      U_ENTRY(CR_NO_PREPARE_STMT),
-      U_ENTRY(CR_PARAMS_NOT_BOUND),
       U_ENTRY(CR_DATA_TRUNCATED),
       U_ENTRY(CR_NO_PARAMETERS_EXISTS),
-      U_ENTRY(CR_INVALID_PARAMETER_NO),
-      U_ENTRY(CR_INVALID_BUFFER_USE),
-      U_ENTRY(CR_UNSUPPORTED_PARAM_TYPE),
-      U_ENTRY(CR_SHARED_MEMORY_CONNECTION),
       U_ENTRY(CR_SHARED_MEMORY_CONNECT_REQUEST_ERROR),
       U_ENTRY(CR_SHARED_MEMORY_CONNECT_ANSWER_ERROR),
       U_ENTRY(CR_SHARED_MEMORY_CONNECT_FILE_MAP_ERROR),
@@ -88,13 +89,14 @@ void UOrmDriverMySql::handlerError()
       U_ENTRY(CR_SHARED_MEMORY_CONNECT_SET_ERROR),
       U_ENTRY(CR_CONN_UNKNOW_PROTOCOL),
       U_ENTRY(CR_INVALID_CONN_HANDLE),
+      U_ENTRY(CR_FETCH_CANCELED),
+      U_ENTRY(CR_NO_RESULT_SET),
+      */
 #  ifdef CR_SECURE_AUTH
       U_ENTRY(CR_SECURE_AUTH),
 #  endif
-      U_ENTRY(CR_FETCH_CANCELED),
       U_ENTRY(CR_NO_DATA),
       U_ENTRY(CR_NO_STMT_METADATA),
-      U_ENTRY(CR_NO_RESULT_SET),
       U_ENTRY(CR_NOT_IMPLEMENTED),
       U_ENTRY(CR_SERVER_LOST_EXTENDED),
       U_ENTRY(CR_STMT_CLOSED),
@@ -103,11 +105,12 @@ void UOrmDriverMySql::handlerError()
       U_ENTRY(CR_AUTH_PLUGIN_CANNOT_LOAD)
    };
 
-   if (UOrmDriver::errmsg == 0) UOrmDriver::errmsg   = U_SYSCALL(mysql_error,    "%p", (MYSQL*)UOrmDriver::connection);
-                                UOrmDriver::errcode  = U_SYSCALL(mysql_errno,    "%p", (MYSQL*)UOrmDriver::connection);
-                                UOrmDriver::SQLSTATE = U_SYSCALL(mysql_sqlstate, "%p", (MYSQL*)UOrmDriver::connection);
+   UOrmDriver::errcode  = U_SYSCALL(mysql_errno,    "%p", (MYSQL*)UOrmDriver::connection);
+   UOrmDriver::SQLSTATE = U_SYSCALL(mysql_sqlstate, "%p", (MYSQL*)UOrmDriver::connection);
 
-   if (UOrmDriver::errcode >= CR_ERROR_FIRST) UOrmDriver::errcode -= CR_ERROR_FIRST; // 2000
+   if (UOrmDriver::errmsg == U_NULLPTR) UOrmDriver::errmsg = U_SYSCALL(mysql_error, "%p", (MYSQL*)UOrmDriver::connection);
+
+   if (UOrmDriver::errcode >= 2000) UOrmDriver::errcode -= 2000;
 
    if (UOrmDriver::errcode >= 0                                     &&
        UOrmDriver::errcode < (int)U_NUM_ELEMENTS(error_value_table) &&
@@ -137,34 +140,37 @@ UOrmDriver* UOrmDriverMySql::handlerConnect(const UString& option)
 
    UOrmDriver* pdrv;
 
-   if (UOrmDriver::connection == 0) pdrv = this;
-   else U_NEW(UOrmDriverMySql, pdrv, UOrmDriverMySql(*UString::str_mysql_name));
+   if (UOrmDriver::connection == U_NULLPTR) pdrv = this;
+   else
+      {
+      U_NEW(UOrmDriverMySql, pdrv, UOrmDriverMySql(*UString::str_mysql_name));
+      }
 
    if (pdrv->setOption(option) == false)
       {
-      if (UOrmDriver::connection) delete pdrv;
+      if (UOrmDriver::connection) U_DELETE(pdrv)
 
-      U_RETURN_POINTER(0, UOrmDriver);
+      U_RETURN_POINTER(U_NULLPTR, UOrmDriver);
       }
 
    pdrv->connection = U_SYSCALL(mysql_init, "%p", (MYSQL*)pdrv->connection);
 
-   if (pdrv->connection == 0)
+   if (pdrv->connection == U_NULLPTR)
       {
       pdrv->errmsg = "ran out of memory";
 
       pdrv->printError(__PRETTY_FUNCTION__);
 
-      if (UOrmDriver::connection) delete pdrv;
+      if (UOrmDriver::connection) U_DELETE(pdrv)
 
-      U_RETURN_POINTER(0, UOrmDriver);
+      U_RETURN_POINTER(U_NULLPTR, UOrmDriver);
       }
 
-   int timeout = pdrv->getOptionValue(*UString::str_timeout).strtol(10); // generic timeout is specified in seconds
+   int timeout = pdrv->getOptionValue(*UString::str_timeout).strtoul(); // generic timeout is specified in seconds
 
    (void) U_SYSCALL(mysql_options, "%p", (MYSQL*)pdrv->connection, MYSQL_OPT_CONNECT_TIMEOUT, (const char*)&timeout);
 
-   int port = pdrv->getOptionValue(*UString::str_port).strtol(10);
+   int port = pdrv->getOptionValue(*UString::str_port).strtoul();
 
    if (port <= 0 || port > 65535) port = 3306; // if no port was specified, use MySQL's default port to let things run gracefully
 
@@ -198,13 +204,14 @@ UOrmDriver* UOrmDriverMySql::handlerConnect(const UString& option)
 
    U_INTERNAL_ASSERT(pdrv->dbname.isNullTerminated())
 
-   if (U_SYSCALL(mysql_real_connect,"%p,%S,%S,%S,%S,%u,%S,%lu",(MYSQL*)pdrv->connection,host.data(),user.data(),password.data(),pdrv->dbname.data(),(unsigned int)port,0,0L) == 0)
+   if (U_SYSCALL(mysql_real_connect,"%p,%S,%S,%S,%S,%u,%S,%lu", (MYSQL*)pdrv->connection, host.data(), user.data(),
+                                                                password.data(), pdrv->dbname.data(), (unsigned int)port, U_NULLPTR, 0L) == U_NULLPTR)
       {
       pdrv->printError(__PRETTY_FUNCTION__);
 
-      if (UOrmDriver::connection) delete pdrv;
+      if (UOrmDriver::connection) U_DELETE(pdrv)
 
-      U_RETURN_POINTER(0, UOrmDriver);
+      U_RETURN_POINTER(U_NULLPTR, UOrmDriver);
       }
 
    /**
@@ -232,7 +239,7 @@ void UOrmDriverMySql::handlerDisConnect()
 
    U_SYSCALL_VOID(mysql_close, "%p", (MYSQL*)UOrmDriver::connection);
 
-   UOrmDriver::connection = 0;
+   UOrmDriver::connection = U_NULLPTR;
 }
 
 bool UOrmDriverMySql::handlerQuery(const char* query, uint32_t query_len)
@@ -261,13 +268,13 @@ USqlStatement* UOrmDriverMySql::handlerStatementCreation(const char* stmt, uint3
 
    MYSQL_STMT* pHandle = (MYSQL_STMT*) U_SYSCALL(mysql_stmt_init, "%p", (MYSQL*)UOrmDriver::connection);
 
-   if (pHandle == 0)
+   if (pHandle == U_NULLPTR)
       {
       UOrmDriver::errmsg = "ran out of memory";
 
       UOrmDriver::printError(__PRETTY_FUNCTION__);
 
-      U_RETURN_POINTER(0, USqlStatement);
+      U_RETURN_POINTER(U_NULLPTR, USqlStatement);
       }
 
    UOrmDriver::errcode = U_SYSCALL(mysql_stmt_prepare, "%p,%S,%u", pHandle, stmt, len);
@@ -280,7 +287,7 @@ USqlStatement* UOrmDriverMySql::handlerStatementCreation(const char* stmt, uint3
 
       (void) U_SYSCALL(mysql_stmt_close, "%p", pHandle);
 
-      U_RETURN_POINTER(0, USqlStatement);
+      U_RETURN_POINTER(U_NULLPTR, USqlStatement);
       }
 
    uint32_t num_bind_param  = U_SYSCALL(mysql_stmt_param_count, "%p", pHandle),
@@ -297,21 +304,21 @@ void UMySqlStatement::reset()
 {
    U_TRACE_NO_PARAM(0, "UMySqlStatement::reset()")
 
-   U_ASSERT_EQUALS(num_bind_param,  vparam.size())
-   U_ASSERT_EQUALS(num_bind_result, vresult.size())
+   U_ASSERT(vresult.size() <= num_bind_result)
+   U_ASSERT_EQUALS(num_bind_param, vparam.size())
 
    string_type = 0;
 
    if (mysql_vparam)
       {
       UMemoryPool::_free(mysql_vparam, num_bind_param, sizeof(MYSQL_BIND));
-                         mysql_vparam = 0;
+                         mysql_vparam = U_NULLPTR;
       }
 
    if (mysql_vresult)
       {
       UMemoryPool::_free(mysql_vresult, num_bind_result, sizeof(MYSQL_BIND));
-                         mysql_vresult = 0;
+                         mysql_vresult = U_NULLPTR;
       }
 }
 
@@ -342,7 +349,7 @@ void UOrmDriverMySql::handlerStatementRemove(USqlStatement* pstmt)
 
    if (UOrmDriver::errcode) UOrmDriver::printError(__PRETTY_FUNCTION__);
 
-   delete (UMySqlStatement*)pstmt;
+   U_DELETE((UMySqlStatement*)pstmt)
 }
 
 bool UMySqlStatement::setBindParam(UOrmDriver* pdrv)
@@ -352,7 +359,7 @@ bool UMySqlStatement::setBindParam(UOrmDriver* pdrv)
    U_ASSERT_EQUALS(num_bind_param, vparam.size())
 
    if (num_bind_param &&
-       mysql_vparam == 0)
+       mysql_vparam == U_NULLPTR)
       {
       USqlStatementBindParam* param;
 
@@ -364,10 +371,21 @@ bool UMySqlStatement::setBindParam(UOrmDriver* pdrv)
 
          MYSQL_BIND* mysql_param = mysql_vparam+i;
 
-         mysql_param->buffer        = param->buffer;
-         mysql_param->buffer_length = param->length;
-         mysql_param->buffer_type   = (enum_field_types)param->type;
-         mysql_param->is_unsigned   = param->is_unsigned;
+         if ((mysql_param->buffer_type = (enum_field_types)param->type) == (enum_field_types)U_UTF_VALUE)
+            {
+            U_INTERNAL_ASSERT_POINTER(param->pstr)
+            U_INTERNAL_ASSERT(param->pstr->invariant())
+
+            mysql_param->buffer        = param->pstr->data();
+            mysql_param->buffer_length = param->pstr->size();
+            }
+         else
+            {
+            mysql_param->buffer        = param->buffer;
+            mysql_param->buffer_length = param->length;
+            }
+
+         mysql_param->is_unsigned = param->is_unsigned;
          }
 
       pdrv->errcode = U_SYSCALL(mysql_stmt_bind_param, "%p,%p", (MYSQL_STMT*)pHandle, mysql_vparam);
@@ -378,7 +396,7 @@ bool UMySqlStatement::setBindParam(UOrmDriver* pdrv)
    U_RETURN(true);
 }
 
-USqlStatementBindParam* UOrmDriverMySql::creatSqlStatementBindParam(USqlStatement* pstmt, const char* s, int n, bool bstatic, int rebind)
+USqlStatementBindParam* UOrmDriverMySql::creatSqlStatementBindParam(USqlStatement* pstmt, const char* s, uint32_t n, bool bstatic, int rebind)
 {
    U_TRACE(0, "UOrmDriverMySql::creatSqlStatementBindParam(%p,%.*S,%u,%b,%d)", pstmt, n, s, n, bstatic, rebind)
 
@@ -408,7 +426,7 @@ USqlStatementBindParam* UOrmDriverMySql::creatSqlStatementBindParam(USqlStatemen
 
    if (UOrmDriver::errcode) UOrmDriver::printError(__PRETTY_FUNCTION__);
 
-   U_RETURN_POINTER(0, USqlStatementBindParam);
+   U_RETURN_POINTER(U_NULLPTR, USqlStatementBindParam);
 }
 
 void UMySqlStatement::setStringBindedAsResult()
@@ -426,11 +444,9 @@ void UMySqlStatement::setStringBindedAsResult()
 
       if (result->type == string_type)
          {
-         U_INTERNAL_ASSERT_POINTER(result->pstr)
+         U_INTERNAL_ASSERT_MINOR(result->length, U_MYSQL_STRING_SIZE)
 
-         result->pstr->size_adjust_force(result->length); // output length
-
-         U_INTERNAL_DUMP("result->pstr = %V", result->pstr)
+         ((UMySqlStatementBindResult*)result)->setString();
          }
       }
 }
@@ -474,7 +490,7 @@ bool UMySqlStatement::setBindResult(UOrmDriver* pdrv)
 #  endif
       }
 
-   if (mysql_vresult == 0)
+   if (mysql_vresult == U_NULLPTR)
       {
       USqlStatementBindResult* result;
 
@@ -684,7 +700,7 @@ const char* UMySqlStatement::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* UOrmDriverMySql::dump(bool _reset) const
@@ -700,6 +716,6 @@ const char* UOrmDriverMySql::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

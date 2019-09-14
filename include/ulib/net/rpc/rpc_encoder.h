@@ -38,14 +38,14 @@ public:
 
    URPCEncoder() : buffer(U_CAPACITY), encodedValue(U_CAPACITY)
       {
-      U_TRACE_REGISTER_OBJECT(0, URPCEncoder, "", 0)
+      U_TRACE_CTOR(0, URPCEncoder, "")
 
       bIsResponse = false;
       }
 
    virtual ~URPCEncoder()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, URPCEncoder)
+      U_TRACE_DTOR(0, URPCEncoder)
       }
 
    void clearData()
@@ -68,9 +68,9 @@ public:
       {
       U_TRACE(0, "URPCEncoder::encodeArgument(%V,%V,%V)", argName.rep, argType.rep, argContent.rep)
 
-      if (   argName) arg.push(argName);
-      if (   argType) arg.push(argType);
-      if (argContent) arg.push(argContent);
+      if (   argName) arg.push_back(argName);
+      if (   argType) arg.push_back(argType);
+      if (argContent) arg.push_back(argContent);
       }
 
    void encodeArgument(const UString& argName, const UString& argType, bool value)

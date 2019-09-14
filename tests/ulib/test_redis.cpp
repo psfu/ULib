@@ -1,15 +1,14 @@
 // test_redis.cpp
 
-#include <ulib/net/tcpsocket.h>
 #include <ulib/net/client/redis.h>
 
-int main(int argc, char *argv[])
+int main(int argc, char *argv[], char* env[])
 {
    U_ULIB_INIT(argv);
 
    U_TRACE(5,"main(%d)",argc)
 
-   UREDISClient<UTCPSocket> rc;
+   UREDISClient<UUnixSocket> rc;
 
    if (rc.connect())
       {
@@ -17,6 +16,33 @@ int main(int argc, char *argv[])
       bool ok = rc.auth(U_CONSTANT_TO_PARAM("home"));
 
       U_INTERNAL_ASSERT(ok == false)
+
+      ok = rc.ltrim(U_CONSTANT_TO_PARAM("listA"), 1, 0);
+
+      U_INTERNAL_ASSERT(ok)
+
+      ok = rc.lpush(U_CONSTANT_TO_PARAM("listA"), U_CONSTANT_TO_PARAM("D C B A"));
+
+      U_INTERNAL_ASSERT(ok)
+
+      ok = rc.ltrim(U_CONSTANT_TO_PARAM("listB"), 1, 0);
+
+      U_INTERNAL_ASSERT(ok)
+
+      ok = rc.lpush(U_CONSTANT_TO_PARAM("listB"), U_CONSTANT_TO_PARAM("F E"));
+
+      U_INTERNAL_ASSERT(ok)
+
+      ok = rc.pipeline(U_CONSTANT_TO_PARAM("LRANGE listA 0 -1\r\nLRANGE listB 0 -1")); // "*4\r\n$1\r\nD\r\n$1\r\nC\r\n$1\r\nB\r\n$1\r\nA\r\n*2\r\n$1\r\nF\r\n$1\r\nE\r\n"
+
+      U_INTERNAL_ASSERT(ok)
+
+      U_ASSERT( rc.vitem[0] == "A" )
+      U_ASSERT( rc.vitem[1] == "B" )
+      U_ASSERT( rc.vitem[2] == "C" )
+      U_ASSERT( rc.vitem[3] == "D" )
+      U_ASSERT( rc.vitem[4] == "E" )
+      U_ASSERT( rc.vitem[5] == "F" )
 
       ok = rc.time();
 

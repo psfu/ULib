@@ -16,6 +16,9 @@
 
 #include <ulib/utility/semaphore.h>
 
+class ULog;
+class URDB;
+
 class U_EXPORT ULock {
 public:
 
@@ -28,28 +31,19 @@ public:
 
    ULock()
       {
-      U_TRACE_REGISTER_OBJECT(0, ULock, "")
+      U_TRACE_CTOR(0, ULock, "")
 
-      plock  = 0;
-      psem   = 0;
-      locked = 0;
+      sem = 0ULL;
       }
 
    ~ULock()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, ULock)
+      U_TRACE_DTOR(0, ULock)
 
-      destroy();
+      (void) reset();
       }
 
    // SERVICES
-
-   void   unlock();
-   bool spinlock(uint32_t cnt);
-   bool     lock(time_t timeout);
-
-   void destroy();
-   void init(sem_t* ptr_lock, char* ptr_spinlock = 0);
 
    void lock()
       {
@@ -57,37 +51,72 @@ public:
 
       U_CHECK_MEMORY
 
-      if (psem &&
-          locked == 0)
+      if (isLocked() == false)
          {
-         psem->lock();
+         setLocked();
 
-         locked = 1;
+         getPointerToSemaphore()->lock();
          }
       }
 
+   void unlock()
+      {
+      U_TRACE_NO_PARAM(0, "ULock::unlock()")
+
+      U_CHECK_MEMORY
+
+      if (isLocked())
+         {
+         getPointerToSemaphore()->unlock();
+
+         setUnLocked();
+
+         U_ASSERT_EQUALS(isLocked(), false)
+         }
+      }
+
+   void init(sem_t* ptr);
+   bool lock(time_t timeout);
+
    // ATOMIC COUNTER
 
-   static long atomicIncrement(long* pvalue, long offset)
+   static void atomicIncrement(long* pvalue, long offset)
       {
-      U_TRACE(0, "ULock::atomicIncrement(%ld,%ld)", *pvalue, offset)
+      U_TRACE(0, "ULock::atomicIncrement(%p,%ld)", pvalue, offset)
 
 #  if defined(HAVE_GCC_ATOMICS) && defined(ENABLE_THREAD)
-      return __sync_add_and_fetch(pvalue, offset);
+      (void) __sync_add_and_fetch(pvalue, offset);
 #  else
-      return (*pvalue += offset);
+      *pvalue += offset;
 #  endif
       }
 
-   static long atomicDecrement(long* pvalue, long offset)
+   static void atomicDecrement(long* pvalue, long offset)
       {
-      U_TRACE(0, "ULock::atomicDecrement(%ld,%ld)", *pvalue, offset)
+      U_TRACE(0, "ULock::atomicDecrement(%p,%ld)", pvalue, offset)
 
 #  if defined(HAVE_GCC_ATOMICS) && defined(ENABLE_THREAD)
-      return __sync_sub_and_fetch(pvalue, offset);
+      (void) __sync_sub_and_fetch(pvalue, offset);
 #  else
-      return (*pvalue -= offset);
+      *pvalue -= offset;
 #  endif
+      }
+
+   static void atomicIncrement(sig_atomic_t& value) { atomicIncrement((long*)&value, 1L); }
+   static void atomicDecrement(sig_atomic_t& value) { atomicDecrement((long*)&value, 1L); }
+
+   // SPIN LOCK
+
+   static bool spinlock(char* plock, uint32_t cnt)
+      {
+      U_TRACE(0+256, "ULock::spinlock(%p,%u)", plock, cnt)
+
+      do {
+         if (spinLockAcquire(plock)) U_RETURN(true);
+         }
+      while (cnt--);
+
+      U_RETURN(false);
       }
 
    // STREAM
@@ -97,9 +126,63 @@ public:
 #endif
 
 protected:
-   char* plock;
-   USemaphore* psem;
-   int locked; // manage lock recursivity...
+   uint64_t sem;
+
+   bool reset()
+      {
+      U_TRACE_NO_PARAM(0, "ULock::reset()")
+
+      if (sem)
+         {
+         unlock();
+
+         U_DELETE(getPointerToSemaphore())
+
+         U_RETURN(true);
+         }
+
+      U_RETURN(false);
+      }
+
+   USemaphore* getPointerToSemaphore()
+      {
+      U_TRACE_NO_PARAM(0, "ULock::getPointerToSemaphore()")
+
+      USemaphore* psem = (USemaphore*)u_getPayload(sem);
+
+      U_INTERNAL_ASSERT_POINTER(psem)
+
+      U_RETURN_POINTER(psem, USemaphore);
+      }
+
+   // manage lock recursivity...
+
+   bool isLocked()
+      {
+      U_TRACE_NO_PARAM(0, "ULock::isLocked()")
+
+      U_INTERNAL_DUMP("u_getTag(%#llx) = %u", sem, u_getTag(sem))
+
+      if (u_getTag(sem) == U_TRUE_VALUE) U_RETURN(true);
+
+      U_RETURN(false);
+      }
+
+   void setLocked()
+      {
+      U_TRACE_NO_PARAM(0, "ULock::setLocked()")
+
+      u_setTag(U_TRUE_VALUE, &sem);
+      }
+
+   void setUnLocked()
+      {
+      U_TRACE_NO_PARAM(0, "ULock::setUnLocked()")
+
+      u_setTag(U_FALSE_VALUE, &sem);
+      }
+
+   // SPIN LOCK
 
    static bool spinLockAcquire(char* ptr)
       {
@@ -144,6 +227,9 @@ protected:
 
 private:
    U_DISALLOW_COPY_AND_ASSIGN(ULock)
+
+   friend class ULog;
+   friend class URDB;
 };
 
 #endif

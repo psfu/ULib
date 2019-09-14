@@ -52,7 +52,7 @@ bool URDBClient_Base::readResponse()
 
    if (ok)
       {
-      nResponseCode = strtol(buffer.data(), 0, 10);
+      nResponseCode = strtol(buffer.data(), U_NULLPTR, 10);
 
 #  ifdef DEBUG
       setStatus();
@@ -80,7 +80,7 @@ bool URDBClient_Base::processRequest(const char* token)
 
    UClient_Base::prepareRequest(req);
 
-   if (sendRequest() &&
+   if (sendRequest(false) &&
        readResponse())
       {
       U_RETURN(true);
@@ -148,8 +148,8 @@ int URDBClient_Base::store(const UString& key, const UString& data, int flag)
 
    reset();
 
-   URPC::rpc_info->push(key);
-   URPC::rpc_info->push(data);
+   URPC::rpc_info->push_back(key);
+   URPC::rpc_info->push_back(data);
 
    if (processRequest(token))
       {
@@ -174,7 +174,7 @@ int URDBClient_Base::remove(const UString& key)
 
    reset();
 
-   URPC::rpc_info->push(key);
+   URPC::rpc_info->push_back(key);
 
    if (processRequest("REMV"))
       {
@@ -203,9 +203,9 @@ int URDBClient_Base::substitute(const UString& key, const UString& new_key, cons
 
    reset();
 
-   URPC::rpc_info->push(key);
-   URPC::rpc_info->push(new_key);
-   URPC::rpc_info->push(data);
+   URPC::rpc_info->push_back(key);
+   URPC::rpc_info->push_back(new_key);
+   URPC::rpc_info->push_back(data);
 
    if (processRequest(token))
       {
@@ -230,7 +230,7 @@ UString URDBClient_Base::operator[](const UString& key)
 
    reset();
 
-   URPC::rpc_info->push(key);
+   URPC::rpc_info->push_back(key);
 
    if (processRequest("FIND") && isOK()) U_RETURN_STRING(response);
 
@@ -296,6 +296,6 @@ const char* URDBClient_Base::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

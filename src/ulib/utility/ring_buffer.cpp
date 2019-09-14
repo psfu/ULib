@@ -15,7 +15,7 @@
 
 URingBuffer::URingBuffer(rbuf_data* _ptr, uint32_t sz)
 {
-   U_TRACE_REGISTER_OBJECT(0, URingBuffer, "%p,%u", _ptr, sz)
+   U_TRACE_CTOR(0, URingBuffer, "%p,%u", _ptr, sz)
 
    map_size = sz;
    ptr      = (_ptr ? _ptr : (rbuf_data*) UFile::mmap(&map_size));
@@ -28,7 +28,7 @@ URingBuffer::URingBuffer(rbuf_data* _ptr, uint32_t sz)
 
 URingBuffer::~URingBuffer()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, URingBuffer)
+   U_TRACE_DTOR(0, URingBuffer)
 
    if (ptr &&
        map_size)
@@ -49,8 +49,7 @@ U_NO_EXPORT void URingBuffer::checkLocking()
 
    // If there is exactly one reader and one writer, there is no need to lock read or write operations
 
-                           _lock.destroy();
-   if (ptr->readd_cnt > 1) _lock.init(&(ptr->lock_readers), ptr->spinlock_readers);
+   _lock.init(ptr->readd_cnt > 1 ? &(ptr->lock_readers) : U_NULLPTR);
 }
 
 // Returns a read descriptor
@@ -392,6 +391,6 @@ const char* URingBuffer::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

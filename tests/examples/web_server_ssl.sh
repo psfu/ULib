@@ -25,11 +25,11 @@ userver {
  LOG_FILE_SZ 1M
 #LOG_FILE_SZ 20k
  LOG_MSG_SIZE -1
- PID_FILE /var/run/userver_tcp.pid
- BANDWIDTH_THROTTLING_MASK @FILE:throttling.txt
- PREFORK_CHILD 2
+ PID_FILE /var/run/userver_ssl.pid
+#BANDWIDTH_THROTTLING_MASK @FILE:throttling.txt
+ PREFORK_CHILD 0
 #REQ_TIMEOUT 300
-#PLUGIN "ssi http"
+ PLUGIN "ssi http"
 #ORM_DRIVER "sqlite mysql"
  DOCUMENT_ROOT  docroot
  PLUGIN_DIR     ../../../src/ulib/net/server/plugin/.libs
@@ -52,6 +52,10 @@ http {
 #CACHE_FILE_STORE nocat/webif.gz
 #CACHE_FILE_MASK inp/http/data/file1|*.flv|*.svgz
 }
+ssi {
+#ENVIRONMENT ~/wi-auth/etc/environment.conf
+ SSI_AUTOMATIC_ALIASING /SSI/index.shtml
+}
 EOF
 
 DIR_CMD="../../examples/userver"
@@ -59,11 +63,11 @@ DIR_CMD="../../examples/userver"
 #STRACE=$TRUSS
 start_prg_background userver_ssl -c inp/webserver.cfg 
 
-#$SLEEP
-#kill_prg userver_ssl TERM
+wait_server_ready localhost 443
+
+sync
+echo "PID = `cat /var/run/userver_ssl.pid`"
 
 mv err/userver_ssl.err err/web_server_ssl.err
-
-echo "PID = `cat /var/run/userver_tcp.pid`"
 
 #openssl s_client -debug -cert ../ulib/CA/username.crt -key ../ulib/CA/username.key -pass pass:caciucco -CApath ../ulib/CA/CApath -verify 0 -tls1_2 -cipher 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA:AES:CAMELLIA:DES-CBC3-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA' -nextprotoneg h2-14 -no_ssl3 -no_ssl2 -connect localhost:443

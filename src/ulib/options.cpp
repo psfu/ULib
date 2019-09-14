@@ -53,9 +53,14 @@
 #  define LIBZ_ENABLE        "no"
 #endif
 #ifdef USE_LIBZOPFLI
-#  define LIBZOPFLI_ENABLE   "yes ( " _LIBZOPFLI_VERSION " )"
+#  define LIBZOPFLI_ENABLE   "yes ( " _LIBBROTLI_VERSION " )"
 #else
 #  define LIBZOPFLI_ENABLE   "no"
+#endif
+#ifdef USE_LIBBROTLI
+#  define LIBBROTLI_ENABLE   "yes ( " _LIBBROTLI_VERSION " )"
+#else
+#  define LIBBROTLI_ENABLE   "no"
 #endif
 #ifdef USE_LIBTDB
 #  define LIBTDB_ENABLE      "yes ( " _LIBTDB_VERSION " )"
@@ -164,13 +169,13 @@
 #endif
 
 struct option UOptions::long_options[128] = {
-   { "help",    0, 0, 'h' },
-   { "version", 0, 0, 'V' }
+   { "help",    0, U_NULLPTR, 'h' },
+   { "version", 0, U_NULLPTR, 'V' }
 };
 
 UOptions::UOptions(uint32_t n)
 {
-   U_TRACE_REGISTER_OBJECT(0, UOptions, "%u", n)
+   U_TRACE_CTOR(0, UOptions, "%u", n)
 
    length   = 0;
    item     = (option_item*) UMemoryPool::_malloc(&n, sizeof(option_item));
@@ -179,7 +184,7 @@ UOptions::UOptions(uint32_t n)
 
 UOptions::~UOptions()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UOptions)
+   U_TRACE_DTOR(0, UOptions)
 
        package.clear();
        version.clear();
@@ -313,7 +318,7 @@ void UOptions::load(const UString& str)
       {
       char* idx = (char*) memchr("orpv", vec[i].at(0), 4);
 
-      if (idx == 0) continue;
+      if (idx == U_NULLPTR) continue;
 
       switch (*idx)
          {
@@ -372,8 +377,8 @@ void UOptions::load(const UString& str)
 
             *(long_opt.c_pointer(long_opt.size())) = '\0';
 
-         //         desc, long_opt, default_value,             has_arg, short_opt
-            add(vec[i+4], long_opt,      vec[i+5], vec[i+3].strtol(10), short_opt);
+         //         desc, long_opt, default_value,            has_arg, short_opt
+            add(vec[i+4], long_opt,      vec[i+5], vec[i+3].strtoul(), short_opt);
 
             i += 5;
             }
@@ -548,7 +553,7 @@ uint32_t UOptions::getopt(int argc, char** argv, int* poptind)
       {
       ptr_long_options->name    = item[i].long_opt->data(); // null terminated
       ptr_long_options->has_arg = item[i].has_arg;
-      ptr_long_options->flag    = 0;
+      ptr_long_options->flag    = U_NULLPTR;
       ptr_long_options->val     = item[i].short_opt;
 
       if (ptr_long_options->val)
@@ -626,7 +631,7 @@ uint32_t UOptions::getopt(int argc, char** argv, int* poptind)
 #        endif
 
 /* -----------------------------------------------------------------------------
-          ULib version: 1.4.2
+          ULib version: 2.4.2
             Build ULib: Shared=yes, Static=yes
 
             Host setup: x86_64-unknown-linux-gnu
@@ -715,6 +720,7 @@ PYTHON language support: yes ( 2.7 )
       "memory pool support....:%W " MEMORY_POOL_ENABLE "%W\n\n" \
       "LIBZ support...........:%W " LIBZ_ENABLE "%W\n" \
       "LIBZOPFLI support......:%W " LIBZOPFLI_ENABLE "%W\n" \
+      "LIBBROTLI support......:%W " LIBBROTLI_ENABLE "%W\n" \
       "LIBTDB support.........:%W " LIBTDB_ENABLE "%W\n" \
       "PCRE support...........:%W " LIBPCRE_ENABLE "%W\n" \
       "SSL support............:%W " LIBSSL_ENABLE "%W\n" \
@@ -769,6 +775,7 @@ PYTHON language support: yes ( 2.7 )
                BRIGHTGREEN, RESET,
                BRIGHTGREEN, RESET,
                // wrapping
+               BRIGHTYELLOW, RESET,
                BRIGHTYELLOW, RESET,
                BRIGHTYELLOW, RESET,
                BRIGHTYELLOW, RESET,
@@ -848,7 +855,7 @@ PYTHON language support: yes ( 2.7 )
 
          // Print help and exit
 
-         case 'h': printHelp(0); break;
+         case 'h': printHelp(U_NULLPTR); break;
 
          default: // option
             {
@@ -871,14 +878,14 @@ PYTHON language support: yes ( 2.7 )
 
             if (long_options[longindex].has_arg == 0)
                {
-               U_INTERNAL_ASSERT_EQUALS(optarg,0)
+               U_INTERNAL_ASSERT_EQUALS(optarg, U_NULLPTR)
 
                static char buffer[] = { '1', '\0' };
 
                optarg = buffer;
                }
 
-            if (optarg == 0)
+            if (optarg == U_NULLPTR)
                {
                U_INTERNAL_ASSERT_EQUALS(long_options[longindex].has_arg,2)
 
@@ -936,6 +943,6 @@ const char* UOptions::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

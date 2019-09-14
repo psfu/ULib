@@ -16,6 +16,7 @@
 
 #include <ulib/url.h>
 #include <ulib/net/rpc/rpc.h>
+#include <ulib/mime/header.h>
 #include <ulib/utility/uhttp.h>
 
 #ifdef USE_LIBSSL
@@ -29,7 +30,8 @@
  * @brief Handles a connections with a server
  */
 
-class ULog;
+class UHTTP;
+class USocketExt;
 class USSLSocket;
 class UHttpPlugIn;
 class UFileConfig;
@@ -38,8 +40,28 @@ class USCGIPlugIn;
 class UProxyPlugIn;
 class UNoCatPlugIn;
 class UServer_Base;
+class UWebSocketClient;
 class UHttpClient_Base;
+class UClientImage_Base;
+class UREDISClient_Base;
 class UElasticSearchClient;
+
+// manage client write to log
+
+#ifdef U_LOG_DISABLE
+#  define U_CLIENT_LOG_RESPONSE() {}
+#  define U_CLIENT_LOG_REQUEST(n) {}
+
+#  define U_CLIENT_LOG(          fmt,args...) {}
+#  define U_CLIENT_LOG_WITH_ADDR(fmt,args...) {}
+#else
+#  define U_CLIENT_LOG(          fmt,args...) { if (UClient_Base::log) UClient_Base::log->log(U_CONSTANT_TO_PARAM(fmt), ##args); }
+#  define U_CLIENT_LOG_WITH_ADDR(fmt,args...) { if (UClient_Base::log) UClient_Base::log->log(U_CONSTANT_TO_PARAM(fmt " %V%R"), ##args,  UClient_Base::host_port.rep, 0); }
+
+#  define U_CLIENT_LOG_REQUEST(n) { if (UClient_Base::log) UClient_Base::log->log(UClient_Base::iov, "request", n, "", 0, U_CONSTANT_TO_PARAM(" to %V"), UClient_Base::host_port.rep); }
+#  define U_CLIENT_LOG_RESPONSE() { if (UClient_Base::log && UClient_Base::response) \
+                                        UClient_Base::log->logResponse(UClient_Base::response, U_CONSTANT_TO_PARAM(" from %V"), UClient_Base::host_port.rep); }
+#endif
 
 class U_EXPORT UClient_Base {
 public:
@@ -97,7 +119,18 @@ public:
 
       U_INTERNAL_ASSERT_POINTER(socket)
 
-      if (isOpen()) socket->_closesocket();
+      if (isOpen()) socket->_close_socket();
+      }
+
+   bool reConnect()
+      {
+      U_TRACE_NO_PARAM(0, "UClient_Base::reConnect()")
+
+      U_INTERNAL_ASSERT_POINTER(socket)
+
+      socket->reOpen();
+
+      return connect();
       }
 
    bool shutdown(int how = SHUT_WR)
@@ -133,19 +166,38 @@ public:
       url.clear();
       }
 
-   // LOG 
-
-   static void closeLog();
-   static void setLogShared();
-
-   static bool isLogSharedWithServer()
+   void prepareRequest(const char* req, uint32_t len)
       {
-      U_TRACE_NO_PARAM(0, "UClient_Base::isLogSharedWithServer()")
+      U_TRACE(0, "UClient_Base::prepareRequest(%.*S,%u)", len, req, len)
 
-      U_RETURN(log_shared_with_server);
+      iovcnt = 1;
+
+      iov[0].iov_base = (caddr_t)req;
+      iov[0].iov_len  =          len;
+
+      (void) U_SYSCALL(memset, "%p,%d,%u", iov+1, 0, sizeof(struct iovec) * 5);
+
+      U_INTERNAL_ASSERT_EQUALS(iov[1].iov_len, 0)
+      U_INTERNAL_ASSERT_EQUALS(iov[2].iov_len, 0)
+      U_INTERNAL_ASSERT_EQUALS(iov[3].iov_len, 0)
+      U_INTERNAL_ASSERT_EQUALS(iov[4].iov_len, 0)
+      U_INTERNAL_ASSERT_EQUALS(iov[5].iov_len, 0)
       }
 
-   UString getUrl() const      { return url.get(); }
+   void prepareRequest(const UString& req) { request = req; prepareRequest(U_STRING_TO_PARAM(req)); }
+
+   void clearData()
+      {
+      U_TRACE_NO_PARAM(0, "UClient_Base::clearData()")
+
+        buffer.setEmpty();
+      response.setEmpty();
+      }
+
+   UString getUrl() const { return url.get(); }
+   UString getUrlPath()   { return url.getPath(); }
+   UString getUrlHost()   { return url.getHost(); }
+
    UString getServer() const   { return server; }
    UString getBuffer() const   { return buffer; }
    UString getResponse() const { return response; }
@@ -155,10 +207,24 @@ public:
    unsigned int getPort() const         { return port; }
 
    bool connect();
-   void clearData();
-   bool remoteIPAddress(UIPAddress& addr);
    bool readResponse(uint32_t count = U_SINGLE_READ);
    bool setHostPort(const UString& host, unsigned int port);
+
+   bool remoteIPAddress(UIPAddress& addr)
+      {
+      U_TRACE(0, "UClient_Base::::remoteIPAddress(%p)", &addr)
+
+      if (socket->iRemotePort)
+         {
+         addr = socket->cRemoteAddress;
+
+         U_RETURN(true);
+         }
+
+      U_RETURN(false);
+      }
+
+   static void closeLog();
 
    // NB: return if it has modified host or port...
 
@@ -190,18 +256,9 @@ public:
 
    // Transmit token name (4 characters) and value (32-bit int, as 8 hex characters)
 
-   bool sendTokenInt(const char* token, uint32_t value)
-      { buffer.setEmpty(); return URPC::sendTokenInt(socket, token, value, buffer); }
-
-   // Write a token, and then the string data
-
-   bool sendTokenString(const char* token, const UString& data)
-      { buffer.setEmpty(); return URPC::sendTokenString(socket, token, data, buffer); }
-
-   // Transmit an vector of string
-
-   bool sendTokenVector(const char* token, UVector<UString>& vec)
-      { buffer.setEmpty(); return URPC::sendTokenVector(socket, token, vec, buffer); }
+   bool sendTokenInt(   const char* token, uint32_t value)        { buffer.setEmpty(); return URPC::sendTokenInt(   socket, token, value, buffer); }
+   bool sendTokenString(const char* token, const UString& data)   { buffer.setEmpty(); return URPC::sendTokenString(socket, token,  data, buffer); } // Write token and string data
+   bool sendTokenVector(const char* token, UVector<UString>& vec) { buffer.setEmpty(); return URPC::sendTokenVector(socket, token,   vec, buffer); } // Transmit an vector of string
 
    // DEBUG
 
@@ -232,33 +289,17 @@ protected:
    struct iovec iov[6];
 
    static ULog* log;
-   static UFileConfig* cfg;
+   static UFileConfig* pcfg;
    static bool log_shared_with_server, bIPv6;
 
+   void loadConfigParam();
    bool readHTTPResponse();
+   bool sendRequest(bool bread_response);
+   bool sendRequestAndReadResponse(const UString& header, const UString& body);
 
-   void prepareRequest(const char* req, uint32_t len)
-      {
-      U_TRACE(0, "UClient_Base::prepareRequest(%.*S,%u)", len, req, len)
-
-      iovcnt = 1;
-
-      iov[0].iov_base = (caddr_t)req;
-      iov[0].iov_len  =          len;
-
-      (void) U_SYSCALL(memset, "%p,%d,%u", iov+1, 0, sizeof(struct iovec) * 5);
-
-      U_INTERNAL_ASSERT_EQUALS(iov[1].iov_len, 0)
-      U_INTERNAL_ASSERT_EQUALS(iov[2].iov_len, 0)
-      U_INTERNAL_ASSERT_EQUALS(iov[3].iov_len, 0)
-      U_INTERNAL_ASSERT_EQUALS(iov[4].iov_len, 0)
-      U_INTERNAL_ASSERT_EQUALS(iov[5].iov_len, 0)
-      }
-
-   void prepareRequest(const UString& req) { request = req; prepareRequest(U_STRING_TO_PARAM(req)); }
-
-   bool sendRequest(bool bread_response = false);
    bool sendRequestAndReadResponse() { return sendRequest(true); }
+
+   bool processHeader(UMimeHeader* responseHeader) { return responseHeader->readHeader(socket, response); }
 
 #ifdef USE_LIBSSL
    void setSSLContext();
@@ -271,14 +312,16 @@ protected:
       }
 #endif
 
-   void loadConfigParam();
-
-    UClient_Base(UFileConfig* pcfg = 0);
+    UClient_Base(UFileConfig* cfg = U_NULLPTR);
    ~UClient_Base();
 
 private:
-   U_DISALLOW_COPY_AND_ASSIGN(UClient_Base)
+// U_DISALLOW_COPY_AND_ASSIGN(UClient_Base)
 
+   static USocket* csocket;
+
+   friend class UHTTP;
+   friend class USocketExt;
    friend class USSLSocket;
    friend class UFCGIPlugIn;
    friend class USCGIPlugIn;
@@ -287,23 +330,26 @@ private:
    friend class UProxyPlugIn;
    friend class UNoCatPlugIn;
    friend class UServer_Base;
+   friend class UWebSocketClient;
    friend class UHttpClient_Base;
+   friend class UClientImage_Base;
+   friend class UREDISClient_Base;
    friend class UElasticSearchClient;
 };
 
 template <class Socket> class U_EXPORT UClient : public UClient_Base {
 public:
 
-   UClient(UFileConfig* pcfg) : UClient_Base(pcfg)
+   UClient(UFileConfig* cfg) : UClient_Base(cfg)
       {
-      U_TRACE_REGISTER_OBJECT(0, UClient, "%p", pcfg)
+      U_TRACE_CTOR(0, UClient, "%p", cfg)
 
       U_NEW(Socket, socket, Socket(UClient_Base::bIPv6));
       }
 
    ~UClient()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UClient)
+      U_TRACE_DTOR(0, UClient)
       }
 
    // DEBUG
@@ -320,16 +366,16 @@ private:
 template <> class U_EXPORT UClient<USSLSocket> : public UClient_Base {
 public:
 
-   UClient(UFileConfig* pcfg) : UClient_Base(pcfg)
+   UClient(UFileConfig* cfg) : UClient_Base(cfg)
       {
-      U_TRACE_REGISTER_OBJECT(0, UClient<USSLSocket>, "%p", pcfg)
+      U_TRACE_CTOR(0, UClient<USSLSocket>, "%p", cfg)
 
       UClient_Base::setSSLContext();
       }
 
    ~UClient()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UClient<USSLSocket>)
+      U_TRACE_DTOR(0, UClient<USSLSocket>)
       }
 
    // DEBUG

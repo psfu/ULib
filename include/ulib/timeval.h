@@ -40,14 +40,14 @@ public:
 
    UTimeVal()
       {
-      U_TRACE_REGISTER_OBJECT(0, UTimeVal, "", 0)
+      U_TRACE_CTOR(0, UTimeVal, "")
 
       U_INTERNAL_ASSERT_EQUALS((void*)this, (void*)&tv_sec)
       }
 
    UTimeVal(long sec, long micro_sec = 1L)
       {
-      U_TRACE_REGISTER_OBJECT(0, UTimeVal, "%ld,%ld", sec, micro_sec)
+      U_TRACE_CTOR(0, UTimeVal, "%ld,%ld", sec, micro_sec)
 
       U_INTERNAL_ASSERT(sec || micro_sec)
 
@@ -57,7 +57,7 @@ public:
 
    ~UTimeVal()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UTimeVal)
+      U_TRACE_DTOR(0, UTimeVal)
       }
 
    // ASSIGNMENT
@@ -73,7 +73,7 @@ public:
 
    UTimeVal(const UTimeVal& t)
       {
-      U_TRACE_REGISTER_OBJECT(0, UTimeVal, "%p", &t)
+      U_TRACE_CTOR(0, UTimeVal, "%p", &t)
 
       U_MEMORY_TEST_COPY(t)
 
@@ -359,7 +359,14 @@ public:
    // SERVICES
 
           void nanosleep();
-   static void nanosleep(time_t timeoutMS) { UTimeVal(timeoutMS / 1000L, (timeoutMS % 1000L) * 1000L).nanosleep(); }
+   static void nanosleep(time_t timeoutMS)
+      {
+      U_TRACE(0, "UTimeVal::nanosleep(%ld)", timeoutMS)
+
+      U_INTERNAL_ASSERT(timeoutMS >= 100)
+
+      UTimeVal(timeoutMS / 1000L, (timeoutMS % 1000L) * 1000L).nanosleep();
+      }
 
    // CHRONOMETER
 

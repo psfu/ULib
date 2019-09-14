@@ -45,10 +45,10 @@ uint32_t u_base64_encode(const unsigned char* restrict input, uint32_t len, unsi
                     input[i+1]) << 8) +
                     input[i+2]);
 
-         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32(u_b64[ bits >> 18],
-                                                      u_b64[(bits >> 12) & 0x3f],
-                                                      u_b64[(bits >>  6) & 0x3f],
-                                                      u_b64[ bits        & 0x3f]));
+         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[ bits >> 18],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[(bits >> 12) & 0x3f],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[(bits >>  6) & 0x3f],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[ bits        & 0x3f]));
 
          r += 4;
 
@@ -62,10 +62,10 @@ uint32_t u_base64_encode(const unsigned char* restrict input, uint32_t len, unsi
                columns = true;
 
                if (U_line_terminator_len == 2) *r++ = '\r';
-                                               *r++ = '\n';
+
+               *r++ = '\n';
                }
             }
-
          }
       }
 
@@ -76,8 +76,8 @@ uint32_t u_base64_encode(const unsigned char* restrict input, uint32_t len, unsi
          {
          bits = ((input[i] << 8) << 8);
 
-         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32(u_b64[ bits >> 18],
-                                                      u_b64[(bits >> 12) & 0x3f],
+         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[ bits >> 18],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[(bits >> 12) & 0x3f],
                                                       U_PAD, U_PAD));
 
          r += 4;
@@ -89,9 +89,9 @@ uint32_t u_base64_encode(const unsigned char* restrict input, uint32_t len, unsi
          bits = (((input[i]    << 8) +
                    input[i+1]) << 8);
 
-         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32(u_b64[ bits >> 18],
-                                                      u_b64[(bits >> 12) & 0x3f],
-                                                      u_b64[(bits >>  6) & 0x3f],
+         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[ bits >> 18],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[(bits >> 12) & 0x3f],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[(bits >>  6) & 0x3f],
                                                       U_PAD));
 
          r += 4;
@@ -102,7 +102,8 @@ uint32_t u_base64_encode(const unsigned char* restrict input, uint32_t len, unsi
        cols > 0)
       {
       if (U_line_terminator_len == 2) *r++ = '\r';
-                                      *r++ = '\n';
+
+      *r++ = '\n';
       }
 
    *r = 0;
@@ -121,16 +122,16 @@ uint32_t u_base64url_encode(const unsigned char* restrict input, uint32_t len, u
 
    if (len > 2)
       {
-      for (; i < len - 2; i += 3)
+      for (; i < (len - 2); i += 3)
          {
          bits = ((((input[i]    << 8) +
                     input[i+1]) << 8) +
                     input[i+2]);
 
-         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32(u_b64url[ bits >> 18],
-                                                      u_b64url[(bits >> 12) & 0x3f],
-                                                      u_b64url[(bits >>  6) & 0x3f],
-                                                      u_b64url[ bits        & 0x3f]));
+         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[ bits >> 18],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[(bits >> 12) & 0x3f],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[(bits >>  6) & 0x3f],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[ bits        & 0x3f]));
 
          r += 4;
          }
@@ -143,8 +144,8 @@ uint32_t u_base64url_encode(const unsigned char* restrict input, uint32_t len, u
          {
          bits = ((input[i] << 8) << 8);
 
-         u_put_unalignedp16(r, U_MULTICHAR_CONSTANT16(u_b64url[ bits >> 18],
-                                                      u_b64url[(bits >> 12) & 0x3f]));
+         u_put_unalignedp16(r, U_MULTICHAR_CONSTANT16("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[ bits >> 18],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[(bits >> 12) & 0x3f]));
 
          r += 2;
          }
@@ -155,9 +156,9 @@ uint32_t u_base64url_encode(const unsigned char* restrict input, uint32_t len, u
          bits = (((input[i]    << 8) +
                    input[i+1]) << 8);
 
-         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32(u_b64url[ bits >> 18],
-                                                      u_b64url[(bits >> 12) & 0x3f],
-                                                      u_b64url[(bits >>  6) & 0x3f],
+         u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[ bits >> 18],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[(bits >> 12) & 0x3f],
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[(bits >>  6) & 0x3f],
                                                       '\0'));
 
          return (r + 3 - result);
@@ -165,6 +166,193 @@ uint32_t u_base64url_encode(const unsigned char* restrict input, uint32_t len, u
       }
 
    *r = 0;
+
+   return (r - result);
+}
+
+uint32_t u_base64escape_encode(const unsigned char* restrict input, uint32_t len, unsigned char* restrict result)
+{
+   uint32_t i = 0, bits;
+   unsigned char* restrict r = result;
+   unsigned char idx0, idx1, idx2, idx3;
+
+   U_INTERNAL_TRACE("u_base64escape_encode(%.*s,%u,%p)", U_min(len,128), input, len, result)
+
+   U_INTERNAL_ASSERT_POINTER(input)
+   U_INTERNAL_ASSERT_EQUALS(62, U_CONSTANT_SIZE("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"))
+
+   if (len > 2)
+      {
+      for (; i < (len - 2); i += 3)
+         {
+         bits = ((((input[i]    << 8) +
+                    input[i+1]) << 8) +
+                    input[i+2]);
+
+         idx0 =  bits >> 18;
+         idx1 = (bits >> 12) & 0x3f;
+         idx2 = (bits >>  6) & 0x3f;
+         idx3 =  bits        & 0x3f;
+
+         if (idx0 < 62 &&
+             idx1 < 62 &&
+             idx2 < 62 &&
+             idx3 < 62)
+            {
+            u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx0],
+                                                         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx1],
+                                                         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx2],
+                                                         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx3]));
+
+            r += 4;
+            }
+         else
+            {
+            if (idx0 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx0];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx0 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+
+            if (idx1 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx1];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx1 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+
+            if (idx2 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx2];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx2 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+
+            if (idx3 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx3];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx3 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+            }
+         }
+      }
+
+   switch (len - i)
+      {
+      case 0: break;
+      case 1:
+         {
+         bits = ((input[i] << 8) << 8);
+
+         idx0 =  bits >> 18;
+         idx1 = (bits >> 12) & 0x3f;
+
+         if (idx0 < 62 &&
+             idx1 < 62)
+            {
+            u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx0],
+                                                         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx1],
+                                                         U_PAD, U_PAD));
+
+            r += 4;
+            }
+         else
+            {
+            if (idx0 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx0];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx0 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+
+            if (idx1 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx1];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx1 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+
+            u_put_unalignedp32(r,   U_MULTICHAR_CONSTANT32('%', '3', 'D', '%'));
+            u_put_unalignedp16(r+4, U_MULTICHAR_CONSTANT16('3', 'D'));
+
+            r += 6;
+            }
+         }
+      break;
+
+      default: /* case 2: */
+         {
+         bits = (((input[i]    << 8) +
+                   input[i+1]) << 8);
+
+         idx0 =  bits >> 18;
+         idx1 = (bits >> 12) & 0x3f;
+         idx2 = (bits >>  6) & 0x3f;
+
+         if (idx0 < 62 &&
+             idx1 < 62 &&
+             idx2 < 62)
+            {
+            u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx0],
+                                                         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx1],
+                                                         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx2],
+                                                         U_PAD));
+
+            r += 4;
+            }
+         else
+            {
+            if (idx0 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx0];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx0 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+
+            if (idx1 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx1];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx1 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+
+            if (idx2 < 62) *r++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[idx2];
+            else
+               {
+               u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '2', (idx2 == 62 ? 'B' : 'F'), '\0'));
+
+               r += 3;
+               }
+
+            u_put_unalignedp32(r, U_MULTICHAR_CONSTANT32('%', '3', 'D', '\0'));
+
+            r += 3;
+            }
+         }
+      }
+
+   *r = 0;
+
+   return (r - result);
+}
+
+uint32_t u_base64escape_decode(const char* restrict input, uint32_t len, unsigned char* restrict result)
+{
+   unsigned char* restrict r = result;
+
+   U_INTERNAL_TRACE("u_base64escape_decode(%.*s,%u,%p)", U_min(len,128), input, len, result)
+
+   U_INTERNAL_ASSERT_POINTER(input)
 
    return (r - result);
 }
@@ -179,7 +367,11 @@ uint32_t u_base64_decode(const char* restrict input, uint32_t len, unsigned char
    };
 
    /**
-    * for (int i = 0; i < sizeof(u_b64); ++i) { member[u_b64[i]] = 1; decoder[u_b64[i]] = i; }
+    * for (int i = 0; i < sizeof("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"); ++i)
+    *    {
+    *     member["ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i]] = 1;
+    *    decoder["ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i]] = i;
+    *    }
     */
 
    static const unsigned char member[256] = {

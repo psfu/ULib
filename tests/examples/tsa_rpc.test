@@ -6,7 +6,7 @@
 
 start_msg tsa_rpc
 
-#UTRACE="0 50M 0"
+#UTRACE="0 20M 0"
 #UTRACE_SIGNAL="0 10M -1"
 #UOBJDUMP="0 1M 100"
 #USIMERR="error.sim"
@@ -42,6 +42,7 @@ userver {
  CA_PATH ../../ulib/CA/CApath
  CA_FILE ../../ulib/CA/cacert.pem
  VERIFY_MODE 1
+#PREFORK_CHILD 0
 }
 rpc {
 #include "soap_or_rpc_tsa.cfg"
@@ -50,10 +51,11 @@ EOF
 
 DIR_CMD="../../examples/userver"
 
-start_prg_background userver_ssl -c inp/webserver.cfg
-$SLEEP
-
 rm -f TSA/response/rpc*
+
+start_prg_background userver_ssl -c inp/webserver.cfg
+
+wait_server_ready localhost 443
 
 TIMEOUT 4 $LCMD <TSA/request/rpc.req.bin >TSA/response/rpc.res 2>>err/userver_ssl.err
 tail -c +13 TSA/response/rpc.res > TSA/response/rpc.tsr
@@ -66,8 +68,7 @@ rm -f TSA/response/rpc*
 TIMEOUT 4 $LCMD <TSA/request/rpc.req.b64 >TSA/response/rpc.res 2>>err/userver_ssl.err
 tail -c +13 TSA/response/rpc.res > TSA/response/rpc.tsr
 
-$SLEEP
-kill_prg userver_ssl TERM
+kill_server userver_ssl
 
 mv err/userver_ssl.err err/tsa_rpc.err
 

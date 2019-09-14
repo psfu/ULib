@@ -20,6 +20,10 @@
 #  include <ulib/libevent/event.h>
 #endif
 
+#if defined(U_LINUX) && !defined(HAVE_OLD_IOSTREAM)
+#  include <sys/epoll.h>
+#endif
+
 #ifndef EPOLLIN
 #define EPOLLIN    0x0001
 #endif
@@ -63,13 +67,21 @@ public:
 #  endif
       }
 
-   virtual ~UEventFd() __pure
+   UEventFd(const UEventFd& ev)
+      {
+      U_TRACE_CTOR(0, UEventFd, "%p", &ev)
+
+      fd      = ev.fd;
+      op_mask = ev.op_mask;
+      }
+
+   virtual ~UEventFd()
       {
 #  ifdef USE_LIBEVENT
       if (pevent)
          {
          UDispatcher::del(pevent);
-                   delete pevent;
+                 U_DELETE(pevent)
          }
 #  endif
       }
@@ -93,7 +105,7 @@ public:
 #endif
 
 private:
-   U_DISALLOW_COPY_AND_ASSIGN(UEventFd)
+   U_DISALLOW_ASSIGN(UEventFd)
 };
 
 #endif

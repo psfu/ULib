@@ -40,6 +40,7 @@
       }
 
 void u_debug_init(void);
+void u_debug_at_exit(void);
 #else
 #  define U_INTERNAL_ERROR(assertion,format,args...)
 /*
@@ -49,8 +50,6 @@ void u_debug_init(void);
 #  define U_INTERNAL_PRINT(format,args...) U_INTERNAL_TRACE(format,args)
 */
 #endif
-
-void u_debug_at_exit(void);
 
 #ifdef HAVE_ENDIAN_H
 #  include <endian.h>
@@ -65,7 +64,7 @@ void u_debug_at_exit(void);
 #  include <sys/uio.h>
 #  include <sys/utsname.h>
 #endif
-/* For TIOCGWINSZ and friends: */
+/* For TIOCGWINSZ and friends */
 #ifdef HAVE_SYS_IOCTL_H
 #  include <sys/ioctl.h>
 #endif
@@ -81,32 +80,45 @@ void u_debug_at_exit(void);
 #  endif
 #endif
 
-/* String representation */
+static bool ldaylight;
+static int now_adjust; /* GMT based time */
+static struct timeval tv;
 
-struct ustringrep u_empty_string_rep_storage = {
-#ifdef DEBUG
-   (void*)U_CHECK_MEMORY_SENTINEL, /* memory_error (_this) */
-#endif
-#if defined(U_SUBSTR_INC_REF) || defined(DEBUG)
-   0, /* parent - substring increment reference of source string */
-#  ifdef DEBUG
-   0, /* child  - substring capture event 'DEAD OF SOURCE STRING WITH CHILD ALIVE'... */
-#  endif
-#endif
-   0, /* _length */
-   0, /* _capacity */
-   0, /* references */
-  ""  /* str - NB: we need an address (see c_str() or isNullTerminated()) and must be null terminated... */
-};
+bool* u_pdaylight     = &ldaylight;
+int* u_pnow_adjust    = &now_adjust;
+struct timeval* u_now = &tv;
+
+int u_num_cpu = -1;
+uint32_t u_m_w = 521288629;
+uint32_t u_m_z = 362436069;
+uint32_t u_seed_hash = 0xdeadbeef;
+const char* restrict u_tmpdir = "/tmp";
+const char* u_short_units[]  = { "B", "KB", "MB", "GB", "TB", 0 };
+const char* u_day_name[7]    = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+const char* u_month_name[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+
+/* conversion table: number => string */
+
+const char* u_ctn2s = "00010203040506070809"
+                      "10111213141516171819"
+                      "20212223242526272829"
+                      "30313233343536373839"
+                      "40414243444546474849"
+                      "50515253545556575859"
+                      "60616263646566676869"
+                      "70717273747576777879"
+                      "80818283848586878889"
+                      "90919293949596979899";
 
 /* Startup */
 
 bool     u_is_tty;
+bool     u_ulib_init;
 pid_t    u_pid;
+char     u_pid_str[10];
 uint32_t u_pid_str_len;
 uint32_t u_progname_len;
 
-      char* restrict u_pid_str;
 const char* restrict u_progpath;
 const char* restrict u_progname;
 
@@ -124,31 +136,20 @@ const char* restrict u_name_function;
 /* Internal buffer */
 
 char*    u_buffer;
-char*    u_err_buffer;
+char     u_err_buffer[256];
 uint32_t u_buffer_len; /* signal that is busy if != 0 */
 
 /* Time services */
 
-bool   u_daylight;
 void*  u_pthread_time; /* pthread clock */
 time_t u_start_time;
-int    u_now_adjust;   /* GMT based time */
 struct tm u_strftime_tm;
-
-struct timeval u_timeval;
-struct timeval* u_now = &u_timeval;
 
 /*
 #ifdef HAVE_CLOCK_GETTIME
 struct timeval u_start_clock;
 #endif
 */
-
-const char* u_months[12]     = { "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec" };
-const char* u_months_it[12]  = { "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic" };
-
-const char* u_day_name[7]    = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
-const char* u_month_name[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
 
 /* Services */
 
@@ -160,234 +161,97 @@ bool u_fork_called;
 bool u_exec_failed;
 uint32_t u_flag_sse; /* detect SSE2, SSSE3, SSE4.2 */
 char u_user_name[32];
+const char* u_trace_folder;
 char u_hostname[HOST_NAME_MAX+1];
 int32_t u_printf_string_max_length;
-uint32_t u_hostname_len, u_user_name_len, u_seed_hash = 0xdeadbeef;
-
-const char* restrict u_tmpdir = "/tmp";
+uint32_t u_hostname_len, u_user_name_len;
 struct uclientimage_info u_clientimage_info;
 
-const unsigned char u_hex_upper[16] = { '0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F' };
-const unsigned char u_hex_lower[16] = { '0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f' };
-
-const int MultiplyDeBruijnBitPosition2[32] = { 0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8, 31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9 };
-
-/* u_b64url substitute chars 62(+) and 63(/) with -_ (minus) (underline) */
-
-const unsigned char u_b64[64] =    { 'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
-                                     'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
-                                     '0','1','2','3','4','5','6','7','8','9',
-                                     '+','/' };
-const unsigned char u_b64url[64] = { 'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
-                                     'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
-                                     '0','1','2','3','4','5','6','7','8','9',
-                                     '-','_' };
-
-/* conversion table number to string */
-
-const char u_ctn2s[200] = {
- '0','0','0','1','0','2','0','3','0','4','0','5','0','6','0','7','0','8','0','9',
- '1','0','1','1','1','2','1','3','1','4','1','5','1','6','1','7','1','8','1','9',
- '2','0','2','1','2','2','2','3','2','4','2','5','2','6','2','7','2','8','2','9',
- '3','0','3','1','3','2','3','3','3','4','3','5','3','6','3','7','3','8','3','9',
- '4','0','4','1','4','2','4','3','4','4','4','5','4','6','4','7','4','8','4','9',
- '5','0','5','1','5','2','5','3','5','4','5','5','5','6','5','7','5','8','5','9',
- '6','0','6','1','6','2','6','3','6','4','6','5','6','6','6','7','6','8','6','9',
- '7','0','7','1','7','2','7','3','7','4','7','5','7','6','7','7','7','8','7','9',
- '8','0','8','1','8','2','8','3','8','4','8','5','8','6','8','7','8','8','8','9',
- '9','0','9','1','9','2','9','3','9','4','9','5','9','6','9','7','9','8','9','9'
-};
-
-static uint32_t num2str32(uint32_t num, char* restrict cp)
+static inline uint32_t digits(uint32_t u, uint32_t k, uint32_t* d, char* restrict* pp, uint32_t n)
 {
-   char* restrict start = cp;
-   uint32_t a, b, c, d1, d2, d3, d4;
+   U_INTERNAL_TRACE("digits(%u,%u,%p,%p,%u)", u, k, d, *pp, n)
 
-   U_INTERNAL_TRACE("num2str32(%u,%p)", num, cp)
-
-   if (num < 10000)
+   if (u < (k*10))
       {
-      d1 = (num / 100) << 1;
-      d2 = (num % 100) << 1;
+      **pp  = (*d = (u / k)) + '0';
+       *pp += 1;
 
-      if (num >= 1000) *cp++ = u_ctn2s[d1];
-      if (num >=  100) *cp++ = u_ctn2s[d1+1];
-      if (num >=   10) *cp++ = u_ctn2s[d2];
-                       *cp++ = u_ctn2s[d2+1];
-
-      return (cp - start);
+      return n-1;
       }
 
-   if (num < 100000000) /* num = bbbbcccc */
-      {
-      b  = num / 10000;
-      c  = num % 10000;
-      d1 = (b / 100) << 1;
-      d2 = (b % 100) << 1;
-      d3 = (c / 100);
-      d4 = (c % 100);
-
-      if (num >= 10000000) *cp++ = u_ctn2s[d1];
-      if (num >=  1000000) *cp++ = u_ctn2s[d1+1];
-      if (num >=   100000) *cp++ = u_ctn2s[d2];
-                           *cp++ = u_ctn2s[d2+1];
-
-      U_NUM2STR16(cp,   d3);
-      U_NUM2STR16(cp+2, d4);
-
-      return (cp + 4 - start);
-      }
-
-   /* num = aabbbbcccc in decimal */
-
-   a = num  / 100000000; /* 1 to 42 */
-       num %= 100000000;
-
-   if (a < 10) *cp++ = '0' + (char)a;
-   else
-      {
-      U_NUM2STR16(cp, a);
-
-      cp += 2;
-      }
-
-   b = num / 10000; /* 0 to 9999 */
-   c = num % 10000; /* 0 to 9999 */
-
-   d1 = (b / 100);
-   d2 = (b % 100);
-
-   d3 = (c / 100);
-   d4 = (c % 100);
-
-   U_NUM2STR16(cp,   d1);
-   U_NUM2STR16(cp+2, d2);
-   U_NUM2STR16(cp+4, d3);
-   U_NUM2STR16(cp+6, d4);
-
-   return (cp + 8 - start);
+   return n;
 }
 
-static uint32_t num2str64(uint64_t num, char* restrict cp)
+static inline char* out(uint32_t d, char* restrict p)
 {
-   char* restrict start;
-   uint32_t a, i, j, v0, v1, b0, b1, c0, c1, d1, d2, d3, d4, d5, d6, d7, d8;
+   U_INTERNAL_TRACE("out(%u,%p)", d, p)
 
-   U_INTERNAL_TRACE("num2str64(%llu,%p)", num, cp)
+   U_NUM2STR16(p, d);
 
-   if (num <= UINT_MAX) return u_num2str32((uint32_t)num, cp);
-
-   start = cp;
-
-   if (num < 10000000000000000)
-      {
-      v0 = (uint32_t)(num / 100000000);
-      v1 = (uint32_t)(num % 100000000);
-
-      b0 = v0 / 10000;
-      c0 = v0 % 10000;
-
-      d1 = (b0 / 100) << 1;
-      d2 = (b0 % 100) << 1;
-
-      d3 = (c0 / 100) << 1;
-      d4 = (c0 % 100) << 1;
-
-      b1 = v1 / 10000;
-      c1 = v1 % 10000;
-
-      d5 = (b1 / 100);
-      d6 = (b1 % 100);
-
-      d7 = (c1 / 100);
-      d8 = (c1 % 100);
-
-      if (num >= 1000000000000000) *cp++ = u_ctn2s[d1];
-      if (num >=  100000000000000) *cp++ = u_ctn2s[d1+1];
-      if (num >=   10000000000000) *cp++ = u_ctn2s[d2];
-      if (num >=    1000000000000) *cp++ = u_ctn2s[d2+1];
-      if (num >=     100000000000) *cp++ = u_ctn2s[d3];
-      if (num >=      10000000000) *cp++ = u_ctn2s[d3+1];
-      if (num >=       1000000000) *cp++ = u_ctn2s[d4];
-      if (num >=        100000000) *cp++ = u_ctn2s[d4+1];
-
-      U_NUM2STR16(cp,   d5);
-      U_NUM2STR16(cp+2, d6);
-      U_NUM2STR16(cp+4, d7);
-      U_NUM2STR16(cp+6, d8);
-
-      return (cp + 8 - start);
-      }
-
-   a = (uint32_t)(num  / 10000000000000000); /* 1 to 1844 */
-                  num %= 10000000000000000;
-
-        if (a <  10) *cp++ = '0' + (char)a;
-   else if (a < 100)
-      {
-      U_NUM2STR16(cp, a);
-
-      cp += 2;
-      }
-   else if (a < 1000)
-      {
-      *cp++ = '0' + (char)(a / 100);
-
-      i = (a % 100);
-
-      U_NUM2STR16(cp, i);
-
-      cp += 2;
-      }
-   else
-      {
-      i = (a / 100);
-      j = (a % 100);
-
-      U_NUM2STR16(cp,   i);
-      U_NUM2STR16(cp+2, j);
-
-      cp += 4;
-      }
-
-   v0 = (uint32_t)(num / 100000000);
-   v1 = (uint32_t)(num % 100000000);
-
-   b0 = v0 / 10000;
-   c0 = v0 % 10000;
-
-   d1 = (b0 / 100);
-   d2 = (b0 % 100);
-
-   d3 = (c0 / 100);
-   d4 = (c0 % 100);
-
-   b1 = v1 / 10000;
-   c1 = v1 % 10000;
-
-   d5 = (b1 / 100);
-   d6 = (b1 % 100);
-
-   d7 = (c1 / 100);
-   d8 = (c1 % 100);
-
-   U_NUM2STR16(cp,    d1);
-   U_NUM2STR16(cp+2,  d2);
-   U_NUM2STR16(cp+4,  d3);
-   U_NUM2STR16(cp+6,  d4);
-   U_NUM2STR16(cp+8,  d5);
-   U_NUM2STR16(cp+10, d6);
-   U_NUM2STR16(cp+12, d7);
-   U_NUM2STR16(cp+14, d8);
-
-   return (cp + 16 - start);
+   return p+2;
 }
 
-static uint32_t dtoa(double num, char* restrict cp) { return sprintf(cp, "%g", num); }
+static inline char* u_itoa(uint32_t u, char* restrict p, uint32_t d, uint32_t n)
+{
+   switch (n)
+      {
+      case 10: d  = u / 100000000; p = out(d, p); /* FALL THRU */
+      case  9: u -= d * 100000000;                /* FALL THRU */
+      case  8: d  = u /   1000000; p = out(d, p); /* FALL THRU */
+      case  7: u -= d *   1000000;                /* FALL THRU */
+      case  6: d  = u /     10000; p = out(d, p); /* FALL THRU */
+      case  5: u -= d *     10000;                /* FALL THRU */
+      case  4: d  = u /       100; p = out(d, p); /* FALL THRU */
+      case  3: u -= d *       100;                /* FALL THRU */
+      case  2: d  = u /         1; p = out(d, p); /* FALL THRU */
+      case  1: ;
+      }
 
-uPFdpc   u_dbl2str   = dtoa;
-uPFu32pc u_num2str32 = num2str32;
-uPFu64pc u_num2str64 = num2str64;
+   return p;
+}
+
+static char* num2str32(uint32_t u, char* restrict p)
+{
+   uint32_t n, d = 0;
+
+   U_INTERNAL_TRACE("num2str32(%u,%p)", u, p)
+
+        if (u >= 100000000) n = digits(u, 100000000, &d, &p, 10);
+   else if (u <        100) n = digits(u,         1, &d, &p,  2);
+   else if (u <      10000) n = digits(u,       100, &d, &p,  4);
+   else if (u <    1000000) n = digits(u,     10000, &d, &p,  6);
+   else                     n = digits(u,   1000000, &d, &p,  8);
+
+   return u_itoa(u, p, d, n);
+}
+
+static char* num2str64(uint64_t u, char* restrict p)
+{
+   uint64_t upper;
+   uint32_t d, lower = (uint32_t)u;
+
+   U_INTERNAL_TRACE("num2str64(%llu,%p)", u, p)
+
+   if (lower == u) return num2str32(lower, p);
+
+   upper = u / 1000000000;
+
+   p = num2str32(upper, p);
+
+   lower = u - (upper * 1000000000);
+
+   d = lower / 100000000;
+
+   *p++ = d + '0';
+
+   return u_itoa(lower, p, d, 9);
+}
+
+static char* dtoa(double num, char* restrict cp) { return cp + sprintf(cp, "%g", num); }
+
+pcPFdpc   u_dbl2str   = dtoa;
+pcPFu32pc u_num2str32 = num2str32;
+pcPFu64pc u_num2str64 = num2str64;
 
 /**
  * "FATAL: kernel too old"
@@ -402,79 +266,6 @@ uPFu64pc u_num2str64 = num2str64;
  *
  * int _dl_discover_osversion() { return 0xffffff; }
  */
-
-__pure const char* u_basename(const char* restrict path)
-{
-   const char* restrict base;
-
-   U_INTERNAL_TRACE("u_basename(%s)", path)
-
-#ifdef _MSWINDOWS_
-   if (u__isalpha(path[0]) && path[1] == ':') path += 2; /* Skip over the disk name in MSDOS pathnames */
-#endif
-
-   for (base = path; *path; ++path) if (IS_DIR_SEPARATOR(*path)) base = path + 1;
-
-   return base;
-}
-
-__pure const char* u_getsuffix(const char* restrict path, uint32_t len)
-{
-   const char* restrict ptr;
-
-   U_INTERNAL_TRACE("u_getsuffix(%.*s,%u)", U_min(len,128), path, len)
-
-   U_INTERNAL_ASSERT_POINTER(path)
-
-   // NB: we can have something like 'www.sito1.com/tmp'...
-
-   ptr = (const char*) memrchr(path, '.', len);
-
-   return (ptr && memrchr(ptr+1, '/', len - (ptr+1 - path)) == 0 ? ptr : 0);
-}
-
-void u_setPid(void)
-{
-   static char buffer[10];
-
-   pid_t pid_copy;
-
-   U_INTERNAL_TRACE("u_setPid()")
-
-   u_pid     = getpid();
-   u_pid_str = buffer + sizeof(buffer);
-
-   pid_copy = u_pid;
-
-   while (pid_copy >= 10)
-      {
-      *--u_pid_str = (pid_copy % 10) + '0';
-
-      pid_copy /= 10;
-      }
-
-   U_INTERNAL_ASSERT_MINOR(pid_copy, 10)
-
-   *--u_pid_str = pid_copy + '0';
-
-   u_pid_str_len = buffer + sizeof(buffer) - u_pid_str;
-}
-
-bool u_is_overlap(const char* restrict dst, const char* restrict src, size_t n)
-{
-   U_INTERNAL_TRACE("u_is_overlap(%p,%p,%lu)", dst, src, n)
-
-   U_INTERNAL_ASSERT_MAJOR(n, 0)
-
-        if (src < dst) return ((src + n - 1) >= dst);
-   else if (dst < src) return ((dst + n - 1) >= src);
-
-   /* They start at same place. Since we know neither of them has zero length, they must overlap */
-
-   U_INTERNAL_ASSERT_EQUALS(dst, src)
-
-   return true;
-}
 
 #ifdef DEBUG
 size_t u__strlen(const char* restrict s, const char* called_by_function)
@@ -523,11 +314,18 @@ void u__memcpy(void* restrict dst, const void* restrict src, size_t n, const cha
    U_INTERNAL_ASSERT_POINTER(dst)
    U_INTERNAL_ASSERT_POINTER(called_by_function)
 
-   if (n == 0) U_WARNING("*** Zero copy in memcpy *** - %s", called_by_function);
+   if (n == 0) U_WARNING("*** Zero copy in memcpy(%p,%p,%u) *** - calleb by %s() dst = %#.*S src = %#.*S", dst, src, n, called_by_function, n, dst, n, src);
+
+   if (dst == src)
+      {
+      U_WARNING("*** Source and Destination are EQUALS in memcpy(%p,%p,%u) *** - calleb by %s() src = %#.*S", dst, src, n, called_by_function, n, src);
+
+      return;
+      }
 
    if (u_is_overlap((const char* restrict)dst, (const char* restrict)src, n))
       {
-      U_WARNING("*** Source and Destination OVERLAP in memcpy *** - %s", called_by_function);
+      U_WARNING("*** Source and Destination OVERLAP in memcpy(%p,%p,%u) *** - calleb by %s() dst = %#.*S src = %#.*S", dst, src, n, called_by_function, n, dst, n, src);
 
       (void) apex_memmove(dst, src, n);
       }
@@ -646,11 +444,17 @@ loop:
    U_INTERNAL_ASSERT_MINOR(u_cwd_len, newsize)
 }
 
+static const char* u_months[12]    = { "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec" };
+static const char* u_months_it[12] = { "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic" };
+
 __pure unsigned u_getMonth(const char* buf)
 {
    unsigned i;
 
    U_INTERNAL_TRACE("u_getMonth(%s)", buf)
+
+   U_INTERNAL_ASSERT(u__istext(*buf))
+   U_INTERNAL_ASSERT_EQUALS(u__isspace(*buf), false)
 
    for (i = 0; i < 12; ++i)
       {
@@ -710,7 +514,23 @@ void u_initRandom(void)
 
    /* seed the random generator */
 
-   u_set_seed_random(u_seed_hash >> 16, u_seed_hash % 4294967296);
+   u_set_seed_random(1+(u_seed_hash >> 16), 1+(u_seed_hash % 4294967296));
+}
+
+time_t u_getLocalNow(time_t sec)
+{
+   time_t lnow = timegm(&u_strftime_tm); /* The timegm() function converts the broken-down time representation, expressed in Coordinated Universal Time (UTC) to calendar time */
+
+   U_INTERNAL_TRACE("u_getLocalNow()")
+
+   *u_pnow_adjust = (lnow - sec);
+
+// extern char* tzname[2];
+
+   U_INTERNAL_PRINT("u_now_adjust = %d timezone = %ld daylight = %d u_daylight = %d tzname[2] = { %s, %s }",
+                    *u_pnow_adjust,    timezone,      daylight,  u_is_daylight(),   tzname[0], tzname[1])
+
+   return lnow;
 }
 
 bool u_setStartTime(void)
@@ -723,21 +543,23 @@ bool u_setStartTime(void)
 
    U_INTERNAL_ASSERT_POINTER(u_now)
 
+   /* initialize time conversion information */
+
+   u_gettimenow();
+
    /**
     * calculate number of seconds between UTC to current time zone
     *
     *         time() returns the time since the Epoch (00:00:00 UTC, January 1, 1970), measured in seconds.
-    * gettimeofday() gives the number of seconds and microseconds since the Epoch (see time(2)). The tz argument is a struct timezone:
+    * gettimeofday() gives the number of seconds and microseconds since the Epoch (see time(2)).
+    *
+    * The tz argument is a struct timezone:
     *
     * struct timezone {
     *    int tz_minuteswest;  // minutes west of Greenwich
     *    int tz_dsttime;      // type of DST correction
     * };
     */
-
-   (void) gettimeofday(u_now, 0);
-
-   /* initialize time conversion information */
 
    tzset();
 
@@ -757,29 +579,14 @@ bool u_setStartTime(void)
     *
     * This variable (timezone) contains the difference between UTC and the latest local standard time, in seconds
     * west of UTC. For example, in the U.S. Eastern time zone, the value is 5*60*60. Unlike the tm_gmtoff member
-    * of the broken-down time structure, this value is not adjusted for daylight saving, and its sign is reversed.
-    * In GNU programs it is better to use tm_gmtoff, since it contains the correct offset even when it is not the latest one
+    * of the broken-down time structure, this value is not adjusted for daylight saving, and its sign is reversed
     */
 
    (void) localtime_r(&(u_now->tv_sec), &u_strftime_tm);
 
 #ifdef TM_HAVE_TM_GMTOFF
-   u_daylight = (daylight && (timezone != -u_strftime_tm.tm_gmtoff));
+   *u_pdaylight = (daylight && (timezone != -u_strftime_tm.tm_gmtoff)); /* it is better to use tm_gmtoff, since it contains the correct offset even when it is not the latest one */
 #endif
-
-   /**
-    * The timegm() function converts the broken-down time representation,
-    * expressed in Coordinated Universal Time (UTC) to calendar time
-    */
-
-   lnow = timegm(&u_strftime_tm);
-
-   u_now_adjust = (lnow - u_now->tv_sec);
-
-   U_INTERNAL_PRINT("u_now_adjust = %d timezone = %ld daylight = %d u_daylight = %d tzname[2] = { %s, %s }",
-                     u_now_adjust,     timezone,      daylight,     u_daylight,     tzname[0], tzname[1])
-
-   U_INTERNAL_ASSERT(u_now_adjust <= ((daylight ? 3600 : 0) - timezone))
 
    /* NB: check if current date is OK (>= compilation_date) */
 
@@ -789,15 +596,21 @@ bool u_setStartTime(void)
 
    tm.tm_min   = 0;
    tm.tm_hour  = 0;
-   tm.tm_mday  =       atoi(compilation_date+4);
+   tm.tm_mday  =     u_atoi(compilation_date+4);
    tm.tm_mon   = u_getMonth(compilation_date)   -    1; /* tm relative format month - range from 0-11 */
-   tm.tm_year  =       atoi(compilation_date+7) - 1900; /* tm relative format year  - is number of years since 1900 */
+   tm.tm_year  =     u_atoi(compilation_date+7) - 1900; /* tm relative format year  - is number of years since 1900 */
    tm.tm_sec   = 1;
-   tm.tm_wday  = 0; /* day of the week */
-   tm.tm_yday  = 0; /* day in the year */
-   tm.tm_isdst = -1;
+   tm.tm_wday  = 0;  /* day of the week */
+   tm.tm_yday  = 0;  /* day in the year */
+   tm.tm_isdst = -1; /* a negative value means that use timezone information and system databases to attempt to determine whether DST is in effect at the specified time */
 
    t = mktime(&tm); /* NB: The timelocal() function is equivalent to the POSIX standard function mktime(3) */
+
+   /**
+    * The timegm() function converts the broken-down time representation, expressed in Coordinated Universal Time (UTC) to calendar time
+    */
+
+   lnow = u_getLocalNow(u_now->tv_sec);
 
    U_INTERNAL_PRINT("lnow = %ld t = %ld u_now = { %lu, %lu }", lnow, t, u_now->tv_sec, u_now->tv_usec)
 
@@ -806,7 +619,7 @@ bool u_setStartTime(void)
       {
       if (u_start_time == 0)
          {
-         u_start_time = lnow; /* u_now->tv_sec + u_now_adjust */
+         u_start_time = lnow; /* u_now->tv_sec + *u_pnow_adjust */
 
          u_initRandom();
          }
@@ -816,11 +629,11 @@ bool u_setStartTime(void)
        * determined from the contents of the other fields; if structure members are outside their valid interval, they will
        * be normalized (so that, for example, 40 October is changed into 9 November); tm_isdst is set (regardless of its
        * initial value) to a positive value or to 0, respectively, to indicate whether DST is or is not in effect at the
-       * specified time.  Calling mktime() also sets the external variable tzname with information about the current timezone
+       * specified time. Calling mktime() also sets the external variable tzname with information about the current timezone
        */
 
 #  ifndef TM_HAVE_TM_GMTOFF
-      u_daylight = (tm.tm_isdst != 0);
+      *u_pdaylight = (tm.tm_isdst != 0);
 #  endif
 
 /*
@@ -838,8 +651,8 @@ bool u_setStartTime(void)
 #  endif
 */
 
-      U_DEBUG("System date update: u_now_adjust = %d timezone = %ld daylight = %d u_daylight = %d tzname[2] = { %s, %s }",
-                                   u_now_adjust,     timezone,      daylight,     u_daylight,     tzname[0], tzname[1])
+      U_DEBUG("System date update: u_now_adjust = %d timezone = %ld daylight = %d u_daylight = %b tzname[2] = { %s, %s }",
+                                  *u_pnow_adjust,    timezone,      daylight,  u_is_daylight(),   tzname[0], tzname[1])
 
       return true;
       }
@@ -853,14 +666,31 @@ void u_init_ulib(char** restrict argv)
 
    u_setPid();
 
-   u_progpath = *argv;
-   u_progname = u_basename(u_progpath);
+   if (argv == 0)
+      {
+      u_progpath     =
+      u_progname     =                 "ULib";
+      u_progname_len = U_CONSTANT_SIZE("ULib");
 
-   U_INTERNAL_ASSERT_POINTER(u_progname)
+#  if defined(U_STATIC_ONLY)
+      if (u_now == 0) u_now = &tv;
+#  endif
+      }
+   else
+      {
+      u_progpath = *argv;
+      u_progname = u_basename(u_progpath, u__strlen(u_progpath, __PRETTY_FUNCTION__));
 
-   u_progname_len = u__strlen(u_progname, __PRETTY_FUNCTION__);
+      U_INTERNAL_ASSERT_POINTER(u_progname)
 
-   U_INTERNAL_ASSERT_MAJOR(u_progname_len, 0)
+      u_progname_len = u__strlen(u_progname, __PRETTY_FUNCTION__);
+
+      U_INTERNAL_ASSERT_MAJOR(u_progname_len, 0)
+      }
+
+   U_INTERNAL_ASSERT_EQUALS(u_ulib_init, false)
+
+   u_ulib_init = true;
 
 #ifdef _MSWINDOWS_
    u_init_ulib_mingw();
@@ -941,6 +771,25 @@ void u_init_ulib(char** restrict argv)
    (void) u_setStartTime();
 
    U_DEBUG("u_flag_sse = %u", u_flag_sse)
+}
+
+__pure uint32_t u_isDayOfWeek(const char* restrict str)
+{
+   uint32_t i;
+
+   U_INTERNAL_TRACE("u_isDayOfWeek(%.4s)", str)
+
+   for (i = 0; i < 7; ++i)
+      {
+      if (u_get_unalignedp32(str) == U_MULTICHAR_CONSTANT32(u_day_name[i][0],
+                                                            u_day_name[i][1],
+                                                            u_day_name[i][2],' '))
+         {
+         return i;
+         }
+      }
+
+   return U_NOT_FOUND;
 }
 
 /**
@@ -1066,7 +915,8 @@ uint32_t u_strftime1(char* restrict buffer, uint32_t maxsize, const char* restri
    U_INTERNAL_ASSERT_MAJOR(fmt_size, 0)
 
    do {
-      U_INTERNAL_ERROR((bp-buffer) <= maxsize, "BUFFER OVERFLOW at u_strftime1() ret = %u maxsize = %u format = \"%.*s\"", (bp-buffer), maxsize, format_size_save, format);
+      U_INTERNAL_ERROR((uint32_t)(bp-buffer) <= maxsize, "BUFFER OVERFLOW at u_strftime1() ret = %u maxsize = %u format = \"%.*s\"",
+                       (uint32_t)(bp-buffer),   maxsize, format_size_save, format);
 
       /* Scan the format for conversions ('%' character) */
 
@@ -1114,7 +964,7 @@ cdefault:
          continue;
          }
 
-      U_INTERNAL_PRINT("dispatch_table[%d] = %p &&cdefault = %p", ch-'A', dispatch_table[ch-'A'], &&cdefault)
+      U_INTERNAL_PRINT("dispatch_table[%d] = %d &&cdefault = %p", ch-'A', dispatch_table[ch-'A'], &&cdefault)
 
       goto *((char*)&&cdefault + dispatch_table[ch-'A']);
 
@@ -1133,9 +983,9 @@ case_B: /* %B The full name of the month */
       continue;
 
 case_H: /* %H The hour (on a 24-hour clock), formatted with two digits */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       U_NUM2STR16(bp, u_strftime_tm.tm_hour);
 
@@ -1144,9 +994,9 @@ case_H: /* %H The hour (on a 24-hour clock), formatted with two digits */
       continue;
 
 case_I: /* %I The hour (on a 12-hour clock), formatted with two digits */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       if (u_strftime_tm.tm_hour == 0 ||
           u_strftime_tm.tm_hour == 12)
@@ -1166,9 +1016,9 @@ case_I: /* %I The hour (on a 12-hour clock), formatted with two digits */
       continue;
 
 case_M: /* %M The minute, formatted with two digits */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       U_NUM2STR16(bp, u_strftime_tm.tm_min);
 
@@ -1177,9 +1027,9 @@ case_M: /* %M The minute, formatted with two digits */
       continue;
 
 case_S: /* %S The second, formatted with two digits */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       U_NUM2STR16(bp, u_strftime_tm.tm_sec);
 
@@ -1188,9 +1038,9 @@ case_S: /* %S The second, formatted with two digits */
       continue;
 
 case_T: /* %X A string representing the full time of day (hours, minutes, and seconds), in a format like 13:13:13 - %T The time in 24-hour notation (%H:%M:%S) (SU) */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-8))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-8))
 
-   /* if ((bp-buffer) >= (maxsize-8)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-8)) return 0; */
 
       U_NUM2STR64(bp, ':', u_strftime_tm.tm_hour, u_strftime_tm.tm_min, u_strftime_tm.tm_sec);
 
@@ -1199,9 +1049,9 @@ case_T: /* %X A string representing the full time of day (hours, minutes, and se
       continue;
 
 case_U: /* %U The week number, formatted with two digits (from 0 to 53; week number 1 is taken as beginning with the first Sunday in a year). See also %W */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       U_NUM2STR16(bp, (u_strftime_tm.tm_yday + 7 - u_strftime_tm.tm_wday) / 7);
 
@@ -1210,9 +1060,9 @@ case_U: /* %U The week number, formatted with two digits (from 0 to 53; week num
       continue;
 
 case_W: /* %W Another version of the week number: like %U, but counting week 1 as beginning with the first Monday in a year */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       U_NUM2STR16(bp, (u_strftime_tm.tm_yday + ((8-u_strftime_tm.tm_wday) % 7)) / 7);
 
@@ -1221,9 +1071,9 @@ case_W: /* %W Another version of the week number: like %U, but counting week 1 a
       continue;
 
 case_Y: /* %Y The full year, formatted with four digits to include the century */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-4))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-4))
 
-   /* if ((bp-buffer) >= (maxsize-4)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-4)) return 0; */
 
       (void) sprintf(bp, "%.4d", 1900 + u_strftime_tm.tm_year);
 
@@ -1234,22 +1084,22 @@ case_Y: /* %Y The full year, formatted with four digits to include the century *
       continue;
 
 case_Z: /* %Z Defined by ANSI C as eliciting the time zone if available */
-      n = u__strlen(tzname[u_daylight], __PRETTY_FUNCTION__);
+      n = u__strlen(tzname[u_is_daylight()], __PRETTY_FUNCTION__);
 
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-n))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-n))
 
-   /* if ((bp-buffer) >= (maxsize-n)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-n)) return 0; */
 
-      (void) u__memcpy(bp, tzname[u_daylight], n, __PRETTY_FUNCTION__);
+      (void) u__memcpy(bp, tzname[u_is_daylight()], n, __PRETTY_FUNCTION__);
 
       bp += n;
 
       continue;
 
 case_a: /* %a An abbreviation for the day of the week */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-3))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-3))
 
-   /* if ((bp-buffer) >= (maxsize-3)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-3)) return 0; */
 
       u_put_unalignedp32(bp, U_MULTICHAR_CONSTANT32(u_day_name[u_strftime_tm.tm_wday][0],
                                                     u_day_name[u_strftime_tm.tm_wday][1],
@@ -1260,9 +1110,9 @@ case_a: /* %a An abbreviation for the day of the week */
       continue;
 
 case_b: /* %b An abbreviation for the month name - %h Equivalent to %b (SU) */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-3))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-3))
 
-   /* if ((bp-buffer) >= (maxsize-3)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-3)) return 0; */
 
       u_put_unalignedp32(bp, U_MULTICHAR_CONSTANT32(u_month_name[u_strftime_tm.tm_mon][0],
                                                     u_month_name[u_strftime_tm.tm_mon][1],
@@ -1273,9 +1123,9 @@ case_b: /* %b An abbreviation for the month name - %h Equivalent to %b (SU) */
       continue;
 
 case_c: /* %c A string representing the complete date and time, in the form Mon Apr 01 13:13:13 1992 */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-24))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-24))
 
-   // if ((bp-buffer) >= (maxsize-24)) return 0;
+   // if ((uint32_t)(bp-buffer) >= (maxsize-24)) return 0;
 
       u_put_unalignedp32(bp, U_MULTICHAR_CONSTANT32(u_day_name[u_strftime_tm.tm_wday][0],
                                                     u_day_name[u_strftime_tm.tm_wday][1],
@@ -1296,9 +1146,9 @@ case_c: /* %c A string representing the complete date and time, in the form Mon 
       continue;
 
 case_d: /* %d The day of the month, formatted with two digits */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       U_NUM2STR16(bp, u_strftime_tm.tm_mday);
 
@@ -1307,9 +1157,9 @@ case_d: /* %d The day of the month, formatted with two digits */
       continue;
 
 case_e: /* %e Like %d, the day of the month as a decimal number, but a leading zero is replaced by a space */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       val = (u_strftime_tm.tm_mday >= 10 ? (u_strftime_tm.tm_mday / 10) : 0);
 
@@ -1321,9 +1171,9 @@ case_e: /* %e Like %d, the day of the month as a decimal number, but a leading z
       continue;
 
 case_j: /* %j The count of days in the year, formatted with three digits (from 1 to 366) */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-3))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-3))
 
-   /* if ((bp-buffer) >= (maxsize-3)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-3)) return 0; */
 
       (void) sprintf(bp, "%.3d", u_strftime_tm.tm_yday+1);
 
@@ -1334,9 +1184,9 @@ case_j: /* %j The count of days in the year, formatted with three digits (from 1
       continue;
 
 case_m: /* %m The month number, formatted with two digits */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       U_NUM2STR16(bp, u_strftime_tm.tm_mon+1);
 
@@ -1345,9 +1195,9 @@ case_m: /* %m The month number, formatted with two digits */
       continue;
 
 case_p: /* %p Either AM or PM as appropriate */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16(u_strftime_tm.tm_hour < 12 ? 'A' : 'P','M'));
 
@@ -1356,18 +1206,18 @@ case_p: /* %p Either AM or PM as appropriate */
       continue;
 
 case_w: /* %w A single digit representing the day of the week: Sunday is day 0 */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-1))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-1))
 
-   /* if ((bp-buffer) >= (maxsize-1)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-1)) return 0; */
 
       *bp++ = '0' + (u_strftime_tm.tm_wday % 10);
 
       continue;
 
 case_x: /* %x A string representing the complete date, in a format like Mon Apr 01 1992 */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-15))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-15))
 
-   /* if ((bp-buffer) >= (maxsize-15)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-15)) return 0; */
 
       u_put_unalignedp32(bp, U_MULTICHAR_CONSTANT32(u_day_name[u_strftime_tm.tm_wday][0],
                                                     u_day_name[u_strftime_tm.tm_wday][1],
@@ -1386,9 +1236,9 @@ case_x: /* %x A string representing the complete date, in a format like Mon Apr 
       continue;
 
 case_y: /* %y The last two digits of the year */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-2))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-2))
 
-   /* if ((bp-buffer) >= (maxsize-2)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-2)) return 0; */
 
       /**
        * The year could be greater than 100, so we need the value modulo 100.
@@ -1402,11 +1252,11 @@ case_y: /* %y The last two digits of the year */
       continue;
 
 case_z: /* %z The +hhmm or -hhmm numeric timezone (that is, the hour and minute offset from UTC) */
-      U_INTERNAL_ASSERT((bp-buffer) <= (maxsize-5))
+      U_INTERNAL_ASSERT((uint32_t)(bp-buffer) <= (maxsize-5))
 
-   /* if ((bp-buffer) >= (maxsize-5)) return 0; */
+   /* if ((uint32_t)(bp-buffer) >= (maxsize-5)) return 0; */
 
-      val = (u_now_adjust / 3600);
+      val = (*u_pnow_adjust / 3600);
 
       if (val > 0)
          {
@@ -1421,7 +1271,7 @@ case_z: /* %z The +hhmm or -hhmm numeric timezone (that is, the hour and minute 
          U_NUM2STR16(bp, -val);
          }
 
-      U_NUM2STR16(bp+2, u_now_adjust % 3600);
+      U_NUM2STR16(bp+2, *u_pnow_adjust % 3600);
 
       bp += 4;
       }
@@ -1433,7 +1283,7 @@ case_z: /* %z The +hhmm or -hhmm numeric timezone (that is, the hour and minute 
 
    if (ret < maxsize) *bp = '\0';
 
-   U_INTERNAL_ERROR(ret <= maxsize, "BUFFER OVERFLOW at u_strftime1() ret = %u maxsize = %u format = \"%s\"", ret, maxsize, format_size_save, format);
+   U_INTERNAL_ERROR(ret <= maxsize, "BUFFER OVERFLOW at u_strftime1() ret = %u maxsize = %u format = \"%.*s\"", ret, maxsize, format_size_save, format);
 
    return ret;
 }
@@ -1506,7 +1356,9 @@ void u_internal_print(bool abrt, const char* restrict format, ...)
       {
       u_flag_exit = -2; // abort...
 
+#  ifdef DEBUG
       u_debug_at_exit();
+#  endif
       }
       }
 }
@@ -1537,11 +1389,11 @@ uint32_t u_sprintcrtl(char* restrict out, unsigned char c)
    };
 
    static const struct control_info control_table[32] = {
-    U_CTL_ENTRY("\\u0000"), U_CTL_ENTRY("\\u0001"), U_CTL_ENTRY("\\u0002"), U_CTL_ENTRY("\\u0003"), U_CTL_ENTRY("\\u0004"), U_CTL_ENTRY("\\u0005"), U_CTL_ENTRY("\\u0006"),
-    U_CTL_ENTRY("\\u0007"), U_CTL_ENTRY("\\b"    ), U_CTL_ENTRY("\\t"    ), U_CTL_ENTRY("\\n"    ), U_CTL_ENTRY("\\u000b"), U_CTL_ENTRY("\\f"    ), U_CTL_ENTRY("\\r"    ),
-    U_CTL_ENTRY("\\u000e"), U_CTL_ENTRY("\\u000f"), U_CTL_ENTRY("\\u0010"), U_CTL_ENTRY("\\u0011"), U_CTL_ENTRY("\\u0012"), U_CTL_ENTRY("\\u0013"), U_CTL_ENTRY("\\u0014"),
-    U_CTL_ENTRY("\\u0015"), U_CTL_ENTRY("\\u0016"), U_CTL_ENTRY("\\u0017"), U_CTL_ENTRY("\\u0018"), U_CTL_ENTRY("\\u0019"), U_CTL_ENTRY("\\u001a"), U_CTL_ENTRY("\\u001b"),
-    U_CTL_ENTRY("\\u001c"), U_CTL_ENTRY("\\u001d"), U_CTL_ENTRY("\\u001e"), U_CTL_ENTRY("\\u001f")
+    U_CTL_ENTRY("\\000"), U_CTL_ENTRY("\\001"), U_CTL_ENTRY("\\002"), U_CTL_ENTRY("\\003"), U_CTL_ENTRY("\\004"), U_CTL_ENTRY("\\005"), U_CTL_ENTRY("\\006"),
+    U_CTL_ENTRY("\\007"), U_CTL_ENTRY("\\b"  ), U_CTL_ENTRY("\\t"  ), U_CTL_ENTRY("\\n"  ), U_CTL_ENTRY("\\013"), U_CTL_ENTRY("\\f"  ), U_CTL_ENTRY("\\r"  ),
+    U_CTL_ENTRY("\\016"), U_CTL_ENTRY("\\017"), U_CTL_ENTRY("\\020"), U_CTL_ENTRY("\\021"), U_CTL_ENTRY("\\022"), U_CTL_ENTRY("\\023"), U_CTL_ENTRY("\\024"),
+    U_CTL_ENTRY("\\025"), U_CTL_ENTRY("\\026"), U_CTL_ENTRY("\\027"), U_CTL_ENTRY("\\030"), U_CTL_ENTRY("\\031"), U_CTL_ENTRY("\\032"), U_CTL_ENTRY("\\033"),
+    U_CTL_ENTRY("\\034"), U_CTL_ENTRY("\\035"), U_CTL_ENTRY("\\036"), U_CTL_ENTRY("\\037")
    };
 
    U_INTERNAL_TRACE("u_sprintcrtl(%p,%d)", out, c)
@@ -1804,7 +1656,8 @@ uint32_t u__vsnprintf(char* restrict buffer, uint32_t buffer_size, const char* r
    U_INTERNAL_ASSERT_MAJOR(fmt_size, 0)
 
    do {
-      U_INTERNAL_ERROR((bp-buffer) <= buffer_size, "BUFFER OVERFLOW at u__vsnprintf() ret = %u buffer_size = %u format = \"%.*s\"", (bp-buffer), buffer_size, format_size_save, format);
+      U_INTERNAL_ERROR((uint32_t)(bp-buffer) <= buffer_size, "BUFFER OVERFLOW at u__vsnprintf() ret = %u buffer_size = %u format = \"%.*s\"",
+                       (uint32_t)(bp-buffer),   buffer_size, format_size_save, format);
 
       /* Scan the format for conversions ('%' character) */
 
@@ -1816,17 +1669,17 @@ uint32_t u__vsnprintf(char* restrict buffer, uint32_t buffer_size, const char* r
          {
          U_INTERNAL_ASSERT_MAJOR(fmt_size, 0)
 
-         u__memcpy(bp, fmark, fmt_size, __PRETTY_FUNCTION__);
-                   bp +=      fmt_size;
+         (void) memcpy(bp, fmark, fmt_size);
+                       bp +=      fmt_size;
 
          break;
          }
 
       if ((n = (fp - fmark)))
          {
-         u__memcpy(bp, fmark, n, __PRETTY_FUNCTION__);
-                   bp +=      n;
-             fmt_size -=      n;
+         (void) memcpy(bp, fmark, n);
+                       bp +=      n;
+                 fmt_size -=      n;
          }
 
       /* init var */
@@ -1866,7 +1719,7 @@ cdefault:
          continue;
          }
 
-      U_INTERNAL_PRINT("dispatch_table[%d] = %p &&cdefault = %p", ch-'A', dispatch_table[ch-' '], &&cdefault)
+      U_INTERNAL_PRINT("dispatch_table[%d] = %d &&cdefault = %p", ch-'A', dispatch_table[ch-' '], &&cdefault)
 
       goto *((char*)&&cdefault + dispatch_table[ch-' ']);
 
@@ -1957,13 +1810,15 @@ case_float:
          {
          double dbl = VA_ARG(double);
 
-         len = u_dtoa(dbl, bp);
+         U_INTERNAL_PRINT("dbl = %g", dbl)
+
+         len = (dbl == .0 ? (*bp='0',1) : u_dtoa(dbl, bp) - bp);
          }
       else
          {
          buf[0] = '%';
 
-         cp = buf + 1;
+         cp = buf+1;
 
          if ((flags & ALT)     != 0)           *cp++ = '#';
          if ((flags & ZEROPAD) != 0)           *cp++ = '0';
@@ -1971,21 +1826,108 @@ case_float:
          if ((flags & THOUSANDS_GROUPED) != 0) *cp++ = '\'';
          if (sign)                             *cp++ = sign;
 
-         u_put_unalignedp32(cp, U_MULTICHAR_CONSTANT32('*','.','*','L')); /* width, prec */
-
-         u_put_unalignedp16(cp + ((flags & LONGDBL) == 0 ? 3 : 4), U_MULTICHAR_CONSTANT16(ch,'\0'));
-
-         if ((flags & LONGDBL) != 0)
+         if (prec == -1 &&
+             width == 0)
             {
-            long double ldbl = VA_ARG(long double);
+            u_put_unalignedp16(cp, U_MULTICHAR_CONSTANT16(ch,'\0'));
 
-            len = sprintf(bp, (const char* restrict)buf, width, prec, ldbl);
+            if ((flags & LONGDBL) != 0)
+               {
+               long double ldbl = VA_ARG(long double);
+
+               U_INTERNAL_PRINT("buf = %s ldbl = %Lg", buf, ldbl)
+
+               len = sprintf(bp, (const char* restrict)buf, ldbl);
+               }
+            else
+               {
+               double dbl = VA_ARG(double);
+
+               U_INTERNAL_PRINT("buf = %s dbl = %g", buf, dbl)
+
+               len = sprintf(bp, (const char* restrict)buf, dbl);
+               }
             }
          else
             {
-            double dbl = VA_ARG(double);
+            if (width == 0)
+               {
+               u_put_unalignedp32(cp, U_MULTICHAR_CONSTANT32('.','*','L','\0')); /* prec, prefix long double */
 
-            len = sprintf(bp, (const char* restrict)buf, width, prec, dbl);
+               if ((flags & LONGDBL) != 0)
+                  {
+                  long double ldbl = VA_ARG(long double);
+
+                  u_put_unalignedp16(cp+3, U_MULTICHAR_CONSTANT16(ch,'\0'));
+
+                  U_INTERNAL_PRINT("buf = %s prec = %d ldbl = %Lg", buf, prec, ldbl)
+
+                  len = sprintf(bp, (const char* restrict)buf, prec, ldbl);
+                  }
+               else
+                  {
+                  double dbl = VA_ARG(double);
+
+                  u_put_unalignedp16(cp+2, U_MULTICHAR_CONSTANT16(ch,'\0'));
+
+                  U_INTERNAL_PRINT("buf = %s prec = %d dbl = %g", buf, prec, dbl)
+
+                  len = sprintf(bp, (const char* restrict)buf, prec, dbl);
+                  }
+               }
+            else if (prec == -1)
+               {
+               u_put_unalignedp16(cp, U_MULTICHAR_CONSTANT16('*','L')); /* width, prefix long double */
+
+               if ((flags & LONGDBL) != 0)
+                  {
+                  long double ldbl = VA_ARG(long double);
+
+                  u_put_unalignedp16(cp+2, U_MULTICHAR_CONSTANT16(ch,'\0'));
+
+                  U_INTERNAL_PRINT("buf = %s width = %u ldbl = %Lg", buf, ldbl)
+
+                  len = sprintf(bp, (const char* restrict)buf, width, ldbl);
+                  }
+               else
+                  {
+                  double dbl = VA_ARG(double);
+
+                  u_put_unalignedp16(cp+1, U_MULTICHAR_CONSTANT16(ch,'\0'));
+
+                  U_INTERNAL_PRINT("buf = %s width = %u dbl = %g", buf, dbl)
+
+                  len = sprintf(bp, (const char* restrict)buf, width, dbl);
+                  }
+               }
+            else
+               {
+               U_INTERNAL_ASSERT_DIFFERS(prec, -1)
+               U_INTERNAL_ASSERT_DIFFERS(width, 0)
+
+               u_put_unalignedp32(cp, U_MULTICHAR_CONSTANT32('*','.','*','L')); /* width, prec, prefix long double */
+
+               if ((flags & LONGDBL) != 0)
+                  {
+                  long double ldbl = VA_ARG(long double);
+
+                  u_put_unalignedp16(cp+4, U_MULTICHAR_CONSTANT16(ch,'\0'));
+
+                  U_INTERNAL_PRINT("buf = %s width = %u prec = %d ldbl = %Lg", buf, width, prec, ldbl)
+
+                  len = sprintf(bp, (const char* restrict)buf, width, prec, ldbl);
+                  }
+               else
+                  {
+                  double dbl = VA_ARG(double);
+
+                  u_put_unalignedp16(cp+3, U_MULTICHAR_CONSTANT16(ch,'\0'));
+
+                  U_INTERNAL_PRINT("buf = %s width = %u prec = %d dbl = %g", buf, width, prec, dbl)
+
+                  len = sprintf(bp, (const char* restrict)buf, width, prec, dbl);
+                  }
+               }
             }
 
          U_INTERNAL_ASSERT_EQUALS(len, strlen(bp))
@@ -2054,11 +1996,12 @@ empty:      u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16('"','"'));
          n         = 0;
          remaining = buffer_size - (bp-buffer);
 
-         if ((flags & ALT) != 0) /* NB: # -> force print of all binary string (compatibly with buffer size)... */
+         if ((flags & ALT) != 0) /* NB: # -> force print of all binary string (compatible with buffer size)... */
             {
-            remaining -= (prec * 2);
+            remaining >>= 1;
 
-            if (u__isprint(*cp) == false &&
+            if (ch != 'V'                &&
+                u__isprint(*cp) == false &&
                 u__isspace(*cp) == false)
                {
                sign = 1; /* we want to print buffer as exadecimal... */
@@ -2073,15 +2016,19 @@ empty:      u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16('"','"'));
 
             if (sign)
                {
-               u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16(u_hex_lower[(c >> 4) & 0x0F],
-                                                             u_hex_lower[(c     ) & 0x0F]));
+               u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16("0123456789abcdef"[(c >> 4) & 0x0F],
+                                                             "0123456789abcdef"[(c     ) & 0x0F]));
 
                bp        += 2;
                remaining -= 2;
                }
             else
                {
-               if (c == '\0') break;
+               if (c == '\0' &&
+                   (flags & ALT) == 0) /* NB: # -> force print of all binary string (compatible with buffer size)... */
+                  {
+                  break;
+                  }
 
                i = u_sprintc(bp, c);
 
@@ -2121,9 +2068,9 @@ case_ustring_v:
 
       size = (prec < 0 ? (int)u__strlen((const char*)cp, __PRETTY_FUNCTION__) : prec);
 
-      U_INTERNAL_ERROR(size <= (int)(buffer_size - (bp-buffer)),
-                       "WE ARE GOING TO OVERFLOW BUFFER at u__vsnprintf() size = %u remaining = %d cp = %.20s buffer_size = %u format = \"%.*s\"",
-                       size, (buffer_size - (bp-buffer)), cp, buffer_size, format_size_save, format);
+      U_INTERNAL_ERROR((uint32_t)size <= (buffer_size - (uint32_t)(bp-buffer)),
+                       "WE ARE GOING TO OVERFLOW BUFFER at u__vsnprintf() size = %u remaining = %u cp = %.20s buffer_size = %u format = \"%.*s\"",
+                       size, (buffer_size - (uint32_t)(bp-buffer)), cp, buffer_size, format_size_save, format);
 
       /* if a width from format is specified, the 0 flag for padding will be ignored... */
 
@@ -2209,7 +2156,7 @@ case_D: /* extension: print date and time in various format */
          U_gettimeofday /* NB: optimization if it is enough a time resolution of one second... */
 
                          t  = u_now->tv_sec;
-         if (width != 8) t += u_now_adjust;
+         if (width != 8) t += *u_pnow_adjust;
          }
 
       /**
@@ -2245,7 +2192,7 @@ case_D: /* extension: print date and time in various format */
             {
             u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16(' ','+'));
 
-            bp += 2 + u_num2str32(t / U_ONE_DAY_IN_SECOND, bp+2);
+            bp = u_num2str32(t / U_ONE_DAY_IN_SECOND, bp+2);
 
             u_put_unalignedp32(bp, U_MULTICHAR_CONSTANT32(' ','d','a','y'));
 
@@ -2270,7 +2217,7 @@ case_D: /* extension: print date and time in various format */
 case_H: /* extension: print host name */
       U_INTERNAL_ERROR(u_hostname_len, "HOSTNAME NULL at u__vsnprintf() - CHECK THE PARAMETERS - format = \"%.*s\"", format_size_save, format);
 
-      u__memcpy(bp, u_hostname, u_hostname_len, __PRETTY_FUNCTION__);
+      (void) memcpy(bp, u_hostname, u_hostname_len);
 
       bp += u_hostname_len;
 
@@ -2309,14 +2256,14 @@ case_M: /* extension: print memory dump */
       continue;
 
 case_N: /* extension: print program name */
-      u__memcpy(bp, u_progname, u_progname_len, __PRETTY_FUNCTION__);
+      (void) memcpy(bp, u_progname, u_progname_len);
 
       bp += u_progname_len;
 
       continue;
 
 case_P: /* extension: print process pid */
-      u__memcpy(bp, u_pid_str, u_pid_str_len, __PRETTY_FUNCTION__);
+      (void) memcpy(bp, u_pid_str, u_pid_str_len);
 
       bp += u_pid_str_len;
 
@@ -2336,7 +2283,7 @@ case_R: /* extension: print msg - u_getSysError() */
          {
          len = u__strlen((const char* restrict)cp, __PRETTY_FUNCTION__);
 
-         u__memcpy(bp, cp, len, __PRETTY_FUNCTION__);
+         (void) memcpy(bp, cp, len);
 
          bp += len;
          }
@@ -2349,16 +2296,20 @@ case_R: /* extension: print msg - u_getSysError() */
          *bp++ = ' ';
          }
 
-      if (errno == 0) errno = u_errno;
+      if (errno == 0)
+         {
+         errno = u_errno;
+                 u_errno = 0;
+         }
 
 #  ifdef _MSWINDOWS_
       if (errno < 0)
          {
-         errno = - errno;
+         errno = -errno;
 
          cp = getSysError_w32((uint32_t*)&len);
 
-         u__memcpy(bp, cp, len, __PRETTY_FUNCTION__);
+         (void) memcpy(bp, cp, len);
 
          bp += len;
 
@@ -2373,7 +2324,9 @@ case_R: /* extension: print msg - u_getSysError() */
 
       u_getSysError((uint32_t*)&len);
 
-      u__memcpy(bp, u_err_buffer, len, __PRETTY_FUNCTION__);
+      U_INTERNAL_ASSERT_MINOR(len, sizeof(u_err_buffer))
+
+      (void) memcpy(bp, u_err_buffer, len);
 
       bp += len;
 
@@ -2389,7 +2342,7 @@ case_T: /* extension: print time_t */
 case_U: /* extension: print user name */
       U_INTERNAL_ERROR(u_user_name_len, "USER NAME NULL at u__vsnprintf() - CHECK THE PARAMETERS - format = \"%.*s\"", format_size_save, format);
 
-      u__memcpy(bp, u_user_name, u_user_name_len, __PRETTY_FUNCTION__);
+      (void) memcpy(bp, u_user_name, u_user_name_len);
 
       bp += u_user_name_len;
 
@@ -2415,7 +2368,7 @@ case_W: /* extension: print COLOR (ANSI ESCAPE STR) */
 
          len = sizeof(U_RESET_STR) - (n == RESET);
 
-         u__memcpy(bp, tab_color[n], len, __PRETTY_FUNCTION__);
+         (void) memcpy(bp, tab_color[n], len);
 
          bp += len;
          }
@@ -2466,8 +2419,8 @@ number: /* uint32_t conversions */
             }
          else if (base == HEX)
             {
-            const unsigned char* restrict xdigs = (ch == 'X' ? u_hex_upper
-                                                             : u_hex_lower); /* digits for [xX] conversion */
+            const unsigned char* restrict xdigs = (const unsigned char* restrict)(ch == 'X' ? "0123456789ABCDEF"
+                                                                                            : "0123456789abcdef"); /* digits for [xX] conversion */
 
             cp = buf + sizeof(buf);
 
@@ -2487,16 +2440,14 @@ number: /* uint32_t conversions */
                    dprec > 0 ||
                    (flags & (LADJUST | ZEROPAD)) != 0)
                   {
-                  size = u_num2str64(argument, (char* restrict)(cp = buf));
+                  size = u_num2str64(argument, (char* restrict)(cp = buf)) - (char* restrict)buf;
 
                   goto next;
                   }
 
                if (sign) *bp++ = sign;
 
-               len = u_num2str64(argument, bp);
-
-               bp += len;
+               bp = u_num2str64(argument, bp);
 
                continue;
                }
@@ -2525,7 +2476,9 @@ number: /* uint32_t conversions */
 case_Y: /* extension: print u_getSysSignal(signo) */
       u_getSysSignal(VA_ARG(int), (uint32_t*)&len);
 
-      u__memcpy(bp, u_err_buffer, len, __PRETTY_FUNCTION__);
+      U_INTERNAL_ASSERT_MINOR(len, sizeof(u_err_buffer))
+
+      (void) memcpy(bp, u_err_buffer, len);
 
       bp += len;
 
@@ -2662,7 +2615,9 @@ case_q: /* field length modifier: quad. This is a synonym for ll */
 case_r: /* extension: print u_getExitStatus(exit_value) */
       u_getExitStatus(VA_ARG(int), (uint32_t*)&len);
 
-      u__memcpy(bp, u_err_buffer, len, __PRETTY_FUNCTION__);
+      U_INTERNAL_ASSERT_MINOR(len, sizeof(u_err_buffer))
+
+      (void) memcpy(bp, u_err_buffer, len);
 
       bp += len;
 
@@ -2687,7 +2642,7 @@ case_v: /* extension: print ustring */
 case_w: /* extension: print current working directory */
       U_INTERNAL_ERROR(u_cwd_len, "CURRENT WORKING DIRECTORY NULL at u__vsnprintf() - CHECK THE PARAMETERS - format = \"%.*s\"", format_size_save, format);
 
-      u__memcpy(bp, u_cwd, u_cwd_len, __PRETTY_FUNCTION__);
+      (void) memcpy(bp, u_cwd, u_cwd_len);
 
       bp += u_cwd_len;
 
@@ -2715,7 +2670,7 @@ case_w: /* extension: print current working directory */
        * ---------------------------------------------------------------------------------
        */
 next:
-      U_INTERNAL_PRINT("size = %d width = %d prec = %d dprec = %d sign = %c", size, width, prec, dprec, sign)
+      U_INTERNAL_PRINT("size = %d width = %d prec = %d dprec = %d sign = %d", size, width, prec, dprec, sign)
 
       dpad = dprec - size; /* compute actual size, so we know how much to pad */
 
@@ -2727,14 +2682,7 @@ next:
 
       if (pads < 0) pads = 0;
 
-      U_INTERNAL_PRINT("fieldsz = %d pads = %d dpad = %d", fieldsz, pads, dpad)
-
-      /* check ret */
-
-      ret = (bp-buffer) + (width > fieldsz ? width : fieldsz);
-
-      U_INTERNAL_ERROR(ret <= buffer_size,
-                       "BUFFER OVERFLOW at u__vsnprintf() ret = %u buffer_size = %u format = \"%.*s\"", ret, buffer_size, format_size_save, format);
+      U_INTERNAL_PRINT("fieldsz = %d pads = %d dpad = %d flags = %d", fieldsz, pads, dpad, flags)
 
       /* right-adjusting blank padding */
 
@@ -2757,22 +2705,31 @@ next:
          }
       else if ((flags & HEXPREFIX) != 0)
          {
-              if (bpad)   bp -= 2;
-         else if (pads) pads -= 2;
+         U_INTERNAL_PRINT("bpad = %d", bpad)
 
-         u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16('0',ch));
+         if (bpad) u_put_unalignedp16(bp-2, U_MULTICHAR_CONSTANT16('0',ch));
+         else
+            {
+            u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16('0',ch));
 
-         bp += 2;
+            bp += 2;
+            }
          }
 
       /* right-adjusting zero padding */
 
       if ((flags & (LADJUST | ZEROPAD)) == ZEROPAD)
          {
+         U_INTERNAL_PRINT("pads = %d", pads)
+
+         U_INTERNAL_ASSERT(pads >= 0)
+
          for (; pads; --pads) *bp++ = '0';
          }
 
       /* leading zeroes from decimal precision */
+
+      U_INTERNAL_PRINT("dpad = %d", dpad)
 
       for (; dpad; --dpad) *bp++ = '0';
 
@@ -2782,7 +2739,14 @@ next:
          {
          U_INTERNAL_ASSERT_POINTER(cp)
 
-         u__memcpy(bp, cp, size, __PRETTY_FUNCTION__);
+         /* check ret */
+
+         ret = (bp-buffer) + size;
+
+         U_INTERNAL_ERROR(ret <= buffer_size,
+                          "BUFFER OVERFLOW at u__vsnprintf() ret = %u buffer_size = %u format = \"%.*s\"", ret, buffer_size, format_size_save, format);
+
+         (void) memcpy(bp, cp, size);
 
          bp += size;
          }
@@ -2791,6 +2755,10 @@ next:
 
       if ((flags & LADJUST) != 0)
          {
+         U_INTERNAL_PRINT("pads = %d", pads)
+
+         U_INTERNAL_ASSERT(pads >= 0)
+
          for (; pads; --pads) *bp++ = ' ';
          }
       }
@@ -2833,7 +2801,7 @@ void u__printf(int fd, const char* format, uint32_t fmt_size, ...)
 
    U_INTERNAL_TRACE("u__printf(%d,%.*s,%u)", fd, fmt_size, format, fmt_size)
 
-   bytes_written = u__vsnprintf(buffer, sizeof(buffer)-1, format, fmt_size, argp);
+   bytes_written = u__vsnprintf(buffer, U_CONSTANT_SIZE(buffer), format, fmt_size, argp);
 
    va_end(argp);
 
@@ -2852,7 +2820,8 @@ void u__printf(int fd, const char* format, uint32_t fmt_size, ...)
          {
          /* check if warning due to syscall */
 
-         if (u_flag_exit != 2 || errno == 0)
+         if (u_flag_exit != 2 ||
+             errno == 0)
             {
             struct iovec iov[1] = { { (caddr_t)buffer, bytes_written } };
 
@@ -2884,9 +2853,9 @@ void u__printf(int fd, const char* format, uint32_t fmt_size, ...)
 
          if (u_askForContinue()) return;
          }
-#  endif
 
       u_debug_at_exit();
+#  endif
 
       exit(u_flag_exit);
       }

@@ -53,9 +53,9 @@ typedef int  (*iPFprpr) (UStringRep*, UStringRep*);
 typedef void (*vPFprpr) (UStringRep*, UStringRep*);
 
 #define U_cdb_ignore_case(obj)         (obj)->UCDB::flag[0]
-#define U_cdb_shared(obj)              (obj)->UCDB::flag[1]
-#define U_cdb_result_call(obj)         (obj)->UCDB::flag[2]
-#define U_cdb_add_entry_to_vector(obj) (obj)->UCDB::flag[3]
+#define U_cdb_result_call(obj)         (obj)->UCDB::flag[1]
+#define U_cdb_add_entry_to_vector(obj) (obj)->UCDB::flag[2]
+#define U_cdb_no_hash(obj)             (obj)->UCDB::flag[3]
 
 class U_EXPORT UCDB : public UFile {
 public:
@@ -82,14 +82,14 @@ public:
 
    UCDB(int ignore_case = 0)
       {
-      U_TRACE_REGISTER_OBJECT(0, UCDB, "%d", ignore_case)
+      U_TRACE_CTOR(0, UCDB, "%d", ignore_case)
 
       init_internal(ignore_case);
       }
 
    UCDB(const UString& path, int ignore_case) : UFile(path)
       {
-      U_TRACE_REGISTER_OBJECT(0, UCDB, "%V,%d", path.rep, ignore_case)
+      U_TRACE_CTOR(0, UCDB, "%V,%d", path.rep, ignore_case)
 
       init_internal(ignore_case);
       }
@@ -99,7 +99,7 @@ public:
 #endif
    ~UCDB()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UCDB)
+      U_TRACE_DTOR(0, UCDB)
       }
 
    // Open a Constant DataBase
@@ -203,7 +203,7 @@ public:
    void  resetFilterToFunctionToCall()                 { filter_function_to_call = functionCall; }
    void    setFilterToFunctionToCall(iPFprpr function) { filter_function_to_call = function; }
 
-   uint32_t getValuesWithKeyNask(UVector<UString>& vec_values, const UString& mask_key, uint32_t* size = 0);
+   uint32_t getValuesWithKeyNask(UVector<UString>& vec_values, const UString& mask_key, uint32_t* size = U_NULLPTR);
 
    // Save memory hash table as Constant DataBase
 
@@ -217,14 +217,16 @@ public:
       U_RETURN(size);
       }
 
-          bool writeTo(                     UHashMap<void*>* t, uint32_t tbl_space, pvPFpvpb f = 0) { return UCDB::writeTo(*this, t, tbl_space, f); }
-   static bool writeTo(const UString& path, UHashMap<void*>* t, uint32_t tbl_space, pvPFpvpb f = 0) { return UCDB(path, t->ignoreCase()).writeTo(t, tbl_space, f); }
+          bool writeTo(                     UHashMap<void*>* t, uint32_t tbl_space, pvPFpvpb f = U_NULLPTR) { return UCDB::writeTo(*this, t, tbl_space, f); }
+   static bool writeTo(const UString& path, UHashMap<void*>* t, uint32_t tbl_space, pvPFpvpb f = U_NULLPTR) { return UCDB(path, t->ignoreCase()).writeTo(t, tbl_space, f); }
 
    // STREAM
 
    UString print();
 
 #ifdef U_STDCPP_ENABLE
+   static vpFpcu getValueFromBuffer;
+
    friend U_EXPORT istream& operator>>(istream& is, UCDB& cdb);
    friend U_EXPORT ostream& operator<<(ostream& os, UCDB& cdb);
 
@@ -274,6 +276,13 @@ protected:
       {
       U_TRACE(0, "UCDB::cdb_hash(%.*S,%u)", tlen, t, tlen)
 
+      if (U_cdb_no_hash(this))
+         {
+         U_INTERNAL_ASSERT_EQUALS(tlen, sizeof(uint32_t))
+
+         U_RETURN(*(uint32_t*)t);
+         }
+
       int flags = (U_cdb_ignore_case(this) == 0xff ? -1 : U_cdb_ignore_case(this));
 
       U_INTERNAL_DUMP("flags = %d U_cdb_ignore_case(this) = %d", flags, U_cdb_ignore_case(this))
@@ -301,7 +310,9 @@ protected:
 
    // Save memory hash table as Constant DataBase
 
-   static bool writeTo(UCDB& cdb, UHashMap<void*>* table, uint32_t tbl_space, pvPFpvpb f = 0);
+   static bool writeTo(UStringRep* key, void* elem); // callWithDeleteForAllEntry()...
+
+   static bool writeTo(UCDB& cdb, UHashMap<void*>* table, uint32_t tbl_space, pvPFpvpb f = U_NULLPTR);
 
    // FOR RDB
 

@@ -36,6 +36,10 @@
 #  include <pwd.h>
 #endif
 
+#ifndef U_LOG_DISABLE
+const char* UStringExt::deflate_agent = "gzip";
+#endif
+
 #ifdef USE_LIBSSL
 UString UStringExt::BIOtoString(BIO* bio)
 {
@@ -223,47 +227,430 @@ UString UStringExt::substitute(const char* s, uint32_t n, const char* a, uint32_
 {
    U_TRACE(1, "UStringExt::substitute(%.*S,%u,%.*S,%u,%.*S,%u)", n, s, n, n1, a, n1, n2, b, n2)
 
+   U_INTERNAL_ASSERT_MAJOR(n, 0)
    U_INTERNAL_ASSERT_MAJOR(n1, 0)
 
-   void* p;
-   uint32_t start = 0, len, capacity = (n / n1);
+   uint32_t capacity;
+   bool breserve = false;
 
-   if (capacity == 0)                     capacity  = 10U;
-   if (n2)                                capacity *= n2;
-   if (capacity > (256U * 1024U * 1024U)) capacity  = (256U * 1024U * 1024U); // worst case... 
-
-   UString x(capacity);
-
-   while ((p = u_find(s + start, n - start, a, n1)))
+   if (n2 <= n1) capacity = n;
+   else
       {
-      uint32_t _end = (const char*)p - s;
+      capacity = n2*((n+n1)/n1);
 
-      len  = (_end > start ? _end - start : 0);
+      if (capacity > (256U * 1024U * 1024U)) capacity = (breserve = true, (256U * 1024U * 1024U)); // worst case... 
+      }
 
-      U_INTERNAL_DUMP("start = %u _end = %u len = %u", start, _end, len)
+   uint32_t len1;
+   const char* p1;
+   UString x(capacity);
+   char* p2 = x.data();
 
-      (void) x.reserve(len + n2);
+   while ((p1 = (const char*)u_find(s, n, a, n1)))
+      {
+      len1 = (p1-s);
 
-      if (len)
+      U_INTERNAL_DUMP("len1 = %u", len1)
+
+      if (breserve)
          {
-         U_MEMCPY(x.pend(), s + start, len);
+         uint32_t len2 = len1 + n2;
 
-         x.rep->_length += len;
+         x.rep->_length = x.distance(p2);
+
+         if (x.space() < len2)
+            {
+            UString::_reserve(x, x.rep->_length + len2);
+
+            p2 = x.pend();
+            }
          }
+
+      if (len1)
+         {
+         U_MEMCPY(p2, s, len1);
+                  p2 +=  len1;
+
+         s  = p1;
+         n -= len1;
+         }
+
+      n -= n1;
+      s += n1;
 
       if (n2)
          {
-         U_MEMCPY(x.pend(), b, n2);
-
-         x.rep->_length += n2;
+         U_MEMCPY(p2, b, n2);
+                  p2 +=  n2;
          }
-
-      start = _end + n1;
       }
 
-   len = n - start;
+   x.rep->_length = x.distance(p2);
 
-   if (len) (void) x.append(s + start, len);
+   U_INTERNAL_DUMP("n = %u", n)
+
+   if (n)
+      {
+      if (breserve &&
+          x.space() < n)
+         {
+         UString::_reserve(x, x.rep->_length + n);
+
+         p2 = x.pend();
+         }
+
+      U_MEMCPY(p2, s, n);
+
+      x.rep->_length += n;
+      }
+
+   U_INTERNAL_ASSERT(x.invariant())
+
+   U_RETURN_STRING(x);
+}
+
+UString UStringExt::substitute(const char* s, uint32_t len, UVector<UString>& vec)
+{
+   U_TRACE(1, "UStringExt::substitute(%.*S,%u,%p)", len, s, len, &vec)
+
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
+
+   uint32_t n = vec.size();
+
+   U_INTERNAL_ASSERT_EQUALS(n & 1, 0)
+
+   if (n == 2) return substitute(s, len, U_STRING_TO_PARAM(vec[0]), U_STRING_TO_PARAM(vec[1]));
+
+   char c;
+   int32_t i;
+   UString item;
+   bool breserve = false, bdigit = false, bspace = false, bdollar;
+   uint32_t n1 = 0, n2 = 0, capacity, mask_lower = 0, mask_upper = 0, dollar = 0;
+
+   uint32_t maskFirstChar[] = { 0x00000001, 0x00000002, 0x00000004, 0x00000008, 0x00000010,
+                                0x00000020, 0x00000040, 0x00000080, 0x00000100, 0x00000200,
+                                0x00000400, 0x00000800, 0x00001000, 0x00002000, 0x00004000,
+                                0x00008000, 0x00010000, 0x00020000, 0x00040000, 0x00080000,
+                                0x00100000, 0x00200000, 0x00400000, 0x00800000, 0x01000000,
+                                0x02000000 };
+
+   for (i = 0; i < (int32_t)n; i += 2)
+      {
+      item = vec[i];
+
+      n1 +=     item.size();
+      n2 += vec[i+1].size();
+
+      c = item.first_char();
+
+      if (c == '$')
+         {
+         ++dollar;
+
+         continue;
+         }
+
+           if (u__isdigit(c)) bdigit = true;
+      else if (u__isspace(c)) bspace = true;
+      else if (u__islower(c)) mask_lower |= maskFirstChar[c-'a'];
+      else if (u__isupper(c)) mask_upper |= maskFirstChar[c-'A'];
+      }
+
+   U_INTERNAL_DUMP("n1 = %u n2 = %u", n1, n2)
+
+   if (n2 <= n1) capacity = len;
+   else
+      {
+      capacity = n2*((len+n1)/n1);
+
+      if (capacity > (256U * 1024U * 1024U)) capacity = (breserve = true, (256U * 1024U * 1024U)); // worst case... 
+      }
+
+   uint32_t len1;
+   const char* p1;
+   UString x(capacity);
+   char* p2 = x.data();
+   const char* end = s + len;
+
+   bdollar = (dollar == n);
+
+   U_INTERNAL_DUMP("mask_lower = %B mask_upper = %B bdigit = %b bspace = %b dollar = %u bdollar = %b",
+                    mask_lower,     mask_upper,     bdigit,     bspace,     dollar,     bdollar)
+
+loop:
+   for (p1 = s; p1 < end; ++p1)
+      {
+      c = *p1;
+
+      U_INTERNAL_DUMP("c = %C p1 = %.10S", c, p1)
+
+      if (c == '$')
+         {
+         if (dollar) goto chk;
+
+         continue;
+         }
+
+      if (bdollar) continue;
+
+      if ((u__isdigit(c) && bdigit == false)                          ||
+          (u__isspace(c) && bspace == false)                          ||
+          (u__islower(c) && (mask_lower & maskFirstChar[c-'a']) == 0) ||
+          (u__isupper(c) && (mask_upper & maskFirstChar[c-'A']) == 0))
+         {
+         continue;
+         }
+
+chk:  for (i = 0; i < (int32_t)n; i += 2)
+         {
+         item = vec[i];
+
+         if (memcmp(p1, U_STRING_TO_PARAM(item)) == 0)
+            {
+            n1 =  item.size();
+            n2 = (item = vec[i+1]).size();
+
+            U_INTERNAL_DUMP("n1 = %u item(%u) = %V", n1, n2, item.rep)
+
+            goto found;
+            }
+         }
+      }
+
+   if (p1 < end)
+      {
+found:
+      len1 = (p1-s);
+
+      U_INTERNAL_DUMP("len1 = %u", len1)
+
+      if (breserve)
+         {
+         uint32_t len2 = len1 + n2;
+
+         x.rep->_length = x.distance(p2);
+
+         if (x.space() < len2)
+            {
+            UString::_reserve(x, x.rep->_length + len2);
+
+            p2 = x.pend();
+            }
+         }
+
+      if (len1)
+         {
+         U_MEMCPY(p2, s, len1);
+                  p2 +=  len1;
+
+           s  = p1;
+         len -= len1;
+         }
+
+      len -= n1;
+        s += n1;
+
+      if (n2)
+         {
+         U_MEMCPY(p2, item.data(), n2);
+                  p2 +=            n2;
+         }
+
+      goto loop;
+      }
+
+   x.rep->_length = x.distance(p2);
+
+   U_INTERNAL_DUMP("len = %u", len)
+
+   if (len)
+      {
+      if (breserve &&
+          x.space() < len)
+         {
+         UString::_reserve(x, x.rep->_length + len);
+
+         p2 = x.pend();
+         }
+
+      U_MEMCPY(p2, s, len);
+
+      x.rep->_length += len;
+      }
+
+   U_INTERNAL_ASSERT(x.invariant())
+
+   U_RETURN_STRING(x);
+}
+
+// The format s uses positional identifiers indicated by a dollar sign ($) and single digit
+// positional ids to indicate which substitution arguments to use at that location within the format s
+
+UString UStringExt::substituteIds(const char* s, uint32_t len, UVector<UString>& vec)
+{
+   U_TRACE(1, "UStringExt::substituteIds(%.*S,%u,%p)", len, s, len, &vec)
+
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
+
+   UString item;
+   uint32_t len1;
+   const char* p1;
+   bool breserve = false;
+   const char* end = s + len;
+   uint32_t i, n = vec.size(), n1 = n*2, n2 = 0, capacity, ids, old_ids = U_NOT_FOUND;
+
+   for (i = 0; i < n; ++i) n2 += vec[i].size();
+
+   if (n2 <= n1) capacity = len;
+   else
+      {
+      capacity = n2*((len+n1)/n1);
+
+      if (capacity > (256U * 1024U * 1024U)) capacity = (breserve = true, (256U * 1024U * 1024U)); // worst case... 
+      }
+
+   U_INTERNAL_DUMP("n1 = %u n2 = %u breserve = %b", n1, n2, breserve)
+
+   UString x(capacity);
+   char* p2 = x.data();
+
+loop:
+   for (p1 = s; p1 < end; ++p1)
+      {
+      U_INTERNAL_DUMP("p1 = %.10S", p1)
+
+      if (*p1 != '$') continue;
+
+      if (u__isdigit(p1[2]) == false) ids = (n1 = 2, p1[1] - '0');
+      else
+         {
+         for (i = 3; u__isdigit(p1[i]); ++i) {}
+
+         ids = (n1 = i, u__strtoul(p1+1, n1-1));
+         }
+
+      U_INTERNAL_DUMP("n1 = %u ids = %u old_ids = %u", n1, ids, old_ids)
+
+      if (ids != old_ids)
+         {
+         old_ids = ids;
+
+         n2 = (item = vec.at(ids)).size();
+
+         U_INTERNAL_DUMP("item(%u) = %V", n2, item.rep)
+
+         U_INTERNAL_ASSERT_MAJOR(n2, 0)
+         }
+
+      len1 = (p1-s);
+
+      U_INTERNAL_DUMP("len1 = %u", len1)
+
+      if (breserve)
+         {
+         uint32_t len2 = len1 + n2;
+
+         x.rep->_length = x.distance(p2);
+
+         if (x.space() < len2)
+            {
+            UString::_reserve(x, x.rep->_length + len2);
+
+            p2 = x.pend();
+            }
+         }
+
+      if (len1)
+         {
+         U_MEMCPY(p2, s, len1);
+                  p2 +=  len1;
+
+           s  = p1;
+         len -= len1;
+         }
+
+      len -= n1;
+        s += n1;
+
+      U_MEMCPY(p2, item.data(), n2);
+               p2 +=            n2;
+
+      goto loop;
+      }
+
+   x.rep->_length = x.distance(p2);
+
+   U_INTERNAL_DUMP("len = %u", len)
+
+   if (len)
+      {
+      if (breserve &&
+          x.space() < len)
+         {
+         UString::_reserve(x, x.rep->_length + len);
+
+         p2 = x.pend();
+         }
+
+      U_MEMCPY(p2, s, len);
+
+      x.rep->_length += len;
+      }
+
+   U_INTERNAL_ASSERT(x.invariant())
+
+   U_RETURN_STRING(x);
+}
+
+UString UStringExt::eraseIds(const char* s, uint32_t len)
+{
+   U_TRACE(0, "UStringExt::eraseIds(%.*S,%u)", len, s, len)
+
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
+
+   const char* p1;
+   const char* end = s + len;
+
+   UString x(len);
+   char* p2 = x.data();
+
+loop:
+   for (p1 = s; p1 < end; ++p1)
+      {
+      U_INTERNAL_DUMP("p1 = %.10S", p1)
+
+      if (*p1 != '$') continue;
+
+      len = (p1-s);
+
+      U_INTERNAL_DUMP("len = %u", len)
+
+      if (len)
+         {
+         U_MEMCPY(p2, s, len);
+                  p2 +=  len;
+         }
+
+      s = p1+1;
+
+      while (u__isname(*s)) { ++s; }
+
+      goto loop;
+      }
+
+   len = (end-s);
+
+   U_INTERNAL_DUMP("len = %u", len)
+
+   if (len)
+      {
+      U_MEMCPY(p2, s, len);
+               p2 +=  len;
+      }
+
+   x.rep->_length = x.distance(p2);
+
+   U_INTERNAL_ASSERT(x.invariant())
 
    U_RETURN_STRING(x);
 }
@@ -289,7 +676,8 @@ UString UStringExt::dos2unix(const UString& s, bool unix2dos)
       if (c == '\n')
          {
          if (unix2dos) *str++ = '\r';
-                       *str++ = '\n';
+
+         *str++ = '\n';
 
          continue;
          }
@@ -395,7 +783,7 @@ UString UStringExt::prepareForEnvironmentVar(const char* s, uint32_t n)
          {
          s = (const char* restrict) memchr(s, delimiter, _end - s + 1);
 
-         if (s == 0) goto end;
+         if (s == U_NULLPTR) goto end;
 
          continue;
          }
@@ -403,7 +791,7 @@ UString UStringExt::prepareForEnvironmentVar(const char* s, uint32_t n)
       p = s;
       s = (const char* restrict) memchr(s, '=', _end - s + 1);
 
-      if (s == 0) goto end;
+      if (s == U_NULLPTR) goto end;
 
       U_INTERNAL_DUMP("name = %.*S", s - p, p)
 
@@ -414,7 +802,7 @@ UString UStringExt::prepareForEnvironmentVar(const char* s, uint32_t n)
          {
          s = (const char* restrict) memchr(s, '\'', _end - s + 1);
 
-         if (s == 0) goto end;
+         if (s == U_NULLPTR) goto end;
 
          len = (++s - p);
 
@@ -424,7 +812,7 @@ UString UStringExt::prepareForEnvironmentVar(const char* s, uint32_t n)
          {
          s = (const char* restrict) memchr(s, delimiter, _end - s + 1);
 
-         if (s == 0) s = _end;
+         if (s == U_NULLPTR) s = _end;
 
          ptr = s;
 
@@ -472,7 +860,8 @@ UString UStringExt::prepareForEnvironmentVar(const char* s, uint32_t n)
       sz += len;
 
       if (quoted) str[sz++] = '\'';
-                  str[sz++] = '\n';
+
+      str[sz++] = '\n';
       }
 
 end:
@@ -491,8 +880,8 @@ UString UStringExt::expandEnvironmentVar(const char* s, uint32_t n, const UStrin
 
    char* new_ptr;
    const char* p;
-   const char* var_ptr = 0;
    UString value, result(n+500U);
+   const char* var_ptr = U_NULLPTR;
    uint32_t var_size, new_size = 0;
 
    while ((p = (const char*) memchr(s, '$', n)))
@@ -693,11 +1082,12 @@ UString UStringExt::evalExpression(const UString& expr, const UString& environme
 
    void* pParser = expressionParserAlloc(malloc);
 
-#ifdef U_TEST
-   (void) fprintf(stderr, "start parsing expr: %V\n", expr.rep);
-
+   /*
+#ifdef U_DEBUG
+   (void) fprintf(stderr, "start parsing expr: \"%.*s\"\n", U_STRING_TO_TRACE(expr));
     expressionParserTrace(stderr, (char*)"parser: ");
 #endif
+   */
 
    while ((token_id = t.getTokenId(&token)) > 0)
       {
@@ -712,7 +1102,7 @@ UString UStringExt::evalExpression(const UString& expr, const UString& environme
          token_id = U_TK_VALUE;
          }
 
-      U_NEW(UString, ptoken, UString(token));
+      U_NEW_STRING(ptoken, UString(token));
 
       expressionParser(pParser, token_id, ptoken, &result);
 
@@ -721,15 +1111,16 @@ UString UStringExt::evalExpression(const UString& expr, const UString& environme
       if (result.empty()) break;
       }
 
-   expressionParser(pParser, 0, 0, &result);
+   expressionParser(pParser, 0, U_NULLPTR, &result);
 
    expressionParserFree(pParser, free);
 
-#if defined(U_TEST) && !defined(U_SUBSTR_INC_REF)
-   (void) fprintf(stderr, "ended parsing expr: %V\n", expr.rep);
-
+   /*
+#if defined(U_DEBUG) && !defined(U_SUBSTR_INC_REF)
+   (void) fprintf(stderr, "ended parsing expr: \"%.*s\"\n", U_STRING_TO_TRACE(expr));
    U_INTERNAL_DUMP("token.rep->parent->child = %d", token.rep->parent->child)
 #endif
+   */
 
    U_RETURN_STRING(result);
 }
@@ -1023,29 +1414,6 @@ UString UStringExt::removeEmptyLine(const char* s, uint32_t n)
    U_RETURN_STRING(result);
 }
 
-// Within a string we can count number of occurrence of another string by using substr_count function.
-// This function takes the main string and the search string as inputs and returns number of time search string is found inside the main string
-
-__pure uint32_t UStringExt::substr_count(const char* s, uint32_t n, const char* a, uint32_t n1)
-{
-   U_TRACE(0, "UStringExt::substr_count(%.*S,%u,%.*S,%u)", n, s, n, n1, a, n1)
-
-   uint32_t num    = 0;
-   const char* ptr = s;
-   const char* end = s + n;
-
-   while (true)
-      {
-      ptr = (const char*) u_find(ptr, end - ptr, a, n1);
-
-      if (ptr == 0) U_RETURN(num);
-
-      ++num;
-
-      ptr += n1;
-      }
-}
-
 UString UStringExt::dirname(const char* path, uint32_t n)
 {
    U_TRACE(0, "UStringExt::dirname(%.*S,%u)", n, path, n)
@@ -1066,7 +1434,7 @@ UString UStringExt::dirname(const char* path, uint32_t n)
       if (runp != path) last_slash = (const char*) memrchr(path, '/', runp - path);
       }
 
-   if (last_slash == 0)
+   if (last_slash == U_NULLPTR)
       {
       // This assignment is ill-designed but the XPG specs require to
       // return a string containing "." in any case no directory part is
@@ -1095,24 +1463,6 @@ UString UStringExt::dirname(const char* path, uint32_t n)
    UString result(path, (uint32_t)(last_slash - path));
 
    U_RETURN_STRING(result);
-}
-
-UString UStringExt::basename(const char* s, uint32_t n)
-{
-   U_TRACE(0, "UStringExt::basename(%.*S,%u)", n, s, n)
-
-   const char* last_slash = (const char*) memrchr(s, '/', n); // Find last '/'
-
-   if (last_slash)
-      {
-      UString result(last_slash+1, n-(last_slash-s)-1);
-
-      U_RETURN_STRING(result);
-      }
-
-   UString same(s, n);
-
-   U_RETURN_STRING(same);
 }
 
 /**
@@ -1259,7 +1609,8 @@ UString UStringExt::decompress(const char* s, uint32_t n)
 #ifdef DEBUG
    int r =
 #endif
-   U_SYSCALL(mz_uncompress, "%p,%p,%p,%u", (unsigned char*)out.rep->data(), &out_len, (const unsigned char*)ptr + sizeof(uint32_t), n - U_CONSTANT_SIZE(U_MINIZ_COMPRESS) - sizeof(uint32_t));
+   U_SYSCALL(mz_uncompress, "%p,%p,%p,%u", (unsigned char*)out.rep->data(), &out_len,
+                                     (const unsigned char*)ptr + sizeof(uint32_t), n - U_CONSTANT_SIZE(U_MINIZ_COMPRESS) - sizeof(uint32_t));
 
    U_INTERNAL_ASSERT_EQUALS(r, Z_OK)
 
@@ -1270,89 +1621,159 @@ UString UStringExt::decompress(const char* s, uint32_t n)
    U_RETURN_STRING(out);
 }
 
-UString UStringExt::deflate(const char* s, uint32_t len, int type) // .gz compress
+uint32_t UStringExt::ratio;
+uint32_t UStringExt::ratio_threshold = 90; // NB: we accept compressed data only if ratio compression is better than 10%...
+
+#ifdef USE_LIBBROTLI
+UString UStringExt::brotli(const char* s, uint32_t len, uint32_t quality, uint32_t mode, uint32_t lgwin) // .br compress
 {
-   U_TRACE(1, "UStringExt::deflate(%.*S,%u,%d)", len, s, len, type)
+   U_TRACE(1, "UStringExt::brotli(%.*S,%u,%u,%u,%u)", len, s, len, quality, mode, lgwin)
 
-#ifndef USE_LIBZ
-   return UString::getStringNull();
-#endif
+   size_t sz = U_SYSCALL(BrotliEncoderMaxCompressedSize, "%u", len); /* Get an estimation about the output buffer... */
 
-   // The zlib documentation states that destination buffer size must be at least 0.1% larger than avail_in plus 12 bytes 
+   if (sz == 0) return UString::getStringNull();
 
-   uint32_t sz = len + (len / 10) + 12U;
+   UString result;
 
-   if (UFile::isAllocableFromPool(sz))
+   result.setConstant(sz);
+
+   int rc = U_SYSCALL(BrotliEncoderCompress, "%u,%u,%u,%u,%p,%p,%p", quality, lgwin, (BrotliEncoderMode)mode, (size_t)len, (uint8_t*)s, &sz, (uint8_t*)result.data());
+
+   ratio = (sz * 100U) / len;
+
+   U_INTERNAL_DUMP("BrotliEncoderCompress() = %d ratio = %u (%u%%)", rc, ratio, 100-ratio)
+
+   if (rc == 0 ||
+       ratio > ratio_threshold)
       {
-#  ifdef USE_LIBZOPFLI
-      if (type <= 1)
-#  endif
-         {
-#     ifdef USE_LIBZ
-         len = u_gz_deflate(s, len, UFile::pfree, type);
-#     endif
-
-         U_INTERNAL_DUMP("u_gz_deflate() = %u", len)
-         }
-#  ifdef USE_LIBZOPFLI
-      else
-         {
-         size_t outsize = 0;
-         ZopfliOptions options;
-         unsigned char* out = 0;
-
-         U_SYSCALL_VOID(ZopfliInitOptions, "%p", &options);
-
-         U_SYSCALL_VOID(ZopfliCompress, "%p,%d,%p,%u,%p,%p", &options, ZOPFLI_FORMAT_GZIP, (unsigned char*)s, (size_t)len, &out, &outsize);
-
-         U_INTERNAL_DUMP("ZopfliCompress(%u) = %u", len, outsize)
-
-         len = outsize;
-
-         U_MEMCPY(UFile::pfree, out, len);
-
-         U_SYSCALL_VOID(free, "%p", out);
-         }
-#  endif
-
-      sz = UFile::getSizeAligned(len);
-
-      UString result(len, sz, UFile::pfree);
-
-      UFile::pfree += sz;
-      UFile::nfree -= sz;
-
-      U_RETURN_STRING(result);
+      return UString::getStringNull();
       }
 
+   result.checkConstant(sz);
+
+// U_INTERNAL_ASSERT(isBrotli(result)) // check magic byte
+
+   U_RETURN_STRING(result);
+}
+#endif
+
+UString UStringExt::unbrotli(const char* ptr, uint32_t sz) // .br uncompress
+{
+   U_TRACE(0, "UStringExt::unbrotli(%.*S,%u)", sz, ptr, sz)
+
+#ifdef USE_LIBBROTLI
    UString r(sz);
+   const uint8_t* next_out;
+   BrotliDecoderResult result;
+   size_t input_len = sz, available_out;
+   const uint8_t* input = (const uint8_t*)ptr;
 
-#ifdef USE_LIBZ
-   r.rep->_length = u_gz_deflate(s, len, r.rep->data(), (type ? true : false));
-#endif
+   BrotliDecoderState* state  = (BrotliDecoderState*) U_SYSCALL(BrotliDecoderCreateInstance, "%p,%p,%p", U_NULLPTR, U_NULLPTR, U_NULLPTR);
 
-   U_INTERNAL_DUMP("u_gz_deflate(%u) = %u", len, r.size())
+   do {
+      available_out = 0;
 
-#ifdef DEBUG
-   if (type)
-      {
-      uint32_t* psize_original = (uint32_t*)r.c_pointer(r.size() - 4);
+      result = (BrotliDecoderResult) U_SYSCALL(BrotliDecoderDecompressStream, "%p,%p,%p,%p,%p,%p", state, &input_len, &input, &available_out, U_NULLPTR, U_NULLPTR);
 
-#  if __BYTE_ORDER == __LITTLE_ENDIAN
-      U_INTERNAL_DUMP("size original = %u (LE)",            *psize_original)
-#  else
-      U_INTERNAL_DUMP("size original = %u (BE)", u_invert32(*psize_original))
-#  endif
+      next_out = BrotliDecoderTakeOutput(state, &available_out);
+
+      if (available_out) (void) r.append((const char*)next_out, available_out);
       }
-#endif
+   while (result == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT);
+
+   if (result != BROTLI_DECODER_RESULT_SUCCESS)
+      {
+      BrotliDecoderErrorCode code = (BrotliDecoderErrorCode) U_SYSCALL(BrotliDecoderGetErrorCode, "%p", state);
+
+      U_WARNING("brotli decoder fail, error %S", BrotliDecoderErrorString(code));
+      }
+
+   U_SYSCALL_VOID(BrotliDecoderDestroyInstance, "%p", state);
 
    U_RETURN_STRING(r);
+#else
+   return UString::getStringNull();
+#endif
 }
+
+#ifdef USE_LIBZ
+UString UStringExt::deflate(const char* s, uint32_t len, uint32_t quality) // .gz compress
+{
+   U_TRACE(1, "UStringExt::deflate(%.*S,%u,%u)", len, s, len, quality)
+
+#ifdef USE_LIBZOPFLI
+   if (quality == 0)
+      {
+      size_t outsize = 0;
+      ZopfliOptions options;
+      unsigned char* out = U_NULLPTR;
+
+#  ifndef U_LOG_DISABLE
+      deflate_agent = "zopfli";
+#  endif
+
+      U_SYSCALL_VOID(ZopfliInitOptions, "%p", &options);
+
+      U_SYSCALL_VOID(ZopfliCompress, "%p,%d,%p,%u,%p,%p", &options, ZOPFLI_FORMAT_GZIP, (unsigned char*)s, (size_t)len, &out, &outsize);
+
+      ratio = (outsize * 100U) / len;
+
+      U_INTERNAL_DUMP("ZopfliCompress(%u) = %u ratio = %u (%u%%)", len, outsize, ratio, 100-ratio)
+
+      if (ratio > ratio_threshold)
+         {
+         U_SYSCALL_VOID(free, "%p", out);
+
+         return UString::getStringNull();
+         }
+
+      UString str((const char*)out, outsize);
+
+      str.rep->_capacity = U_TO_FREE;
+
+      U_RETURN_STRING(str);
+      }
+#endif
+
+   UString result;
+   uint32_t sz = (len + (len / 10) + 12U); // The zlib documentation states that destination buffer size must be at least 0.1% larger than avail_in plus 12 bytes 
+
+   result.setConstant(sz);
+
+#ifndef U_LOG_DISABLE
+   deflate_agent = "gzip";
+#endif
+
+   U_INTERNAL_ASSERT(u_gz_deflate_header)
+
+   ratio = ((sz = u_gz_deflate(s, len, result.data(), (quality ? quality : Z_BEST_COMPRESSION))) * 100U) / len;
+
+   U_INTERNAL_DUMP("u_gz_deflate(%u) = %u ratio = %u (%u%%)", len, sz, ratio, 100-ratio)
+
+   if (ratio > ratio_threshold) return UString::getStringNull();
+
+   result.checkConstant(sz);
+
+#ifdef DEBUG
+   uint32_t* psize_original = (uint32_t*)result.c_pointer(sz - 4);
+# if __BYTE_ORDER == __LITTLE_ENDIAN
+   U_INTERNAL_DUMP("size original = %u (LE)",            *psize_original)
+# else
+   U_INTERNAL_DUMP("size original = %u (BE)", u_invert32(*psize_original))
+# endif
+#endif
+
+   U_INTERNAL_ASSERT(isGzip(result)) // check magic byte
+
+   U_RETURN_STRING(result);
+}
+#endif
 
 UString UStringExt::gunzip(const char* ptr, uint32_t sz, uint32_t space) // .gz uncompress
 {
    U_TRACE(0, "UStringExt::gunzip(%.*S,%u,%u)", sz, ptr, sz, space)
 
+#ifdef USE_LIBZ
    if (space == 0)
       {
       if (isGzip(ptr)) // check magic byte
@@ -1371,7 +1792,6 @@ UString UStringExt::gunzip(const char* ptr, uint32_t sz, uint32_t space) // .gz 
       if (space == 0) space = sz * 4;
       }
 
-#ifdef USE_LIBZ // decompress with zlib
    UString result(space);
 
    result.rep->_length = u_gz_inflate(ptr, sz, result.rep->data());
@@ -1392,7 +1812,7 @@ __pure const char* UStringExt::getValueFromName(const UString& buffer, uint32_t 
 
    U_INTERNAL_ASSERT(buffer)
    U_INTERNAL_ASSERT_MAJOR(len, 0)
-   U_ASSERT_EQUALS(memchr(name, ':', name_len), 0)
+   U_ASSERT_EQUALS(memchr(name, ':', name_len), U_NULLPTR)
 
    const char* ptr_header_value;
    uint32_t header_line, end = pos + len;
@@ -1409,7 +1829,7 @@ loop:
          if (header_line != U_NOT_FOUND) goto next;
          }
 
-      U_RETURN((const char*)0);
+      U_RETURN((const char*)U_NULLPTR);
       }
 
 next:
@@ -1429,7 +1849,7 @@ next:
 
    do { ++ptr_header_value; } while (u__isspace(*ptr_header_value));
 
-   U_INTERNAL_DUMP("ptr_header_value = %.*S", 20, ptr_header_value)
+   U_INTERNAL_DUMP("ptr_header_value = %.20S", ptr_header_value)
 
    return ptr_header_value;
 }
@@ -1557,7 +1977,7 @@ uint32_t UStringExt::getNameValueFromData(const UString& content, UVector<UStrin
             {
             x = content.substr(oldPos, len);
 
-            if (x.isQuoted()) x.rep->unQuote();
+            if (x.isQuoted()) x.unQuote();
 
             name_value.push_back(x);
             }

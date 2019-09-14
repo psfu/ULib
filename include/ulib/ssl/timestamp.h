@@ -40,9 +40,9 @@ public:
 
    static TS_RESP* readTimeStampResponse(const UString& x);
 
-   UTimeStamp(const UString& x) : UPKCS7(0,0)
+   UTimeStamp(const UString& x) : UPKCS7(U_NULLPTR,U_NULLPTR)
       {
-      U_TRACE_REGISTER_OBJECT(0, UTimeStamp, "%V", x.rep)
+      U_TRACE_CTOR(0, UTimeStamp, "%V", x.rep)
 
       response = readTimeStampResponse(x);
 
@@ -57,11 +57,11 @@ public:
 
    ~UTimeStamp()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UTimeStamp)
+      U_TRACE_DTOR(0, UTimeStamp)
 
       if (response)
          {
-         pkcs7 = 0;
+         pkcs7 = U_NULLPTR;
 
          TS_RESP_free(response);
          }
@@ -71,7 +71,9 @@ public:
       {
       U_TRACE_NO_PARAM(0, "UTimeStamp::isValid()")
 
-      U_RETURN(response != 0);
+      if (response != U_NULLPTR) U_RETURN(true);
+
+      U_RETURN(false);
       }
 
    static bool isTimeStampToken(PKCS7* p7);

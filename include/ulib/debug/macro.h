@@ -16,7 +16,7 @@
 
 // Design by contract - if (expr == false) then stop
 
-#ifdef DEBUG                             // NB: we need to save the status on the stack because of thread (ex. time resolution optimation) 
+#ifdef DEBUG                             // NB: we need to save the status on the stack because of thread (ex. time resolution optimizatio) 
 #  define U_ASSERT(expr)                 { int _s = u_trace_suspend; u_trace_suspend = 1; U_INTERNAL_ASSERT(expr);                 u_trace_suspend = _s; }
 #  define U_ASSERT_MINOR(a,b)            { int _s = u_trace_suspend; u_trace_suspend = 1; U_INTERNAL_ASSERT_MINOR(a,b);            u_trace_suspend = _s; }
 #  define U_ASSERT_MAJOR(a,b)            { int _s = u_trace_suspend; u_trace_suspend = 1; U_INTERNAL_ASSERT_MAJOR(a,b);            u_trace_suspend = _s; }
@@ -75,8 +75,11 @@
 #  define U_CHECK_MEMORY           U_CHECK_MEMORY_OBJECT(this)
 
 // Manage info on execution of program
-#  define U_TRACE(level,fmt,args...)   UTrace utr(level,fmt,U_CONSTANT_SIZE(fmt) , ##args);
-#  define U_TRACE_NO_PARAM(level,name) UTrace utr(level,U_CONSTANT_TO_TRACE(name));
+#  define U_TRACE(level,fmt,args...)   UTrace utr(level, U_CONSTANT_TO_PARAM(fmt) , ##args);
+#  define U_TRACE_NO_PARAM(level,name) UTrace utr(level, U_CONSTANT_TO_TRACE(name));
+
+#  define U_TRACE_CTOR(level,CLASS,fmt,args...) UTrace utr(level, U_CONSTANT_TO_PARAM(#CLASS"::"#CLASS"(" fmt ")") , ##args);
+#  define U_TRACE_DTOR(level,CLASS)             UTrace utr(level, U_CONSTANT_TO_TRACE(#CLASS"::~"#CLASS"()"));
 
 // NB: U_DUMP, U_SYSCALL() and U_RETURN() depend on presence of U_TRACE()
 
@@ -87,13 +90,25 @@
                                     utr.trace_sysreturn_type(::name()))
 
 #  define U_SYSCALL_VOID_NO_PARAM(name) { utr.trace_syscall(U_CONSTANT_TO_PARAM("::"#name"()"),0); \
-                                          name(); utr.trace_sysreturn(false,0,0); }
+                                          name(); utr.trace_sysreturn(false,U_NULLPTR,0); }
+
+#  define U_SYSCALL_VOID(name,format,args...) { utr.suspend();               utr.trace_syscall(U_CONSTANT_TO_PARAM("::"#name"(" format ")") , ##args); \
+                                                utr.resume();  ::name(args); utr.trace_sysreturn(false,U_NULLPTR,0); }
 
 #  define U_SYSCALL(name,format,args...) (utr.suspend(), utr.trace_syscall(U_CONSTANT_TO_PARAM("::"#name"(" format ")") , ##args), \
                                           utr.resume(),  utr.trace_sysreturn_type(::name(args)))
 
-#  define U_SYSCALL_VOID(name,format,args...) { utr.suspend();               utr.trace_syscall(U_CONSTANT_TO_PARAM("::"#name"(" format ")") , ##args); \
-                                                utr.resume();  ::name(args); utr.trace_sysreturn(false,0,0); }
+# ifdef USE_FSTACK
+#  define U_FF_SYSCALL(name,format,args...) (utr.suspend(), utr.trace_syscall(U_CONSTANT_TO_PARAM("::ff_"#name"(" format ")") , ##args), \
+                                             utr.resume(),  utr.trace_sysreturn_type(::ff_##name(args)))
+#  define U_FF_SYSCALL_VOID(name,format,args...) { utr.suspend();                   utr.trace_syscall(U_CONSTANT_TO_PARAM("::ff_"#name"(" format ")") , ##args); \
+                                                   utr.resume(); ::ff_##name(args); utr.trace_sysreturn(false,U_NULLPTR,0); }
+# else
+#  define U_FF_SYSCALL(name,format,args...) (utr.suspend(), utr.trace_syscall(U_CONSTANT_TO_PARAM("::"#name"(" format ")") , ##args), \
+                                             utr.resume(),  utr.trace_sysreturn_type(::name(args)))
+#  define U_FF_SYSCALL_VOID(name,format,args...) { utr.suspend();               utr.trace_syscall(U_CONSTANT_TO_PARAM("::"#name"(" format ")") , ##args); \
+                                                   utr.resume();  ::name(args); utr.trace_sysreturn(false,U_NULLPTR,0); }
+# endif
 
 #  define U_RETURN(r)                                                 return (utr.trace_return_type((r)))
 #  define U_RETURN_STRING(str) {U_INTERNAL_ASSERT((str).invariant()); return (utr.trace_return(U_CONSTANT_TO_PARAM("%V"),(str).rep),(str));}
@@ -121,8 +136,8 @@ if (envp) \
 
 // Dump attributes
 
-#  define U_DUMP_ATTRS(attrs)   { uint32_t _i; for (_i = 0; attrs[_i]; ++_i) { U_INTERNAL_DUMP("attrs[%2u] = %S", _i, attrs[_i]) } }
-#  define U_DUMP_IOVEC(iov,cnt) {      int _i; for (_i = 0;  _i < cnt; ++_i) { U_INTERNAL_DUMP("iov[%2u] = %.*S", _i, iov[_i].iov_len, iov[_i].iov_base) } }
+#  define U_DUMP_ATTRS(attrs)   { uint32_t _i; for (_i = 0; (attrs)[_i]; ++_i) { U_INTERNAL_DUMP("attrs[%2u] = %S", _i, (attrs)[_i]) } }
+#  define U_DUMP_IOVEC(iov,cnt) {      int _i; for (_i = 0;    _i < cnt; ++_i) { U_INTERNAL_DUMP("iov[%2u](%u) = %.*S", _i, (iov)[_i].iov_len, (iov)[_i].iov_len, (iov)[_i].iov_base) } }
 
 #ifdef _MSWINDOWS_
 #  define U_FORK()  -1
@@ -132,7 +147,7 @@ if (envp) \
 #  define U_VFORK() u_debug_vfork(::vfork(), utr.active[0])
 #endif
 
-#  define U_EXIT(exit_value)  { if (utr.active[0]) u_debug_exit(exit_value); ::exit(exit_value); }
+#  define U_EXIT(exit_value) { if (utr.active[0]) u_debug_exit(exit_value); ::exit(exit_value); }
 #  define U_EXEC(pathname, argv, envp) u_debug_exec(pathname, argv, envp, utr.active[0])
 
 // Dump fd_set
@@ -149,75 +164,119 @@ if (envp) \
 
 # ifdef U_STDCPP_ENABLE
 #  define U_REGISTER_OBJECT_PTR(level,CLASS,p,pmemory) \
+           { if (UObjectDB::fd > 0 && \
+                (level) >= UObjectDB::level_active) { \
+                  UObjectDB::registerObject(new UObjectDumpable_Adapter<CLASS>(level,#CLASS,(const CLASS*)p,(void**)pmemory)); } }  
+
+#  define U_UNREGISTER_OBJECT_PTR(level,ptr) \
             if (UObjectDB::fd > 0 && \
                 (level) >= UObjectDB::level_active) { \
-                  UObjectDB::registerObject(new UObjectDumpable_Adapter<CLASS>(level,#CLASS,p,pmemory)); }
+                UObjectDB::unregisterObject((void*)ptr); }
 
-#  define U_TRACE_REGISTER_OBJECT(level,CLASS,format,args...) if (UObjectDB::flag_new_object == false) U_SET_LOCATION_INFO; \
-                                                                  UObjectDB::flag_new_object =  false; \
-                                                              U_REGISTER_OBJECT_PTR(level,CLASS,this,&(this->memory._this)) \
+#  define U_REGISTER_OBJECT(CLASS) U_REGISTER_OBJECT_PTR(0,CLASS,this,&(this->memory._this))
+#  define U_UNREGISTER_OBJECT(level) U_UNREGISTER_OBJECT_PTR(level,this)
+
+/*
+#  define U_TRACE_REGISTER_OBJECT(level,CLASS,format,args...) U_REGISTER_OBJECT_PTR(level,CLASS,this,&(this->memory._this)) \
                                                               UTrace utr(level, U_CONSTANT_TO_PARAM(#CLASS"::"#CLASS"(" format ")") , ##args);
 
-#  define U_TRACE_REGISTER_OBJECT_WITHOUT_CHECK_MEMORY(level,CLASS,format,args...) \
-                                                              if (UObjectDB::flag_new_object == false) U_SET_LOCATION_INFO; \
-                                                                  UObjectDB::flag_new_object =  false; \
-                                                              U_REGISTER_OBJECT_PTR(level,CLASS,this,0) \
-                                                              UTrace utr(level, U_CONSTANT_TO_PARAM(#CLASS"::"#CLASS"(" format ")") , ##args);
+#  define U_TRACE_REGISTER_OBJECT_WITHOUT_CHECK_MEMORY(level,CLASS,format,args...) U_REGISTER_OBJECT_PTR(level,CLASS,this,U_NULLPTR) \
+                                                                                   UTrace utr(level, U_CONSTANT_TO_PARAM(#CLASS"::"#CLASS"(" format ")") , ##args);
 
-#  define U_UNREGISTER_OBJECT(level,ptr) \
-            if (UObjectDB::fd > 0 && \
-                (level) >= UObjectDB::level_active) { \
-                UObjectDB::unregisterObject(ptr); }
+#  define U_TRACE_UNREGISTER_OBJECT(level,CLASS) U_UNREGISTER_OBJECT_PTR(level,this); UTrace utr(level,U_CONSTANT_TO_TRACE(#CLASS"::~"#CLASS"()"));
+*/
 
-#  define U_TRACE_UNREGISTER_OBJECT(level,CLASS) U_UNREGISTER_OBJECT(level,this); UTrace utr(level,U_CONSTANT_TO_TRACE(#CLASS"::~"#CLASS"()"));
+#  define U_DELETE(obj) { U_UNREGISTER_OBJECT_PTR(0,obj) delete obj; }
 
 // Manage location info for object allocation
 
 # ifdef ENABLE_MEMPOOL
-#  define U_NEW(CLASS,obj,args...) (UMemoryPool::obj_class = #CLASS, \
-                                    UMemoryPool::func_call = __PRETTY_FUNCTION__, \
-                                    U_SET_LOCATION_INFO, UObjectDB::flag_new_object = true, (obj) = new args, \
-                                    UMemoryPool::obj_class = UMemoryPool::func_call = 0)
+#  define U_NEW(CLASS,obj,args...) { UMemoryPool::obj_class = #CLASS; \
+                                     UMemoryPool::func_call = __PRETTY_FUNCTION__; \
+                                     U_SET_LOCATION_INFO; (obj) = new args; \
+                                     UMemoryPool::obj_class = UMemoryPool::func_call = U_NULLPTR; \
+                                     U_REGISTER_OBJECT_PTR(0,CLASS,(obj),&((obj)->memory._this)); }
+
+#  define U_NEW_WITHOUT_CHECK_MEMORY(CLASS,obj,args...) { UMemoryPool::obj_class = #CLASS; \
+                                                          UMemoryPool::func_call = __PRETTY_FUNCTION__; \
+                                                          U_SET_LOCATION_INFO; (obj) = new args; \
+                                                          UMemoryPool::obj_class = UMemoryPool::func_call = U_NULLPTR; \
+                                                          U_REGISTER_OBJECT_PTR(0,CLASS,(obj),U_NULLPTR); }
+
+#  define U_NEW_STRING(obj,args...) { UMemoryPool::obj_class = "UString"; \
+                                      UMemoryPool::func_call = __PRETTY_FUNCTION__; \
+                                      U_SET_LOCATION_INFO; (obj) = new args; \
+                                      UMemoryPool::obj_class = UMemoryPool::func_call = U_NULLPTR; \
+                                      U_REGISTER_OBJECT_PTR(0,UString,(obj),U_NULLPTR); }
+
+#  define U_NEW_ULIB_STRING(obj,args...) { UMemoryPool::obj_class = "UString"; \
+                                           UMemoryPool::func_call = __PRETTY_FUNCTION__; \
+                                           U_SET_LOCATION_INFO; (obj) = new args; \
+                                           UMemoryPool::obj_class = UMemoryPool::func_call = U_NULLPTR; \
+                                           U_REGISTER_OBJECT_PTR(-1,UString,(obj),U_NULLPTR); }
+
+#  define U_NEW_ULIB_OBJECT(CLASS,obj,args...) { UMemoryPool::obj_class = #CLASS; \
+                                                 UMemoryPool::func_call = __PRETTY_FUNCTION__; \
+                                                 U_SET_LOCATION_INFO; (obj) = new args; \
+                                                 UMemoryPool::obj_class = UMemoryPool::func_call = U_NULLPTR; \
+                                                 U_REGISTER_OBJECT_PTR(-1,CLASS,(obj),&((obj)->memory._this)); }
 # else
-#  define U_NEW(CLASS,obj,args...) (U_SET_LOCATION_INFO, UObjectDB::flag_new_object = true, (obj) = new args)
+#  define U_NEW(CLASS,obj,args...) { U_SET_LOCATION_INFO; (obj) = new args; \
+                                     U_REGISTER_OBJECT_PTR(0,CLASS,(obj),U_NULLPTR); }
+
+#  define U_NEW_WITHOUT_CHECK_MEMORY(CLASS,obj,args...) U_NEW(CLASS,obj,args)
+
+#  define U_NEW_STRING(obj,args...) { U_SET_LOCATION_INFO; (obj) = new args; \
+                                      U_REGISTER_OBJECT_PTR(0,UString,(obj),U_NULLPTR); }
+
+#  define U_NEW_ULIB_STRING(obj,args...) { U_SET_LOCATION_INFO; (obj) = new args; \
+                                           U_REGISTER_OBJECT_PTR(-1,UString,(obj),U_NULLPTR); }
+
+#  define U_NEW_ULIB_OBJECT(CLASS,obj,args...) { U_SET_LOCATION_INFO; (obj) = new args; \
+                                                 U_REGISTER_OBJECT_PTR(-1,CLASS,(obj),U_NULLPTR); }
 # endif
 
-#  define U_NEW_ULIB_OBJECT(CLASS,obj,args...) (UObjectDB::flag_ulib_object = true, \
-                                                U_NEW(CLASS,obj,args), \
-                                                UObjectDB::flag_ulib_object = false)
-
-#  define U_DUMP_OBJECT(obj) { u_trace_dump(U_CONSTANT_TO_PARAM(#obj" = %S"), (obj).dump(true)); }
-#  define U_DUMP_CONTAINER(obj) { if (utr.active[0]) u_trace_dump(U_CONSTANT_TO_PARAM(#obj" = %O"), U_OBJECT_TO_TRACE((obj))); }
+#  define U_DUMP_OBJECT(obj)    { if (utr.active[0])                                                    u_trace_dump(U_CONSTANT_TO_PARAM(#obj" = %S"), U_OBJECT_TO_TRACE((obj))); }
+#  define U_DUMP_CONTAINER(obj) { if (utr.active[0] && (obj).getSpaceToDump() < U_MAX_SIZE_PREALLOCATE) u_trace_dump(U_CONSTANT_TO_PARAM(#obj" = %O"), U_OBJECT_TO_TRACE((obj))); }
 
 #  define U_DUMP_OBJECT_TO_TMP(obj,fname) \
-            { char _buffer[2 * 1024 * 1024]; \
-               uint32_t _n = UObject2String((obj), _buffer, sizeof(_buffer)); \
-               U_INTERNAL_ASSERT_MINOR(_n, sizeof(_buffer)) \
-               (void) UFile::writeToTmp(_buffer, _n, O_RDWR | O_TRUNC, U_CONSTANT_TO_PARAM(#fname".%P"), 0); }
+            { char _lbuffer[2 * 1024 * 1024]; \
+               uint32_t _n = UObject2String((obj), _lbuffer, sizeof(_lbuffer)); \
+               U_INTERNAL_ASSERT_MINOR(_n, sizeof(_lbuffer)) \
+               (void) UFile::writeToTmp(_lbuffer, _n, O_RDWR | O_TRUNC, U_CONSTANT_TO_PARAM(#fname".%P"), 0); }
 
 #  define U_DUMP_OBJECT_WITH_CHECK(msg,check_object) \
             if (UObjectDB::fd > 0) { \
-               char _buffer[4096]; \
-               uint32_t _n = UObjectDB::dumpObject(_buffer, sizeof(_buffer), (check_object)); \
-               if (utr.active[0]) u_trace_dump(U_CONSTANT_TO_PARAM(msg " = \n%.*s\n"), U_min(_n,4000), _buffer); }
+               char _lbuffer[4096]; \
+               uint32_t _n = UObjectDB::dumpObject(_lbuffer, sizeof(_lbuffer), (check_object)); \
+               if (utr.active[0]) u_trace_dump(U_CONSTANT_TO_PARAM(msg " = \n%.*s\n"), U_min(_n,4000), _lbuffer); }
 
 # else /* U_STDCPP_ENABLE */
-#  define U_UNREGISTER_OBJECT(level,ptr)
+#  define U_REGISTER_OBJECT(CLASS)
 #  define U_REGISTER_OBJECT_PTR(level,CLASS,p,pmemory)
-#  define U_TRACE_REGISTER_OBJECT(level,CLASS,format,args...)                      UTrace utr(level,U_CONSTANT_TO_PARAM(#CLASS"::"#CLASS"(" format ")") , ##args);
-#  define U_TRACE_REGISTER_OBJECT_WITHOUT_CHECK_MEMORY(level,CLASS,format,args...) UTrace utr(level,U_CONSTANT_TO_PARAM(#CLASS"::"#CLASS"(" format ")") , ##args);
-#  define U_TRACE_UNREGISTER_OBJECT(level,CLASS)                                   UTrace utr(level,U_CONSTANT_TO_TRACE(#CLASS"::~"#CLASS"()"));
+#  define U_UNREGISTER_OBJECT(CLASS)
+#  define U_UNREGISTER_OBJECT_PTR(level,ptr)
+
+#  define U_DELETE(obj) delete obj;
 
 # ifdef ENABLE_MEMPOOL
-#  define U_NEW(CLASS,obj,args...) (UMemoryPool::obj_class = #CLASS, \
-                                    UMemoryPool::func_call = __PRETTY_FUNCTION__, \
-                                    U_SET_LOCATION_INFO, (obj) = new args, \
-                                    UMemoryPool::obj_class = UMemoryPool::func_call = 0)
+#  define U_NEW(CLASS,obj,args...) { UMemoryPool::obj_class = #CLASS; \
+                                     UMemoryPool::func_call = __PRETTY_FUNCTION__; \
+                                     U_SET_LOCATION_INFO; (obj) = new args; \
+                                     UMemoryPool::obj_class = UMemoryPool::func_call = U_NULLPTR; }
+
+#  define U_NEW_STRING(obj,args...) { UMemoryPool::obj_class = "UString"; \
+                                      UMemoryPool::func_call = __PRETTY_FUNCTION__; \
+                                      U_SET_LOCATION_INFO; (obj) = new args; \
+                                      UMemoryPool::obj_class = UMemoryPool::func_call = U_NULLPTR; }
 # else
-#  define U_NEW(CLASS,obj,args...) (U_SET_LOCATION_INFO, (obj) = new args)
+#  define U_NEW(CLASS,obj,args...)  { U_SET_LOCATION_INFO; (obj) = new args; }
+#  define U_NEW_STRING(obj,args...) { U_SET_LOCATION_INFO; (obj) = new args; }
 # endif
 
-#  define U_NEW_ULIB_OBJECT(CLASS,obj,args...) U_NEW(CLASS,obj,args)
+#  define U_NEW_ULIB_STRING(obj,args...)                { U_SET_LOCATION_INFO; (obj) = new args; }
+#  define U_NEW_ULIB_OBJECT(CLASS,obj,args...)          { U_SET_LOCATION_INFO; (obj) = new args; }
+#  define U_NEW_WITHOUT_CHECK_MEMORY(CLASS,obj,args...) { U_SET_LOCATION_INFO; (obj) = new args; }
 
 #  define U_DUMP_OBJECT(obj)
 #  define U_DUMP_CONTAINER(obj)
@@ -236,11 +295,21 @@ if (envp) \
 #  define U_DUMP(args...)
 #  define U_TRACE(level,args...)
 #  define U_TRACE_NO_PARAM(level,name)
+#  define U_TRACE_CTOR(level,CLASS,fmt,args...)
+#  define U_TRACE_DTOR(level,CLASS)
 #  define U_INTERNAL_DUMP(args...)
 #  define U_SYSCALL_NO_PARAM(name)            ::name()
 #  define U_SYSCALL_VOID_NO_PARAM(name)       ::name()
 #  define U_SYSCALL(name,format,args...)      ::name(args)
 #  define U_SYSCALL_VOID(name,format,args...) ::name(args)
+
+# ifdef USE_FSTACK
+#  define U_FF_SYSCALL(name,format,args...)      ::ff_##name(args) 
+#  define U_FF_SYSCALL_VOID(name,format,args...) ::ff_##name(args)
+# else
+#  define U_FF_SYSCALL(name,format,args...)      ::name(args)
+#  define U_FF_SYSCALL_VOID(name,format,args...) ::name(args)
+# endif
 
 # ifdef U_APEX_ENABLE
 #  define U_MEMCPY(a,b,n) (void) apex_memcpy((void*)(a),(const void*)(b),(n))
@@ -272,15 +341,18 @@ if (envp) \
                                        U_WARNING("::execve(%s,%p,%p) = -1%R", pathname, argv, envp, NULL); \
                                        ::_exit(EX_UNAVAILABLE)
 
+#  define U_REGISTER_OBJECT(CLASS)
+#  define U_UNREGISTER_OBJECT(level)
 #  define U_REGISTER_OBJECT_PTR(level,CLASS,p,pmemory)
-#  define U_TRACE_REGISTER_OBJECT(level,CLASS,format,args...)
-#  define U_TRACE_REGISTER_OBJECT_WITHOUT_CHECK_MEMORY(level,CLASS,format,args...)
+#  define U_UNREGISTER_OBJECT_PTR(level,pointer)
 
-#  define U_UNREGISTER_OBJECT(level,pointer)
-#  define U_TRACE_UNREGISTER_OBJECT(level,CLASS)
+#  define U_DELETE(obj) delete obj;
 
-#  define U_NEW(CLASS,obj,args...)             (obj) = new args
-#  define U_NEW_ULIB_OBJECT(CLASS,obj,args...) (obj) = new args
+#  define U_NEW(CLASS,obj,args...)                      (obj) = new args;
+#  define U_NEW_STRING(obj,args...)                     (obj) = new args;
+#  define U_NEW_ULIB_STRING(obj,args...)                (obj) = new args;
+#  define U_NEW_ULIB_OBJECT(CLASS,obj,args...)          (obj) = new args;
+#  define U_NEW_WITHOUT_CHECK_MEMORY(CLASS,obj,args...) (obj) = new args;
 
 #  define U_DUMP_OBJECT(obj)
 #  define U_DUMP_CONTAINER(obj)

@@ -90,7 +90,7 @@ extern U_EXPORT bool initPYTHON();
    py_main_thread_state = (PyThreadState*) U_SYSCALL_NO_PARAM(PyThreadState_Get);
    py_module            =      (PyObject*) U_SYSCALL(PyImport_Import, "%p", py_module_name);
 
-   if (py_module == 0 ||
+   if (py_module == U_NULLPTR ||
        PyModule_Check(py_module) == false)
       {
       esito = false;
@@ -154,7 +154,7 @@ extern U_EXPORT bool runPYTHON();
    dict_set(py_environ, "wsgi.multithread",  PyBool_FromLong(0));
    dict_set(py_environ, "wsgi.multiprocess", PyBool_FromLong(UServer_Base::isPreForked()));
 
-   if (*UClientImage_Base::body) dict_set(py_environ, "userver.req.content", PyByteArray_FromStringAndSize(U_STRING_TO_PARAM(*UClientImage_Base::body)));
+   if (*UHTTP::body) dict_set(py_environ, "userver.req.content", PyByteArray_FromStringAndSize(U_STRING_TO_PARAM(*UHTTP::body)));
 
    // call python
 
@@ -192,7 +192,7 @@ extern U_EXPORT bool runPYTHON();
             {
             // get the status code
 
-            U_http_info.nResponseCode = strtol(PyString_AS_STRING(py_status), 0, 10);
+            U_http_info.nResponseCode = ::strtol(PyString_AS_STRING(py_status), U_NULLPTR, 10);
 
             U_DUMP("HTTP status = (%d %S)", U_http_info.nResponseCode, UHTTP::getStatusDescription())
             }
@@ -233,7 +233,7 @@ extern U_EXPORT bool runPYTHON();
             }
 
          ssize_t rsize  = 0;
-         char* rcontent = 0;
+         char* rcontent = U_NULLPTR;
 
          if (PyByteArray_Check(py_body))
             {

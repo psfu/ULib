@@ -33,12 +33,14 @@ struct U_EXPORT UObjectIO {
    static void  init(      char* t, uint32_t sz);
    static void input(const char* t, uint32_t tlen);
 
-   static UStringRep* create(bool bcopy);
+   static UStringRep* create();
 };
 
 template <class T> inline void UString2Object(const char* t, uint32_t tlen, T& object)
 {
    U_INTERNAL_TRACE("UString2Object(%.*s,%u,%p)", tlen, t, tlen, &object)
+
+   U_INTERNAL_ASSERT_MAJOR(tlen, 0)
 
 #ifdef U_STDCPP_ENABLE
    UObjectIO::input(t, tlen);
@@ -47,10 +49,10 @@ template <class T> inline void UString2Object(const char* t, uint32_t tlen, T& o
 
    *UObjectIO::is >> object;
 
-# ifdef HAVE_OLD_IOSTREAM
-   delete UObjectIO::is;
-# else
+# ifndef HAVE_OLD_IOSTREAM
    UObjectIO::is->~istrstream();
+# else
+// delete ObjectIO::is;
 # endif
 #endif
 }
@@ -72,9 +74,9 @@ template <class T> inline char* UObject2String(T& object)
 #endif
 }
 
-template <class T> inline UStringRep* UObject2StringRep(T& object, bool bcopy)
+template <class T> inline UStringRep* UObject2StringRep(T& object)
 {
-   U_INTERNAL_TRACE("UObject2StringRep(%p,%b)", &object, bcopy)
+   U_INTERNAL_TRACE("UObject2StringRep(%p)", &object)
 
 #ifndef U_STDCPP_ENABLE
    return 0;
@@ -83,7 +85,7 @@ template <class T> inline UStringRep* UObject2StringRep(T& object, bool bcopy)
 
    *UObjectIO::os << object;
 
-   return UObjectIO::create(bcopy);
+   return UObjectIO::create();
 #endif
 }
 
@@ -137,5 +139,4 @@ template <class T> inline char* U_OBJECT_TO_TRACE(T& object)
    return str;
 }
 #endif
-
 #endif

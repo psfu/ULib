@@ -28,7 +28,7 @@ public:
 
    ~UFileConfig()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UFileConfig)
+      U_TRACE_DTOR(0, UFileConfig)
       }
 
    // SERVICES
@@ -53,7 +53,7 @@ public:
       _size = (_end - _start);
       }
 
-   bool searchForObjectStream(const char* section = 0, uint32_t len = 0);
+   bool searchForObjectStream(const char* section = U_NULLPTR, uint32_t len = 0);
 
    // Wrapper for table
 
@@ -75,7 +75,7 @@ public:
 
       UString value = at(key, keylen);
 
-      if (value) default_value = value.strtol(10);
+      if (value) default_value = value.strtol(true);
 
       U_RETURN(default_value);
       }
@@ -120,7 +120,7 @@ public:
 
    bool loadSection(const char* section, uint32_t len);
 
-   bool loadVector(UVector<UString>& vec, const char* name = 0);
+   bool loadVector(UVector<UString>& vec, const char* name = U_NULLPTR);
 
    // EXT
 

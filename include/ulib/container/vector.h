@@ -16,6 +16,10 @@
 
 #include <ulib/container/construct.h>
 
+#if defined(U_STDCPP_ENABLE) && (!defined(__clang__) || CLANG_VERSION_NUM != 30700)
+#  include <algorithm>
+#endif
+
 /**
  * A vector is a sequence of elements that are stored contiguously in memory and can change in size.
  * As a result, it has support for random-access and provides methods to add and delete elements.
@@ -25,6 +29,7 @@
  */
 
 class UHTTP;
+class UValue;
 class UThreadPool;
 class UHttpPlugIn;
 class UFileConfig;
@@ -33,6 +38,9 @@ class UNoCatPlugIn;
 template <class T> class UVector;
 template <class T> class UOrmTypeHandler;
 template <class T> class UJsonTypeHandler;
+template <class T> class UFlatBufferTypeHandler;
+
+typedef UVector<UString> UVectorUString;
 
 //#define U_RING_BUFFER
 
@@ -46,34 +54,9 @@ public:
    U_MEMORY_ALLOCATOR
    U_MEMORY_DEALLOCATOR
 
-   // allocate and deallocate methods
-
-   void allocate(uint32_t n)
-      {
-      U_TRACE(0, "UVector<void*>::allocate(%u)", n)
-
-      U_CHECK_MEMORY
-
-      U_INTERNAL_ASSERT_MINOR(n, ((0xfffffff / sizeof(void*)) - sizeof(UVector<void*>)))
-
-      vec       = (const void**) UMemoryPool::_malloc(&n, sizeof(void*));
-      _capacity = n;
-      }
-
-   void deallocate()
-      {
-      U_TRACE_NO_PARAM(0, "UVector<void*>::deallocate()")
-
-      U_CHECK_MEMORY
-
-      U_INTERNAL_ASSERT_RANGE(1, _capacity, ((0xfffffff / sizeof(void*)) - sizeof(UVector<void*>)))
-
-      UMemoryPool::_free(vec, _capacity, sizeof(void*));
-      }
-
    UVector(uint32_t n = 64U) // create an empty vector with a size estimate
       {
-      U_TRACE_REGISTER_OBJECT(0, UVector<void*>, "%u", n)
+      U_TRACE_CTOR(0, UVector<void*>, "%u", n)
 
 #  if defined(U_RING_BUFFER) && !defined(U_STATIC_ONLY)
       head = tail = 0;
@@ -86,7 +69,7 @@ public:
 
    ~UVector()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UVector<void*>)
+      U_TRACE_DTOR(0, UVector<void*>)
 
       deallocate();
       }
@@ -160,8 +143,8 @@ public:
 
    // STACK OPERATIONS
 
-   void push(     const void* elem);
-   void push_back(const void* elem) { push(elem); } // add to end
+   void push(     const void* elem) { vec[_length++] = elem; } // add to end
+   void push_back(const void* elem);
 
    const void* last() // return last element
       {
@@ -185,14 +168,12 @@ public:
       return vec[--_length];
       }
 
-   const void* pop_front() { return pop(); } // remove last element
-
    // LIST OPERATIONS
 
    void insert(uint32_t pos,             const void* elem); // add           elem before pos
    void insert(uint32_t pos, uint32_t n, const void* elem); // add n copy of elem before pos
 
-   void erase(uint32_t pos) // remove element at pos
+   void erase(uint32_t pos)
       {
       U_TRACE(1, "UVector<void*>::erase(%u)", pos)
 
@@ -201,11 +182,7 @@ public:
       U_INTERNAL_ASSERT_MINOR(pos, _length)
       U_INTERNAL_ASSERT_RANGE(1,_length,_capacity)
 
-#  ifdef U_APEX_ENABLE
-      if (--_length) (void) U_SYSCALL(apex_memmove, "%p,%p,%u", vec + pos, vec + pos +1, (_length - pos) * sizeof(void*));
-#  else
-      if (--_length) (void) U_SYSCALL(     memmove, "%p,%p,%u", vec + pos, vec + pos +1, (_length - pos) * sizeof(void*));
-#  endif
+      if (--_length) (void) U_SYSCALL(memmove, "%p,%p,%u", vec + pos, vec + pos +1, (_length - pos) * sizeof(void*));
       }
 
    void erase(uint32_t first, uint32_t _last) // erase [first,last[
@@ -221,13 +198,20 @@ public:
 
       uint32_t new_length = (_length - (_last - first));
 
-#  ifdef U_APEX_ENABLE
-      if (new_length) (void) U_SYSCALL(apex_memmove, "%p,%p,%u", vec + first, vec + _last, (_length - _last) * sizeof(void*));
-#  else
-      if (new_length) (void) U_SYSCALL(     memmove, "%p,%p,%u", vec + first, vec + _last, (_length - _last) * sizeof(void*));
-#  endif
+      if (new_length) (void) U_SYSCALL(memmove, "%p,%p,%u", vec + first, vec + _last, (_length - _last) * sizeof(void*));
 
       _length = new_length;
+      }
+
+   const void* remove(uint32_t pos)
+      {
+      U_TRACE(0, "UVector<void*>::remove(%u)", pos)
+
+      const void* elem = vec[pos];
+
+      erase(pos);
+
+      return elem;
       }
 
    void swap(uint32_t from, uint32_t to)
@@ -241,6 +225,7 @@ public:
       U_INTERNAL_ASSERT_RANGE(1,_length,_capacity)
 
       const void* tmp = vec[from];
+
       vec[from] = vec[to];
       vec[to]   = tmp;
       }
@@ -299,17 +284,50 @@ public:
       U_RETURN(U_NOT_FOUND);
       }
 
+   bool isContained(const void* elem)
+      {
+      U_TRACE(0, "UVector<void*>::isContained(%p)", elem)
+
+      if (find(elem) != U_NOT_FOUND) U_RETURN(true);
+
+      U_RETURN(false);
+      }
+
    // EXTENSION
 
-   void sort(qcompare compare_obj)
+   static int qscomp(const void* p, const void* q)
+      {
+      U_TRACE(0, "UVector<void*>::qscomp(%p,%p)", p, q)
+
+#  if defined(U_STDCPP_ENABLE) && (!defined(__clang__) || CLANG_VERSION_NUM != 30700)
+      /**
+       * The comparison function must follow a strict-weak-ordering
+       *
+       * 1) For all x, it is not the case that x < x (irreflexivity)
+       * 2) For all x, y, if x < y then it is not the case that y < x (asymmetry)
+       * 3) For all x, y, and z, if x < y and y < z then x < z (transitivity)
+       * 4) For all x, y, and z, if x is incomparable with y, and y is incomparable with z, then x is incomparable with z (transitivity of incomparability)
+       */
+
+      return (((UStringRep*)p)->comparenocase((UStringRep*)q) < 0);
+#  else
+      return (*(UStringRep**)p)->comparenocase(*(UStringRep**)q);
+#  endif
+      }
+
+   void sort(qcompare compare_obj = qscomp)
       {
       U_TRACE(0+256, "UVector<void*>::sort(%p)", compare_obj)
 
       U_INTERNAL_DUMP("_length = %u", _length)
 
-      U_INTERNAL_ASSERT_RANGE(2,_length,_capacity)
+   // U_INTERNAL_ASSERT_RANGE(2,_length,_capacity)
 
+#  if defined(U_STDCPP_ENABLE) && (!defined(__clang__) || CLANG_VERSION_NUM != 30700)
+      std::sort(vec, vec+_length, compare_obj);
+#  else
       U_SYSCALL_VOID(qsort, "%p,%u,%d,%p", (void*)vec, _length, sizeof(void*), compare_obj);
+#  endif
       }
 
    void move(UVector<void*>& source); // add to end and reset source
@@ -388,13 +406,40 @@ protected:
    volatile uint32_t head; // output index
 #endif
 
+   // allocate and deallocate methods
+
+   void allocate(uint32_t n)
+      {
+      U_TRACE(0, "UVector<void*>::allocate(%u)", n)
+
+      U_CHECK_MEMORY
+
+      U_INTERNAL_ASSERT_MINOR(n, ((0xfffffff / sizeof(void*)) - sizeof(UVector<void*>)))
+
+      vec       = (const void**) UMemoryPool::_malloc(&n, sizeof(void*));
+      _capacity = n;
+      }
+
+   void deallocate()
+      {
+      U_TRACE_NO_PARAM(0, "UVector<void*>::deallocate()")
+
+      U_CHECK_MEMORY
+
+      U_INTERNAL_ASSERT_RANGE(1, _capacity, ((0xfffffff / sizeof(void*)) - sizeof(UVector<void*>)))
+
+      UMemoryPool::_free(vec, _capacity, sizeof(void*));
+      }
+
 private:
    U_DISALLOW_ASSIGN(UVector<void*>)
 
+   friend class UValue;
    friend class UThreadPool;
 
    template <class T> friend class UOrmTypeHandler;
    template <class T> friend class UJsonTypeHandler;
+   template <class T> friend class UFlatBufferTypeHandler;
 };
 
 template <class T> class U_EXPORT UVector<T*> : public UVector<void*> {
@@ -419,12 +464,12 @@ public:
 
    UVector(uint32_t n = 64U) : UVector<void*>(n)
       {
-      U_TRACE_REGISTER_OBJECT(0, UVector<T*>, "%u", n)
+      U_TRACE_CTOR(0, UVector<T*>, "%u", n)
       }
 
    ~UVector()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UVector<T*>)
+      U_TRACE_DTOR(0, UVector<T*>)
 
       clear();
       }
@@ -437,8 +482,8 @@ public:
    T*& at(uint32_t pos)       __pure { return (T*&) UVector<void*>::at(pos); }
    T*  at(uint32_t pos) const __pure { return (T*)  UVector<void*>::at(pos); }
 
-   __pure T*& operator[](uint32_t pos)       { return at(pos); }
-          T*  operator[](uint32_t pos) const { return at(pos); }
+   T*& operator[](uint32_t pos) __pure { return at(pos); }
+   T*  operator[](uint32_t pos) const  { return at(pos); }
 
    uint32_t find(void* elem) { return UVector<void*>::find(elem); }
 
@@ -455,16 +500,14 @@ public:
 
    // STACK OPERATIONS
 
-   void push(const T* elem) // add to end
+   void push_back(const T* elem) // add to end
       {
-      U_TRACE(0, "UVector<T*>::push(%p)", elem)
+      U_TRACE(0, "UVector<T*>::push_back(%p)", elem)
 
       u_construct<T>(&elem, istream_loading);
 
-      UVector<void*>::push(elem);
+      UVector<void*>::push_back(elem);
       }
-
-   void push_back(const T* elem) { push(elem); } 
 
    T* last() // return last element
       {
@@ -472,7 +515,7 @@ public:
 
       T* elem = (T*) UVector<void*>::last();
 
-      U_RETURN_POINTER(elem,T);
+      U_RETURN_POINTER(elem, T);
       }
 
    T* pop() // remove last element
@@ -481,10 +524,8 @@ public:
 
       T* elem = (T*) UVector<void*>::pop();
 
-      U_RETURN_POINTER(elem,T);
+      U_RETURN_POINTER(elem, T);
       }
-
-   T* pop_front() { return pop(); } // remove last element
 
    // LIST OPERATIONS
 
@@ -506,7 +547,7 @@ public:
       UVector<void*>::insert(pos, n, elem);
       }
 
-   void erase(uint32_t pos) // remove element at pos
+   void erase(uint32_t pos)
       {
       U_TRACE(0, "UVector<T*>::erase(%u)", pos)
 
@@ -522,6 +563,13 @@ public:
       u_destroy<T>((const T**)(vec+first), _last - first);
 
       UVector<void*>::erase(first, _last);
+      }
+
+   T* remove(uint32_t pos)
+      {
+      U_TRACE(0, "UVector<T*>::remove(%u)", pos)
+
+      return (T*) UVector<void*>::remove(pos);
       }
 
    // ASSIGNMENTS
@@ -739,7 +787,7 @@ public:
          U_RETURN_POINTER(elem, T);
          }
 
-      U_RETURN_POINTER(0, T);
+      U_RETURN_POINTER(U_NULLPTR, T);
       }
 
    // EXTENSION
@@ -817,7 +865,7 @@ public:
             is >> *_elem;
 
             if (is.bad()) is.clear();
-            else          v.push(_elem);
+            else          v.push_back(_elem);
             }
 
          u_destroy<T>((const T*)_elem);
@@ -867,29 +915,81 @@ private:
 };
 
 #if defined(U_STDCPP_ENABLE) && defined(HAVE_CXX11)
-class UVectorStringIter { // this class is to make work Range-based for loop: for ( UString x : UVector<UString> ) loop_statement      
+/**
+ * for (decl : rng) { ... } is equivalent to: {
+ * auto && __range = rng;
+ * auto __begin = begin(__range);
+ * auto __end = end(__range) ;
+ * for ( ; __begin != __end; ++__begin ) {
+ * decl = *__begin;
+ * ...
+ * } }
+ */
+
+class UVectorStringIter;
+class UVectorStringConstIter;
+
+class UVectorStringIterBase { // this class is to make work Range-based for loop: for ( UString x : UVector<UString> ) loop_statement      
 public:
-   UVectorStringIter(const UVector<UString>* p_vec, uint32_t pos) : _pos(pos), _p_vec(p_vec) {}
 
    // these three methods form the basis of an iterator for use with a range-based for loop
-   bool operator!=(const UVectorStringIter& other) const { return (_pos != other._pos); }
+   bool operator==(const UVectorStringIterBase& other) const { return (_pos == other._pos); }
+   bool operator!=(const UVectorStringIterBase& other) const { return (_pos != other._pos); }
+
+   UVectorStringIterBase& operator++()
+      {
+      ++_pos;
+
+      return *this; // although not strictly necessary for a range-based for loop following the normal convention of returning a value from operator++ is a good idea
+      }
+   
+   UVectorStringIterBase& operator+=(const uint32_t inc)
+      {
+      _pos += inc;
+
+      return *this; // although not strictly necessary for a range-based for loop following the normal convention of returning a value from operator++ is a good idea
+   }
+   
+   UVectorStringIterBase() = delete; 
+
+private:
+   
+   explicit UVectorStringIterBase(uint32_t pos) : _pos(pos) {}
+   
+   uint32_t _pos;
+
+   friend class UVectorStringIter;
+   friend class UVectorStringConstIter;
+};
+
+class UVectorStringIter : public UVectorStringIterBase {
+public:
+   
+   explicit UVectorStringIter(UVector<UString>* p_vec, uint32_t pos) : UVectorStringIterBase(pos), _p_vec(p_vec) {}
 
    // this method must be defined after the definition of UVector<UString> since it needs to use it
    inline UString operator*() const;
 
-   const UVectorStringIter& operator++()
-      {
-      ++_pos;
-
-      // although not strictly necessary for a range-based for loop
-      // following the normal convention of returning a value from
-      // operator++ is a good idea
-
-      return *this;
-      }
+   inline UVectorStringIter& erase();
 
 private:
-   uint32_t _pos;
+   
+   UVector<UString>* _p_vec;
+
+   friend class UVectorStringConstIter;
+};
+
+
+class UVectorStringConstIter : public UVectorStringIterBase {
+public:
+   
+   explicit UVectorStringConstIter(const UVector<UString>* p_vec, uint32_t pos) : UVectorStringIterBase(pos), _p_vec(p_vec) {}
+
+   // this method must be defined after the definition of UVector<UString> since it needs to use it
+   inline UString operator*() const;
+
+private:
+
    const UVector<UString>* _p_vec;
 };
 #endif
@@ -899,29 +999,34 @@ public:
 
    explicit UVector(uint32_t n = 64) : UVector<UStringRep*>(n)
       {
-      U_TRACE_REGISTER_OBJECT(0, UVector<UString>, "%u", n)
+      U_TRACE_CTOR(0, UVector<UString>, "%u", n)
       }
 
    explicit UVector(const UString& str,       char  delim);
-   explicit UVector(const UString& str, const char* delim = 0);
+   explicit UVector(const UString& str, const char* delim = U_NULLPTR);
 
    explicit UVector(UVector<UString>& source, uint32_t n) : UVector<UStringRep*>(n)
       {
-      U_TRACE_REGISTER_OBJECT(0, UVector<UString>, "%p,%u", &source, n)
+      U_TRACE_CTOR(0, UVector<UString>, "%p,%u", &source, n)
 
       UVector<void*>::move(source); // add to end and reset source
       }
 
    ~UVector()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UVector<UString>)
+      U_TRACE_DTOR(0, UVector<UString>)
 
       U_ASSERT(check_memory())
       }
 
 #if defined(U_STDCPP_ENABLE) && defined(HAVE_CXX11)
-    UVectorStringIter begin() const { return UVectorStringIter(this, 0); }
-    UVectorStringIter   end() const { return UVectorStringIter(this, _length); }
+   UVectorStringIter begin() { return UVectorStringIter(this, 0); }
+   UVectorStringIter   end() { return UVectorStringIter(this, _length); }
+   
+   UVectorStringConstIter begin() const { return UVectorStringConstIter(this, 0); }
+   UVectorStringConstIter   end() const { return UVectorStringConstIter(this, _length); }
+
+   UVectorStringIter& erase(UVectorStringIter& it) { return it.erase(); }
 
 # ifdef U_COMPILER_RANGE_FOR
    explicit UVector(const std::initializer_list<UString>& l) : UVector<UStringRep*>(l.size())
@@ -947,7 +1052,20 @@ public:
       U_RETURN_STRING(result);
       }
 
-   UString operator[](uint32_t pos) const;
+   UString operator[](uint32_t pos) const
+      {
+      U_TRACE(0, "UVector<UString>::operator[](%u)", pos)
+
+#  ifdef DEBUG
+      if (pos >= _length)
+         {
+         U_ERROR("Array access out of bounds - UVector<UString>::at(pos:%u >= _length:%u) _capacity = %u elem(0) = %V elem(%u) = %V",
+                  pos, _length, _capacity, vec[0], _length-1, (_length ? vec[_length-1] : UStringRep::string_rep_null));
+         }
+#  endif
+
+      return at(pos);
+      }
 
    char* c_pointer(uint32_t pos)
       {
@@ -955,7 +1073,7 @@ public:
 
       U_CHECK_MEMORY
 
-      if (empty()) return 0;
+      if (empty()) return U_NULLPTR;
 
       UStringRep* rep = UVector<UStringRep*>::at(pos);
 
@@ -971,24 +1089,20 @@ public:
 
    // STACK OPERATIONS
 
-   void push(const UString& str) // add to end
+   void push_back(const UString& str) // add to end
       {
-      U_TRACE(0, "UVector<UString>::push(%V)", str.rep)
+      U_TRACE(0, "UVector<UString>::push_back(%V)", str.rep)
 
-      UVector<UStringRep*>::push(str.rep);
+      UVector<UStringRep*>::push_back(str.rep);
 
       U_INTERNAL_DUMP("str.rep = %p at(%u) = %p", str.rep, _length-1, UVector<UStringRep*>::at(_length-1))
 
       U_ASSERT_EQUALS(str.rep, UVector<UStringRep*>::at(_length-1))
       }
 
-   void push_back(const UString& str) { push(str); } // add to end
+   void push_back(const UStringRep* rep) { UVector<UStringRep*>::push_back(rep); }
 
-   void push(     const UStringRep* rep) { UVector<UStringRep*>::push(rep); }
-   void push_back(const UStringRep* rep) { UVector<UStringRep*>::push(rep); }
-
-   void push(     const char* t, uint32_t tlen) { UString str(t, tlen); push(str); }
-   void push_back(const char* t, uint32_t tlen) { push(t, tlen); }
+   void push_back(const char* t, uint32_t tlen) { UString str(t, tlen); push_back(str); }
 
    UString last() // return last element
       {
@@ -1017,8 +1131,6 @@ public:
 
       U_RETURN_STRING(str);
       }
-
-   UString pop_front() { return pop(); } // remove last element
 
    // LIST OPERATIONS
 
@@ -1084,6 +1196,36 @@ public:
       }
 #endif
 
+   void insertWithBound(const UString& str, uint32_t& lstart, uint32_t& lend)
+      {
+      U_TRACE(0, "UVector<UString>::insertWithBound(%V,%u,%u)", str.rep, lstart, lend)
+
+      U_INTERNAL_DUMP("_length = %u _capacity = %u", _length, _capacity)
+
+      U_INTERNAL_ASSERT_EQUALS(_capacity & (_capacity-1), 0) // must be a power of 2
+
+      if (lend < _capacity) push_back(str);
+      else
+         {
+         ++lstart;
+
+         replace(lend & (_capacity-1), str);
+         }
+
+      ++lend;
+      }
+
+   void getFromLast(uint32_t llast, uint32_t lstart, uint32_t lend, UVector<UString>& _vec)
+      {
+      U_TRACE(0, "UVector<UString>::getFromLast(%u,%u,%u,%p)", llast, lstart, lend, &_vec)
+
+      U_INTERNAL_DUMP("_length = %u _capacity = %u", _length, _capacity)
+
+      U_INTERNAL_ASSERT_EQUALS(_capacity & (_capacity-1), 0) // must be a power of 2
+
+      for (uint32_t i = (llast < lstart ? lstart : llast); i < lend; ++i) _vec.push_back(at(i & (_capacity-1)));
+      }
+
    // BINARY HEAP
 
    UString bh_min() const __pure { return UString(UVector<UStringRep*>::bh_min()); }
@@ -1115,13 +1257,12 @@ public:
 
    // EXTENSION
 
-   UString join(      char  delim);
-   UString join(const char* delim, uint32_t delim_len);
+   UString join(uint32_t start = 0, const char* delim = " ", uint32_t delim_len = 1);
 
    uint32_t split(const    char* str, uint32_t len,       char  delim);
-   uint32_t split(const UString& str,                     char  delim);     // NB: use substr(), so dependency from str...
-   uint32_t split(const    char* str, uint32_t len, const char* delim = 0);
-   uint32_t split(const UString& str,               const char* delim = 0); // NB: use substr(), so dependency from str...
+   uint32_t split(const UString& str,                     char  delim);             // NB: use substr(), so dependency from str...
+   uint32_t split(const    char* str, uint32_t len, const char* delim = U_NULLPTR);
+   uint32_t split(const UString& str,               const char* delim = U_NULLPTR); // NB: use substr(), so dependency from str...
 
    uint32_t loadFromData(const UString& str) { (void) loadFromData(U_STRING_TO_PARAM(str)); return _length; }
 
@@ -1133,9 +1274,22 @@ public:
    uint32_t find(     const char* s, uint32_t n) __pure;
    uint32_t findRange(const char* s, uint32_t n, uint32_t start, uint32_t end) __pure;
 
-   // Check equality with string at pos
+   // check equality with string at pos
 
-   bool isEqual(uint32_t pos, const UString& str, bool ignore_case = false) __pure;
+   __pure bool isEqual(uint32_t pos, const UString& str, bool ignore_case = false)
+      {
+      U_TRACE(0, "UVector<UString>::isEqual(%u,%V,%b)", pos, str.rep, ignore_case)
+
+      U_CHECK_MEMORY
+
+      if (_length &&
+          UStringRep::equal_lookup(UVector<UStringRep*>::at(pos), str.rep, ignore_case))
+         {
+         U_RETURN(true);
+         }
+
+      U_RETURN(false);
+      }
 
    // Check equality with an existing vector object
 
@@ -1152,14 +1306,41 @@ public:
       return _isEqual(_vec, ignore_case); 
       }
 
-   static int qscomp(const void* p, const void* q)
+   void sort(bool ignore_case = false)
       {
-      U_TRACE(0, "UVector<UString>::qscomp(%p,%p)", p, q)
+      U_TRACE(0, "UVector<UString>::sort(%b)", ignore_case)
 
-      return (*(UStringRep**)p)->comparenocase(*(UStringRep**)q);
+      U_INTERNAL_DUMP("_length = %u", _length)
+
+   // U_INTERNAL_ASSERT_RANGE(2,_length,_capacity)
+
+      if (ignore_case == false) mksort((UStringRep**)vec, _length, 0);
+      else                      UVector<void*>::sort();
       }
 
-   void sort(bool ignore_case = false);
+   void copy(UVector<UString>& source)
+      {
+      U_TRACE(0, "UVector<UString>::copy(%p)", &source)
+
+      for (uint32_t i = 0; i < source._length; ++i) push_back(source[i].copy());
+      }
+
+   void duplicate()
+      {
+      U_TRACE(0, "UVector<UString>::duplicate()")
+
+      for (uint32_t i = 0; i < _length; ++i)
+         {
+         UStringRep* r = UVector<UStringRep*>::at(i);
+
+         if (r->writeable() == false)
+            {
+            vec[i] = r->duplicate();
+
+            U_DELETE(r)
+            }
+         }
+      }
 
    void move(UVector<UString>& source) { UVector<void*>::move(source); } // add to end and reset source
 
@@ -1169,7 +1350,7 @@ public:
       {
       U_TRACE(0, "UVector<UString>::insertAsSet(%V)", str.rep)
 
-      if (empty() || find(str) == U_NOT_FOUND) push(str);
+      if (empty() || find(str) == U_NOT_FOUND) push_back(str);
       }
 
    uint32_t intersection(UVector<UString>& set1, UVector<UString>& set2);
@@ -1179,6 +1360,21 @@ public:
    uint32_t contains(const UString& str,    bool ignore_case = false);
    bool     contains(UVector<UString>& vec, bool ignore_case = false);
    bool  isContained(const UString& str,    bool ignore_case = false) { return (contains(str, ignore_case) != U_NOT_FOUND); }
+
+   uint32_t getSpaceToDump() const
+      {
+      U_TRACE_NO_PARAM(0+256, "UVector<UString>::getSpaceToDump()")
+
+      U_CHECK_MEMORY
+
+      U_INTERNAL_DUMP("_length = %u", _length)
+
+      uint32_t space = U_CONSTANT_SIZE("( )");
+
+      for (uint32_t i = 0; i < _length; ++i) space += at(i).getSpaceToDump() + 1;
+
+      U_RETURN(space);
+      }
 
    // OPERATOR
 
@@ -1210,6 +1406,9 @@ private:
 };
 
 #if defined(U_STDCPP_ENABLE) && defined(HAVE_CXX11)
-inline UString UVectorStringIter::operator* () const { return _p_vec->at(_pos); }
+inline UString UVectorStringIter::operator* ()  const { return _p_vec->at(_pos); }
+inline UString UVectorStringConstIter::operator* ()   const { return _p_vec->at(_pos); }
+
+inline UVectorStringIter& UVectorStringIter::erase() { _p_vec->erase(_pos); return *this; }
 #endif
 #endif

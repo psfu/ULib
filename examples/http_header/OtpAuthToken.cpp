@@ -39,7 +39,7 @@ extern "C" { char* strptime(const char* s, const char* format, struct tm* tm); }
 
 OtpAuthToken::OtpAuthToken(CryptEngine* eng_, const UString& buf)
 {
-   U_TRACE_REGISTER_OBJECT(5, OtpAuthToken, "%p,%.*S", eng_,  U_STRING_TO_TRACE(buf))
+   U_TRACE_CTOR(5, OtpAuthToken, "%p,%.*S", eng_,  U_STRING_TO_TRACE(buf))
 
    eng = eng_;
 
@@ -278,6 +278,6 @@ const char* OtpAuthToken::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

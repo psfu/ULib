@@ -12,7 +12,7 @@
 // ============================================================================
 
 #include <ulib/debug/common.h>
-#include <ulib/debug/error.h>
+#include <ulib/internal/error.h>
 
 #ifdef USE_LIBSSL
 #  include <openssl/err.h>
@@ -36,9 +36,8 @@
 #  define PACKAGE_NAME ULib
 #  endif
 #  ifndef PACKAGE_STRING
-#  define PACKAGE_STRING "ULib 1.4.2"
+#  define PACKAGE_STRING "ULib 2.4.2"
 #  endif
-#endif
 
 extern "C" void U_EXPORT u_debug_at_exit(void)
 {
@@ -63,8 +62,8 @@ extern "C" void U_EXPORT u_debug_at_exit(void)
       if ( cmd_on_exit &&
           *cmd_on_exit)
          {
-         char command[U_PATH_MAX];
-         uint32_t len = u__snprintf(command, sizeof(command), U_CONSTANT_TO_PARAM("%s %s %P %N"), cmd_on_exit, u_progpath);
+         char command[U_PATH_MAX+1];
+         uint32_t len = u__snprintf(command, U_PATH_MAX, U_CONSTANT_TO_PARAM("%s %s %P %N"), cmd_on_exit, u_progpath);
 
          U_INTERNAL_PRINT("command = %.*s", len, command)
 
@@ -73,15 +72,15 @@ extern "C" void U_EXPORT u_debug_at_exit(void)
          (void) system(command);
          }
 
-#  ifdef DEBUG
-#    ifdef U_STDCPP_ENABLE
+#  ifdef U_STDCPP_ENABLE
       UObjectDB::close();
-#    endif
+#  endif
 
       u_trace_close();
 
-      U_WRITE_MEM_POOL_INFO_TO("mempool.%N.%P", 0);
-#  endif
+      U_INTERNAL_ASSERT_POINTER(u_trace_folder)
+
+      U_WRITE_MEM_POOL_INFO_TO("%s/mempool.%N.%P", u_trace_folder);
 
       U_INTERNAL_PRINT("u_flag_exit = %d", u_flag_exit)
 
@@ -89,30 +88,52 @@ extern "C" void U_EXPORT u_debug_at_exit(void)
       }
 }
 
-#ifdef DEBUG
-static void print_info(void)
+void U_EXPORT u_debug_print_info()
 {
+   U_INTERNAL_TRACE("u_debug_print_info()")
+
    // print program mode and info for ULib...
 
-   U_MESSAGE("DEBUG MODE (pid %W%P%W) - " PACKAGE_STRING " " PLATFORM_VAR " (" __DATE__ ")%W", CYAN, YELLOW, RESET);
+   char* memusage = getenv("UMEMUSAGE");
+
+   U_MESSAGE("DEBUG MODE%W (pid %W%P%W) - " PACKAGE_STRING " " PLATFORM_VAR " (" __DATE__ ")%W", YELLOW, BRIGHTCYAN, YELLOW, RESET);
+
+   u_print_status_trace();
+
+#ifdef U_STDCPP_ENABLE
+   if (UObjectDB::fd == -1)
+      {
+      U_MESSAGE("OBJDUMP%W<%Woff%W>%W", YELLOW, RED, YELLOW, RESET);
+      }
+   else
+      {
+      U_MESSAGE("OBJDUMP%W<%Won%W>: Level<%W%d%W> MaxSize<%W%d%W>%W", YELLOW, GREEN, YELLOW, CYAN, UObjectDB::level_active, YELLOW, CYAN, UObjectDB::file_size, YELLOW, RESET);
+      }
+#endif
+
+   U_MESSAGE("MEMUSAGE%W<%W%s%W>%W", YELLOW, (memusage ? GREEN : RED), (memusage ? "on" : "off"), YELLOW, RESET);
 }
 
 extern "C" void U_EXPORT u_debug_init(void)
 {
    U_INTERNAL_TRACE("u_debug_init()")
 
-   print_info();
+   if (u_trace_folder == U_NULLPTR)
+      {
+      u_trace_folder = getenv("UTRACE_FOLDER");
 
-   USimulationError::init();
+      if (u_trace_folder == U_NULLPTR) u_trace_folder = ".";
+      }
+
+   u_trace_check_init(); // we go to check if there are previous creation of global objects that can have forced the initialization of trace file...
 
 #ifdef U_STDCPP_ENABLE
-   UObjectDB::init(true, true);
+   UObjectDB::init(true);
 #endif
 
-   // we go to check if there are previous creation of global
-   // objects that can have forced the initialization of trace file...
+   u_debug_print_info();
 
-   u_trace_check_init();
+   USimulationError::init();
 }
 
 // set_memlimit() uses setrlimit() to restrict dynamic memory allocation.
@@ -125,15 +146,14 @@ void U_EXPORT u_debug_set_memlimit(float size)
    struct rlimit r;
    r.rlim_cur = (rlim_t)(size * 1048576);
 
-   // Heap size, seems to be common.
+   // Heap size, seems to be common
    (void) U_SYSCALL(setrlimit, "%d,%p", RLIMIT_DATA, &r);
 
    // Size of stack segment
    (void) U_SYSCALL(setrlimit, "%d,%p", RLIMIT_STACK, &r);
 
 #ifdef RLIMIT_RSS
-   // Resident set size.
-   // This affects swapping; processes that are exceeding their
+   // Resident set size. This affects swapping; processes that are exceeding their
    // resident set size will be more likely to have physical memory taken from them
    (void) U_SYSCALL(setrlimit, "%d,%p", RLIMIT_RSS, &r);
 #endif
@@ -159,13 +179,13 @@ pid_t U_EXPORT u_debug_fork(pid_t _pid, int trace_active)
       {
       u_setPid();
 
-      print_info(); // print program mode and info for ULib...
-
       u_trace_initFork();
 
 #  ifdef U_STDCPP_ENABLE
-      if (UObjectDB::fd > 0) UObjectDB::initFork();
+      UObjectDB::initFork();
 #  endif
+
+      u_debug_print_info();
       }
 
    if (trace_active)
@@ -228,7 +248,7 @@ __noreturn void U_EXPORT u_debug_exec(const char* pathname, char* const argv[], 
                            { (caddr_t)buffer,                    0 },
                            { (caddr_t)"\n",                      1 } };
 
-   iov[1].iov_len = u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("::execve(%S,%p,%p)"), pathname, argv, envp);
+   iov[1].iov_len = u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM("::execve(%S,%p,%p)"), pathname, argv, envp);
 
    if (trace_active)
       {
@@ -240,10 +260,10 @@ __noreturn void U_EXPORT u_debug_exec(const char* pathname, char* const argv[], 
    if (u_fork_called)
       {
 #  ifdef U_STDCPP_ENABLE
-      if (UObjectDB::fd > 0) UObjectDB::close();
+      UObjectDB::close();
 #  endif
 
-      if (u_trace_fd > 0) u_trace_close();
+      u_trace_close();
       }
 
    u_exec_failed = false;
@@ -255,18 +275,31 @@ __noreturn void U_EXPORT u_debug_exec(const char* pathname, char* const argv[], 
    if (flag_trace_active == false)
       {
       char buf[64];
-      uint32_t bytes_written = u__snprintf(buf, sizeof(buf), U_CONSTANT_TO_PARAM("%W%N%W: %WWARNING: %W"),BRIGHTCYAN,RESET,YELLOW,RESET);
+      uint32_t bytes_written = u__snprintf(buf, U_CONSTANT_SIZE(buf), U_CONSTANT_TO_PARAM("%W%N%W: %WWARNING: %W"), BRIGHTCYAN, RESET, YELLOW, RESET);
 
       (void) write(STDERR_FILENO, buf, bytes_written);
       (void) write(STDERR_FILENO, buffer, iov[1].iov_len);
       }
 
-   iov[1].iov_len = u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM(" = -1%R"), 0); // NB: the last argument (0) is necessary...
+   iov[1].iov_len = u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM(" = -1%R"), 0); // NB: the last argument (0) is necessary...
 
    if (flag_trace_active == false)
       {
+      uint32_t i;
+
       (void) write(STDERR_FILENO, buffer,          iov[1].iov_len);
       (void) write(STDERR_FILENO, iov[2].iov_base, iov[2].iov_len);
+
+      for (i = 0; argv[i]; ++i) (void) write(STDERR_FILENO, buffer,  u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM("argv[%2u] = %p %S\n"), i, argv[i], argv[i]));
+
+      (void) write(STDERR_FILENO, buffer, u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM("argv[%2u] = %p %S\n"), i, argv[i], argv[i]));
+
+      if (envp)
+         {
+         for (i = 0; envp[i]; ++i) (void) write(STDERR_FILENO, buffer,  u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM("envp[%2u] = %p %S\n"), i, envp[i], envp[i]));
+
+         (void) write(STDERR_FILENO, buffer, u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM("envp[%2u] = %p %S\n"), i, envp[i], envp[i]));
+         }
       }
    else
       {
@@ -274,7 +307,7 @@ __noreturn void U_EXPORT u_debug_exec(const char* pathname, char* const argv[], 
 
       u_trace_writev(iov+1, 2);
 
-      iov[1].iov_len = u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("::_exit(%d)"), EX_UNAVAILABLE);
+      iov[1].iov_len = u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM("::_exit(%d)"), EX_UNAVAILABLE);
 
       u_trace_writev(iov, 3);
 

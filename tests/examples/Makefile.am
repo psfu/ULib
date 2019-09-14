@@ -4,12 +4,18 @@ MAINTAINERCLEANFILES	= Makefile.in
 
 DEFAULT_INCLUDES =  -I. -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_srcdir)/examples/http_header/include
 
-EXTRA_DIST = inp ok CA CSP LCSP TSA RSIGN XAdES nocat wi-auth WAGSM RA IR/WEB IR/benchmark IR/doc_dir *.cfg .htpasswd .htdigest python \
-				 *.properties *.test *.sh error_msg workflow doc_parse robots.txt alias.txt throttling.txt css js benchmark websocket docroot php.sh
+EXTRA_DIST = inp ok CA CSP LCSP TSA RSIGN XAdES nocat wi-auth WAGSM RA IR/WEB IR/benchmark IR/doc_dir *.cfg .htpasswd .htdigest python sse_example \
+				 *.properties *.test *.sh error_msg workflow doc_parse robots.txt alias.txt throttling.txt css js benchmark websocket docroot php.sh test_http_parser.h
 
 ## DEFS  = -DU_TEST @DEFS@
 
-TESTS = client_server.test test_manager.test IR.test web_server.test web_server_multiclient.test web_socket.test ## workflow.test
+TESTS = client_server.test test_manager.test IR.test web_server.test web_server_multiclient.test web_socket.test web_server_proxy.test ## workflow.test
+
+if DEBUG
+PRG = bench_http_parser test_http_parser
+bench_http_parser_SOURCES = bench_http_parser.cpp
+test_http_parser_SOURCES = test_http_parser.cpp ctest_http_parser.c
+endif
 
 if SSL
 TESTS += tsa_http.test tsa_https.test csp_rpc.test rsign_rpc.test tsa_rpc.test uclient.test
@@ -27,7 +33,7 @@ endif
 
 if SSL
 TESTS += web_server_ssl.test
-## PRG = test_http_header
+## PRG += test_http_header
 ## test_http_header_SOURCES = test_http_header.cpp
 ## HTTP_LIB = $(top_builddir)/examples/http_header/libhttp.la
 ## TESTS += http_header.test
@@ -71,7 +77,7 @@ LDADD = @ULIBS@ $(HTTP_LIB) $(top_builddir)/src/ulib/lib@ULIB@.la @ULIB_LIBS@
 ## web_server_multiclient.test form_completion.test http_header.test lrp_pusher.test lrp_session.test workflow.test 
 test: all-am
 	$(MAKE) $(AM_MAKEFLAGS) $(check_PROGRAMS)
-	../make_test.sh client_server.test test_manager.test IR.test web_server.test web_socket.test tsa_http.test tsa_https.test rsign_rpc.test tsa_rpc.test uclient.test tsa_ssoap.test rsign.test web_server_ssl.test PEC_report_rejected.test PEC_report_messaggi.test PEC_report_virus.test PEC_report_anomalie.test PEC_check_namefile.test doc_parse.test xml2txt.test
+	../make_test.sh client_server.test test_manager.test IR.test web_server.test web_server_proxy.test web_socket.test tsa_http.test tsa_https.test rsign_rpc.test tsa_rpc.test uclient.test tsa_ssoap.test rsign.test web_server_ssl.test PEC_report_rejected.test PEC_report_messaggi.test PEC_report_virus.test PEC_report_anomalie.test PEC_check_namefile.test doc_parse.test xml2txt.test ../reset.color
 
 clean-local:
 	-rm -rf out err core .libs *.bb* *.da *.gc* IR/db* TSA/gSOAP/tsa_client \

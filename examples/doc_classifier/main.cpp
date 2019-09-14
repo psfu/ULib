@@ -32,14 +32,14 @@ public:
 
       if (str_time.empty() == false)
          {
-         DocumentClassifier::certsVerificationTime = UTimeDate::getSecondFromTime(str_time.data(), false, "%4d-%02d-%02d+%02d:%02d:%02d");
+         DocumentClassifier::certsVerificationTime = UTimeDate::getSecondFromDate(str_time.data(), false, U_NULLPTR, "%4d-%02d-%02d+%02d:%02d:%02d");
 
          U_INTERNAL_DUMP("certsVerificationTime = %ld", DocumentClassifier::certsVerificationTime)
          }
 
       // EXTENSION
 
-      (void) UServices::setupOpenSSLStore(0, str_CApath.c_str());
+      (void) UServices::setupOpenSSLStore(U_NULLPTR, str_CApath.c_str());
 
       // NORMAL
 

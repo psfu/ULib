@@ -45,31 +45,31 @@ UString* USSIPlugIn::alternative_include;
 
 USSIPlugIn::USSIPlugIn()
 {
-   U_TRACE_REGISTER_OBJECT(0, USSIPlugIn, "")
+   U_TRACE_CTOR(0, USSIPlugIn, "")
 
-   U_NEW(UString, errmsg,  UString);
-   U_NEW(UString, timefmt, UString);
-   U_NEW(UString, docname, UString);
+   U_NEW_STRING(errmsg,  UString);
+   U_NEW_STRING(timefmt, UString);
+   U_NEW_STRING(docname, UString);
 
    UString::str_allocate(STR_ALLOCATE_SSI);
 }
 
 USSIPlugIn::~USSIPlugIn()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, USSIPlugIn)
+   U_TRACE_DTOR(0, USSIPlugIn)
 
-   delete errmsg;
-   delete timefmt;
-   delete docname;
+   U_DELETE(errmsg)
+   U_DELETE(timefmt)
+   U_DELETE(docname)
 
    if (body)
       {
-      delete body;  
-      delete header;
-      delete alternative_include;
+      U_DELETE(body)  
+      U_DELETE(header)
+      U_DELETE(alternative_include)
       }
 
-   if (environment) delete environment;
+   if (environment) U_DELETE(environment)
 }
 
 void USSIPlugIn::setAlternativeRedirect(const char* fmt, ...)
@@ -86,12 +86,11 @@ void USSIPlugIn::setAlternativeRedirect(const char* fmt, ...)
 
    va_end(argp);
 
-   alternative_response      = 1;
-   U_http_info.nResponseCode = HTTP_OK;
+   alternative_response = 1;
 
    UClientImage_Base::setCloseConnection();
 
-   UHTTP::setResponse(buffer, 0);
+   UHTTP::setResponse(buffer, U_NULLPTR);
 }
 
 void USSIPlugIn::setBadRequest()
@@ -132,8 +131,6 @@ void USSIPlugIn::setAlternativeResponse(UString& _body)
       }
    else
       {
-      U_http_info.nResponseCode = HTTP_OK;
-
       UHTTP::setResponse(*(u_is_know(UHTTP::mime_index) ? UString::str_ctype_txt : UString::str_ctype_html), &_body);
       }
 }
@@ -211,11 +208,11 @@ U_NO_EXPORT UString USSIPlugIn::getPathname(const UString& name, const UString& 
    U_TRACE(0, "USSIPlugIn::getPathname(%V,%V,%V)", name.rep, value.rep, directory.rep)
 
    /**
-    * "include file" looks in the current directory (the name must not start with /, ., or ..) and "include virtual" starts
-    * in the root directory of your kiosk (so the name must start with "/".) You might want to make a "/includes" directory
-    * in your Kiosk and then you can say "include virtual=/includes/file.txt" from any page. The "virtual" and "file"
-    * parameters are also used with "fsize" and "flastmod". With either method, you can only reference files that are within
-    * your Kiosk directory (apart if "direct"...)
+    * 'include file' looks in the current directory (the name must not start with /, ., or ..) and 'include virtual' starts
+    * in the root directory of your kiosk (so the name must start with "/".) You might want to make a '/includes' directory
+    * in your Kiosk and then you can say 'include virtual=/includes/file.txt' from any page. The 'virtual' and 'file'
+    * parameters are also used with 'fsize' and 'flastmod'. With either method, you can only reference files that are within
+    * your Kiosk directory (apart if 'direct'...)
     */
 
    UString pathname;
@@ -258,7 +255,7 @@ U_NO_EXPORT bool USSIPlugIn::callService(const UString& name, const UString& val
 
       if (fd_stderr == 0) fd_stderr = UServices::getDevNull("/tmp/SSI.err");
 
-      *UClientImage_Base::wbuffer = UCommand::outputCommand(value, 0, -1, fd_stderr);
+      *UClientImage_Base::wbuffer = UCommand::outputCommand(value, U_NULLPTR, -1, fd_stderr);
 
       U_RETURN(true);
       }
@@ -938,53 +935,47 @@ int USSIPlugIn::handlerConfig(UFileConfig& cfg)
 {
    U_TRACE(0, "USSIPlugIn::handlerConfig(%p)", &cfg)
 
-   // --------------------------------------------------------------------------------------------------------------
+   // -------------------------------------------------------------------------------------------------------------------------
    // ENVIRONMENT             path of file configuration environment for SSI
    //
-   // SSI_AUTOMATIC_ALIASING  special SSI HTML file that is recognized automatically as alias of all uri request
-   //                         without suffix (generally cause navigation directory not working)
-   // --------------------------------------------------------------------------------------------------------------
+   // SSI_AUTOMATIC_ALIASING  special SSI HTML file that is recognized automatically as alias of all uri request without suffix
+   // -------------------------------------------------------------------------------------------------------------------------
 
-   if (cfg.loadTable())
+   UString x = cfg.at(U_CONSTANT_TO_PARAM("ENVIRONMENT"));
+
+   if (x)
       {
-      UString x = cfg.at(U_CONSTANT_TO_PARAM("ENVIRONMENT"));
+      U_NEW_STRING(environment, UString(UStringExt::prepareForEnvironmentVar(UFile::contentOf(x, O_RDONLY, false, U_NULLPTR))));
 
-      if (x)
-         {
-         U_NEW(UString, environment, UString(UStringExt::prepareForEnvironmentVar(UFile::contentOf(x))));
+      const char* home = U_SYSCALL(getenv, "%S", "HOME");
 
-         const char* home = U_SYSCALL(getenv, "%S", "HOME");
+      if (home) environment->snprintf_add(U_CONSTANT_TO_PARAM("HOME=%s\n"), home);
 
-         if (home) environment->snprintf_add(U_CONSTANT_TO_PARAM("HOME=%s\n"), home);
-
-         U_ASSERT_EQUALS(environment->isBinary(), false)
-         }
-
-#  ifdef U_ALIAS
-      x = cfg.at(U_CONSTANT_TO_PARAM("SSI_AUTOMATIC_ALIASING"));
-
-      if (x) UHTTP::setGlobalAlias(x); // NB: automatic alias of all uri request without suffix...
-#  endif
-
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+      U_ASSERT_EQUALS(environment->isBinary(), false)
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+#ifdef U_ALIAS
+   x = cfg.at(U_CONSTANT_TO_PARAM("SSI_AUTOMATIC_ALIASING"));
+
+   if (x) UHTTP::setGlobalAlias(x); // NB: automatic alias of all uri request without suffix...
+#endif
+
+   U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 }
 
 int USSIPlugIn::handlerInit()
 {
    U_TRACE_NO_PARAM(0, "USSIPlugIn::handlerInit()")
 
-   U_INTERNAL_ASSERT_EQUALS(body, 0)
-   U_INTERNAL_ASSERT_EQUALS(header, 0)
-   U_INTERNAL_ASSERT_EQUALS(alternative_include, 0)
+   U_INTERNAL_ASSERT_EQUALS(body, U_NULLPTR)
+   U_INTERNAL_ASSERT_EQUALS(header, U_NULLPTR)
+   U_INTERNAL_ASSERT_EQUALS(alternative_include, U_NULLPTR)
 
-   U_NEW(UString, body,  UString);
-   U_NEW(UString, header, UString);
-   U_NEW(UString, alternative_include, UString);
+   U_NEW_STRING(body,  UString);
+   U_NEW_STRING(header, UString);
+   U_NEW_STRING(alternative_include, UString);
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // Connection-wide hooks
@@ -993,7 +984,7 @@ int USSIPlugIn::handlerRequest()
 {
    U_TRACE_NO_PARAM(0, "USSIPlugIn::handlerRequest()")
 
-   U_INTERNAL_DUMP("uri = %.*S", U_HTTP_URI_TO_TRACE)
+   U_INTERNAL_DUMP("uri(%u) = %.*S query = %.*S", u_clientimage_info.http_info.uri_len, U_HTTP_URI_TO_TRACE, U_HTTP_QUERY_TO_TRACE)
 
    if (UClientImage_Base::isRequestNotFound()  == false &&
        UClientImage_Base::isRequestForbidden() == false)
@@ -1006,9 +997,11 @@ int USSIPlugIn::handlerRequest()
       if (bcache ||
           (UHTTP::setMimeIndex(), u_is_ssi(UHTTP::mime_index)))
          {
-         // init
-
+         U_INTERNAL_ASSERT_MAJOR(U_http_info.uri_len, 1)
          U_ASSERT(UClientImage_Base::environment->empty())
+         U_INTERNAL_ASSERT_DIFFERS(u_clientimage_info.http_info.uri[u_clientimage_info.http_info.uri_len-1], '/') // directory request
+
+         // init
 
          if (UHTTP::getCGIEnvironment(*UClientImage_Base::environment, U_SHELL) == false) U_RETURN(U_PLUGIN_HANDLER_ERROR);
 
@@ -1042,68 +1035,37 @@ int USSIPlugIn::handlerRequest()
 
                UHTTP::setInternalError();
 
-               U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+               U_RETURN(U_PLUGIN_HANDLER_OK);
                }
             }
          else
             {
-            U_INTERNAL_DUMP("UClientImage_Base::body(%u) = %V", UClientImage_Base::body->size(), UClientImage_Base::body->rep)
+            U_INTERNAL_DUMP("UHTTP::body(%u) = %V", UHTTP::body->size(), UHTTP::body->rep)
 
             U_ASSERT(UHTTP::isDataFromCache())
             U_INTERNAL_ASSERT_POINTER(UHTTP::file_data->array)
             U_INTERNAL_ASSERT_EQUALS( UHTTP::file_data->array->size(), 2)
 
-            (void) header->append(UHTTP::getHeaderFromCache()); // NB: after now 'file_data' can change...
+            U_INTERNAL_DUMP("U_http_version = %C", U_http_version)
+
+            // NB: after now 'file_data' can change...
+
+            (void) header->append(UHTTP::getDataFromCache(UHTTP::file_data->array, 1)); // NB: we must consider HTTP/2
 
             *body = (UHTTP::isGETorHEAD() &&
-                     *UClientImage_Base::body
-                         ? *UClientImage_Base::body
+                     *UHTTP::body
+                         ? *UHTTP::body
                          : UHTTP::getBodyFromCache());
             }
 
          // process the SSI file
 
-         UString output = processSSIRequest(*body, 0);
+         UString output = (U_HTTP_QUERY_STREQ("_nav_") ? *body : processSSIRequest(*body, 0));
 
          U_INTERNAL_DUMP("alternative_response = %d output(%u) = %V", alternative_response, output.size(), output.rep)
 
-         if (alternative_response == 0)
-            {
-            uint32_t size = output.size();
-
-            U_INTERNAL_ASSERT_MAJOR(size,0)
-
-#        ifdef USE_LIBZ
-            U_INTERNAL_DUMP("U_http_is_accept_gzip = %b", U_http_is_accept_gzip)
-
-            if (U_http_is_accept_gzip &&
-                size > U_MIN_SIZE_FOR_DEFLATE)
-#        endif
-               {
-               output = UStringExt::deflate(output, 1);
-
-               size = output.size();
-
-               (void) header->insert(0, U_CONSTANT_TO_PARAM("Content-Encoding: gzip\r\n"));
-               }
-
-            *UHTTP::ext = *header;
-
-            if (bcache) (void) UHTTP::checkContentLength(size, U_NOT_FOUND); // NB: adjusting the size of response...
-            else
-               {
-               UHTTP::mime_index = U_unknow;
-
-               (void) UHTTP::ext->append(UHTTP::getHeaderMimeType(0, size, U_CTYPE_HTML));
-               }
-
-            U_http_info.nResponseCode = HTTP_OK;
-
-            *UClientImage_Base::body = output;
-
-            UHTTP::handlerResponse();
-            }
-         else if (alternative_response > 1)
+              if (alternative_response == 0) UHTTP::setDynamicResponse(output, *header);
+         else if (alternative_response  > 1)
             {
             // -----------------------------------------------------------------------------------------------------
             // 1 => response already complete (nothing to do)
@@ -1120,8 +1082,7 @@ int USSIPlugIn::handlerRequest()
             (void) UClientImage_Base::wbuffer->replace(*header);
             (void) UClientImage_Base::wbuffer->append(U_CONSTANT_TO_PARAM(U_CRLF));
 
-            U_http_info.endHeader     = UClientImage_Base::wbuffer->size(); 
-            U_http_info.nResponseCode = HTTP_OK;
+            U_http_info.endHeader = UClientImage_Base::wbuffer->size(); 
 
             (void) UClientImage_Base::wbuffer->append(alternative_response == 2 ? output : *body);
 
@@ -1129,12 +1090,12 @@ int USSIPlugIn::handlerRequest()
             }
 
          UClientImage_Base::environment->setEmpty();
-         }
 
-   // U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+         U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
+         }
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // DEBUG
@@ -1159,6 +1120,6 @@ const char* USSIPlugIn::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

@@ -26,7 +26,7 @@ public:
 
    URpcPlugIn()
       {
-      U_TRACE_REGISTER_OBJECT(0, URpcPlugIn, "", 0)
+      U_TRACE_CTOR(0, URpcPlugIn, "")
 
       UString::str_allocate(STR_ALLOCATE_SOAP);
       }
@@ -37,8 +37,7 @@ public:
 
    // Server-wide hooks
 
-   virtual int handlerConfig(UFileConfig& cfg) U_DECL_FINAL;
-   virtual int handlerInit() U_DECL_FINAL __pure;
+   virtual int handlerInit() U_DECL_FINAL;
 
    // Connection-wide hooks
 

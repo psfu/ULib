@@ -15,13 +15,8 @@
 #include <ulib/command.h>
 #include <ulib/file_config.h>
 #include <ulib/utility/base64.h>
-#include <ulib/utility/hexdump.h>
 #include <ulib/utility/services.h>
 #include <ulib/net/server/server.h>
-
-#ifdef USE_LIBUUID
-#  include <uuid/uuid.h>
-#endif
 
 unsigned char UServices::key[16];
 
@@ -120,7 +115,7 @@ bool UServices::read(int fd, UString& buffer, uint32_t count, int timeoutMS)
 
    if (ncount < chunk)
       {
-      UString::_reserve(buffer, chunk);
+      UString::_reserve(buffer, buffer.getReserveNeed(chunk));
 
       ncount = buffer.space();
       }
@@ -162,7 +157,7 @@ read:
 
    if (value == (ssize_t)ncount)
       {
-#  ifndef U_SERVER_CAPTIVE_PORTAL
+#  if defined(U_LINUX) && (!defined(U_SERVER_CAPTIVE_PORTAL) || defined(ENABLE_THREAD))
       U_DEBUG("UServices::read(%u) ran out of buffer space(%u)", count, ncount)
 #  endif
 
@@ -170,7 +165,7 @@ read:
 
       // NB: may be there are available more bytes to read...
 
-      UString::_reserve(buffer, ncount * 2);
+      UString::_reserve(buffer, buffer.getReserveNeed(ncount * 2));
       
       ptr = buffer.c_pointer(start);
 
@@ -195,7 +190,7 @@ int UServices::askToLDAP(UString* pinput, UHashMap<UString>* ptable, const char*
 
    UString output, buffer(U_CAPACITY);
 
-   buffer.vsnprintf(fmt, strlen(fmt), argp);
+   buffer.vsnprintf(fmt, u__strlen(fmt, __PRETTY_FUNCTION__), argp);
 
    UCommand cmd(buffer);
 
@@ -203,16 +198,14 @@ int UServices::askToLDAP(UString* pinput, UHashMap<UString>* ptable, const char*
 
    bool result = cmd.execute(pinput, &output, -1, _fd_stderr);
 
-#ifndef U_LOG_DISABLE
-   UServer_Base::logCommandMsgError(cmd.getCommand(), false);
-#endif
+   U_SRV_LOG_CMD_MSG_ERR(cmd, false);
 
-   if (pinput == 0) ptable->clear();
+   if (pinput == U_NULLPTR) ptable->clear();
 
    if (result)
       {
       if (output &&
-          pinput == 0)
+          pinput == U_NULLPTR)
          {
          (void) UFileConfig::loadProperties(*ptable, output);
          }
@@ -271,8 +264,8 @@ UString UServices::getUUID()
             time_hi_and_version = htons((ossp_time >> 48) & 0x00000fff);
 
 #define U_APPEND_HEX(value, offset) \
-   *id++ = u_hex_upper[(((char*)&value)[offset] >> 4) & 0x0F]; \
-   *id++ = u_hex_upper[(((char*)&value)[offset]     ) & 0x0F];
+   *id++ = "0123456789ABCDEF"[(((char*)&value)[offset] >> 4) & 0x0F]; \
+   *id++ = "0123456789ABCDEF"[(((char*)&value)[offset]     ) & 0x0F];
 
    U_APPEND_HEX(time_low, 0);
    U_APPEND_HEX(time_low, 1);
@@ -342,7 +335,7 @@ void UServices::setCApath(const char* _CApath)
 
    U_INTERNAL_ASSERT(_CApath && *_CApath)
 
-   if (CApath == 0) U_NEW_ULIB_OBJECT(UString, CApath, UString);
+   if (CApath == U_NULLPTR) U_NEW_STRING(CApath, UString);
 
    *CApath = UFile::getRealPath(_CApath);
 }
@@ -389,7 +382,7 @@ void UServices::setVerifyStatus(long result)
 {
    U_TRACE(0, "UServices::setVerifyStatus(%ld)", result)
 
-   const char* descr = 0;
+   const char* descr = U_NULLPTR;
 
    switch (result)
       {
@@ -552,7 +545,7 @@ ENGINE* UServices::loadEngine(const char* id, unsigned int flags)
       {
       (void) U_SYSCALL(ENGINE_free, "%p", e);
 
-      e = 0;
+      e = U_NULLPTR;
       }
 
    U_RETURN_POINTER(e, ENGINE);
@@ -572,30 +565,30 @@ void UServices::releaseEngine(ENGINE* e, bool bkey)
       {
       U_SYSCALL_VOID(EVP_PKEY_free, "%p", u_pkey);
 
-      u_pkey = 0;
+      u_pkey = U_NULLPTR;
       }
 }
 
-EVP_PKEY* UServices::loadKey(const UString& x, const char* format, bool _private, const char* password, ENGINE* e)
+EVP_PKEY* UServices::loadKey(UString& x, const char* format, bool _private, const char* password, ENGINE* e)
 {
    U_TRACE(0, "UServices::loadKey(%V,%S,%b,%S,%p)", x.rep, format, _private, password, e)
 
    BIO* in;
    UString tmp = x;
-   EVP_PKEY* pkey = 0;
+   EVP_PKEY* pkey = U_NULLPTR;
 
    if (e)
       {
       const char* filename = x.c_str();
    // PW_CB_DATA cb_data   = { password, filename };
 
-      pkey = (EVP_PKEY*) (_private ? U_SYSCALL(ENGINE_load_private_key, "%p,%S,%p,%p", e, filename, 0, 0)   // &cb_data
-                                   : U_SYSCALL(ENGINE_load_public_key,  "%p,%S,%p,%p", e, filename, 0, 0)); // &cb_data
+      pkey = (EVP_PKEY*) (_private ? U_SYSCALL(ENGINE_load_private_key, "%p,%S,%p,%p", e, filename, U_NULLPTR, U_NULLPTR)   // &cb_data
+                                   : U_SYSCALL(ENGINE_load_public_key,  "%p,%S,%p,%p", e, filename, U_NULLPTR, U_NULLPTR)); // &cb_data
 
       goto done;
       }
 
-   if (format == 0) format = (x.isBinary() ? "DER" : "PEM");
+   if (format == U_NULLPTR) format = (x.isBinary() ? "DER" : "PEM");
 
    if (strncmp(format, U_CONSTANT_TO_PARAM("PEM")) == 0 &&
        strncmp(x.data(), U_CONSTANT_TO_PARAM("-----BEGIN RSA PRIVATE KEY-----")) != 0)
@@ -617,10 +610,10 @@ EVP_PKEY* UServices::loadKey(const UString& x, const char* format, bool _private
    in = (BIO*) U_SYSCALL(BIO_new_mem_buf, "%p,%d", U_STRING_TO_PARAM(tmp));
 
    pkey = (EVP_PKEY*) (strncmp(format, U_CONSTANT_TO_PARAM("PEM")) == 0
-                        ? (_private ? U_SYSCALL(PEM_read_bio_PrivateKey, "%p,%p,%p,%p", in, 0, (password ? passwd_cb : 0), (void*)password)
-                                    : U_SYSCALL(PEM_read_bio_PUBKEY,     "%p,%p,%p,%p", in, 0, (password ? passwd_cb : 0), (void*)password))
-                        : (_private ? U_SYSCALL(d2i_PrivateKey_bio,      "%p,%p",       in, 0)
-                                    : U_SYSCALL(d2i_PUBKEY_bio,          "%p,%p",       in, 0)));
+                        ? (_private ? U_SYSCALL(PEM_read_bio_PrivateKey, "%p,%p,%p,%p", in, U_NULLPTR, (password ? passwd_cb : U_NULLPTR), (void*)password)
+                                    : U_SYSCALL(PEM_read_bio_PUBKEY,     "%p,%p,%p,%p", in, U_NULLPTR, (password ? passwd_cb : U_NULLPTR), (void*)password))
+                        : (_private ? U_SYSCALL(d2i_PrivateKey_bio,      "%p,%p",       in, U_NULLPTR)
+                                    : U_SYSCALL(d2i_PUBKEY_bio,          "%p,%p",       in, U_NULLPTR)));
 
    (void) U_SYSCALL(BIO_free, "%p", in);
 
@@ -634,17 +627,17 @@ done:
  * passwd is the corresponding password for the private key
  */
 
-UString UServices::getSignatureValue(int alg, const UString& data, const UString& pkey, const UString& passwd, int base64, ENGINE* e)
+UString UServices::getSignatureValue(int alg, const UString& data, UString& pkey, UString& passwd, int base64, ENGINE* e)
 {
    U_TRACE(0,"UServices::getSignatureValue(%d,%V,%V,%V,%d,%p)", alg, data.rep, pkey.rep, passwd.rep, base64, e)
 
-   u_dgst_sign_init(alg, 0);
+   u_dgst_sign_init(alg, U_NULLPTR);
 
    u_dgst_sign_hash((unsigned char*)U_STRING_TO_PARAM(data));
 
    if (pkey)
       {
-      u_pkey = loadKey(pkey, 0, true, passwd.c_str(), e);
+      u_pkey = loadKey(pkey, U_NULLPTR, true, passwd.c_str(), e);
 
       U_INTERNAL_ASSERT_POINTER(u_pkey)
       }
@@ -653,7 +646,7 @@ UString UServices::getSignatureValue(int alg, const UString& data, const UString
 
    if (base64 == -2)
       {
-      if (u_dgst_sign_finish(0, 0) > 0) output.setConstant((const char*)u_mdValue, u_mdLen);
+      if (u_dgst_sign_finish(U_NULLPTR, 0) > 0) output.setConstant((const char*)u_mdValue, u_mdLen);
       }
    else
       {
@@ -667,13 +660,13 @@ UString UServices::getSignatureValue(int alg, const UString& data, const UString
       {
       U_SYSCALL_VOID(EVP_PKEY_free, "%p", u_pkey);
 
-      u_pkey = 0;
+      u_pkey = U_NULLPTR;
       }
 
    U_RETURN_STRING(output);
 }
 
-bool UServices::verifySignature(int alg, const UString& data, const UString& signature, const UString& pkey, ENGINE* e)
+bool UServices::verifySignature(int alg, const UString& data, const UString& signature, UString& pkey, ENGINE* e)
 {
    U_TRACE(0, "UServices::verifySignature(%d,%V,%V,%V,%p)", alg, data.rep, signature.rep, pkey.rep, e)
 
@@ -683,7 +676,7 @@ bool UServices::verifySignature(int alg, const UString& data, const UString& sig
 
    if (pkey)
       {
-      u_pkey = loadKey(pkey, 0, false, 0, e);
+      u_pkey = loadKey(pkey, U_NULLPTR, false, U_NULLPTR, e);
 
       U_INTERNAL_ASSERT_POINTER(u_pkey)
       }
@@ -695,7 +688,7 @@ bool UServices::verifySignature(int alg, const UString& data, const UString& sig
       {
       U_SYSCALL_VOID(EVP_PKEY_free, "%p", u_pkey);
 
-      u_pkey = 0;
+      u_pkey = U_NULLPTR;
       }
 
    if (result == 1) U_RETURN(true);
@@ -708,9 +701,9 @@ UString UServices::createToken(int alg)
    U_TRACE(0, "UServices::createToken(%d)", alg)
 
    UString output(80U);
-   uint32_t u = u_get_num_random(0);
+   uint32_t u = u_get_num_random();
 
-   u_dgst_init(alg, 0, 0);
+   u_dgst_init(alg, U_NULLPTR, 0);
 
    u_dgst_hash((unsigned char*)&u, sizeof(uint32_t));
 
@@ -722,22 +715,6 @@ UString UServices::createToken(int alg)
 }
 #endif // USE_LIBSSL
 
-void UServices::generateKey(unsigned char* pkey, unsigned char* hexdump)
-{
-   U_TRACE(1, "UServices::generateKey(%p,%p)", pkey, hexdump)
-
-   if (pkey == 0) pkey = key;
-
-#ifdef USE_LIBUUID
-   U_SYSCALL_VOID(uuid_generate, "%p", pkey);
-#else
-   *(uint64_t*) pkey                     = getUniqUID();
-   *(uint64_t*)(pkey + sizeof(uint64_t)) = getUniqUID();
-#endif
-
-   if (hexdump) (void) u_hexdump_encode(pkey, 16, hexdump);
-}
-
 void UServices::generateDigest(int alg, uint32_t keylen, unsigned char* data, uint32_t size, UString& output, int base64)
 {
    U_TRACE(0, "UServices::generateDigest(%d,%u,%.*S,%u,%V,%d)", alg, keylen, size, data, size, output.rep, base64)
@@ -745,23 +722,73 @@ void UServices::generateDigest(int alg, uint32_t keylen, unsigned char* data, ui
 #ifdef USE_LIBSSL
    u_dgst_init(alg, (const char*)key, keylen);
 
+   U_INTERNAL_DUMP("u_hmac_keylen = %u", u_hmac_keylen)
+
    u_dgst_hash(data, size);
 
    if (base64 == -2)
       {
-      (void) u_dgst_finish(0, 0);
+      (void) u_dgst_finish(U_NULLPTR, 0);
 
       output.setConstant((const char*)u_mdValue, u_mdLen);
       }
    else
       {
-      uint32_t bytes_written = u_dgst_finish((unsigned char*)output.pend(), base64);
+      uint32_t sz = output.size(), bytes_written = u_dgst_finish((unsigned char*)output.data()+sz, base64);
 
-      output.size_adjust(output.size() + bytes_written);
+      output.size_adjust(sz + bytes_written);
       }
 
    U_INTERNAL_DUMP("u_mdLen = %d output = %V", u_mdLen, output.rep)
 #endif
+}
+
+bool UServices::setDigestCalcResponse(const UString& ha1, const UString& nc, const UString& nonce, const UString& cnonce, const UString& uri, const UString& user, UString& response)
+{
+   U_TRACE(0, "UServices::setDigestCalcResponse(%V,%V,%V,%V,%V,%V,%p)", ha1.rep, nc.rep, nonce.rep, cnonce.rep, uri.rep, user.rep, &response)
+
+   U_INTERNAL_ASSERT(ha1)
+
+   if (    nc.empty() ||
+          uri.empty() ||
+        nonce.empty() ||
+       cnonce.empty() ||
+         user.empty())
+      {
+      U_WARNING("Invalid Authorization Digest header: nc = %V nonce = %V cnonce = %V uri = %V user = %V", nc.rep, nonce.rep, cnonce.rep, uri.rep, user.rep);
+
+      U_RETURN(false);
+      }
+
+   // ha1 => MD5(user : realm : password)
+
+#ifdef USE_LIBSSL
+   UString  a2(4+1+uri.size()), //     method : uri
+           ha2(33U),            // MD5(method : uri)
+            a3(200U);
+
+   // MD5(method : uri)
+
+   a2.snprintf(U_CONSTANT_TO_PARAM("%.*s:%v"), U_HTTP_METHOD_TO_TRACE, uri.rep);
+
+   generateDigest(U_HASH_MD5, 0, a2, ha2, false);
+
+   U_INTERNAL_DUMP("U_HTTP_METHOD_TO_TRACE = %.*s ha2 = %V", U_HTTP_METHOD_TO_TRACE, ha2.rep)
+
+   // --------------------------------------------------------------------------
+   // MD5(HA1 : nonce : nc : cnonce : qop : HA2)
+   // --------------------------------------------------------------------------
+
+   a3.snprintf(U_CONSTANT_TO_PARAM("%v:%v:%v:%v:" U_HTTP_QOP ":%v"), ha1.rep, nonce.rep, nc.rep, cnonce.rep, ha2.rep);
+
+   generateDigest(U_HASH_MD5, 0, a3, response, false);
+
+   U_INTERNAL_DUMP("response = %V", response.rep)
+
+   U_RETURN(true);
+#endif
+
+   U_RETURN(false);
 }
 
 #define U_HMAC_SIZE  16U                           // MD5 output len

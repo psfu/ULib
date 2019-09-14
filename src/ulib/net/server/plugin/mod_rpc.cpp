@@ -24,38 +24,35 @@ URPCParser* URpcPlugIn::rpc_parser;
 
 URpcPlugIn::~URpcPlugIn()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, URpcPlugIn)
+   U_TRACE_DTOR(0, URpcPlugIn)
 
    if (rpc_parser)
       {
-      delete rpc_parser;
-      delete URPCMethod::encoder;
-      delete URPCObject::dispatcher;
+      U_DELETE(rpc_parser)
+      U_DELETE(URPCMethod::encoder)
+      U_DELETE(URPCObject::dispatcher)
       }
 }
 
 // Server-wide hooks
 
-int URpcPlugIn::handlerConfig(UFileConfig& cfg)
-{
-   U_TRACE(0, "URpcPlugIn::handlerConfig(%p)", &cfg)
-
-   // Perform registration of server RPC method
-
-   U_NEW(URPCParser, rpc_parser, URPCParser);
-
-   URPCObject::loadGenericMethod(&cfg);
-
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
-}
-
-__pure int URpcPlugIn::handlerInit()
+int URpcPlugIn::handlerInit()
 {
    U_TRACE_NO_PARAM(0, "URpcPlugIn::handlerInit()")
 
-   if (rpc_parser) U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   // Perform registration of server RPC method
 
-   U_RETURN(U_PLUGIN_HANDLER_ERROR);
+   if (UServer_Base::pcfg &&
+       UServer_Base::pcfg->searchForObjectStream(U_CONSTANT_TO_PARAM("rpc")))
+      {
+      UServer_Base::pcfg->table.clear();
+
+      U_NEW(URPCParser, rpc_parser, URPCParser);
+
+      URPCObject::loadGenericMethod(UServer_Base::pcfg);
+      }
+
+   U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 }
 
 // Connection-wide hooks
@@ -67,11 +64,9 @@ int URpcPlugIn::handlerREAD()
    if (rpc_parser)
       {
       is_rpc_msg = URPC::readRequest(UServer_Base::csocket); // NB: URPC::resetInfo() it is already called by clearData()...
-
-      if (is_rpc_msg) U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_FINISHED);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 int URpcPlugIn::handlerRequest()
@@ -96,10 +91,14 @@ int URpcPlugIn::handlerRequest()
       if (UServer_Base::isLog()) (void) UClientImage_Base::request_uri->assign(method);
 #  endif
 
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_FINISHED);
+      UClientImage_Base::bnoheader = true;
+
+      UClientImage_Base::setRequestProcessed();
+
+      U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // DEBUG
@@ -117,6 +116,6 @@ const char* URpcPlugIn::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

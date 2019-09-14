@@ -55,7 +55,7 @@ uint32_t UMimeHeader::parse(const char* ptr, uint32_t len)
 
       U_INTERNAL_DUMP("ptr = %.80S", ptr)
 
-      if (ptr == 0) ptr = _end; // we have reached the MIME headers end without line empty...
+      if (ptr == U_NULLPTR) ptr = _end; // we have reached the MIME headers end without line empty...
       else
          {
          len = (ptr - prev);
@@ -88,7 +88,7 @@ uint32_t UMimeHeader::parse(const char* ptr, uint32_t len)
          {
          pkv = (const char*) memchr(prev, ':', _end - prev);
 
-         if (pkv == 0   ||
+         if (pkv == U_NULLPTR ||
              pkv >= ptr ||
              pkv == prev)
             {
@@ -108,7 +108,7 @@ uint32_t UMimeHeader::parse(const char* ptr, uint32_t len)
 
          // Check for duplication of header
 
-         if (containsHeader(key) == false) table.insertAfterFind(key, value);
+         if (containsHeader(key) == false) table.insertAfterFind(value);
          else
             {
             UStringRep* rep = table.elem();
@@ -187,7 +187,7 @@ UString UMimeHeader::getValueAttributeFromKeyValue(const char* name_attr, uint32
          {
          value = name_value[i+1];
 
-         if (value.isQuoted()) value.rep->unQuote();
+         if (value.isQuoted()) value.unQuote();
 
          break;
          }
@@ -229,7 +229,7 @@ bool UMimeHeader::getNames(const UString& cdisposition, UString& name, UString& 
 
             U_INTERNAL_DUMP("name_value[%d] = %V", i+1, name.rep)
 
-            if (name.isQuoted()) name.rep->unQuote();
+            if (name.isQuoted()) name.unQuote();
 
             U_INTERNAL_DUMP("name = %V", name.rep)
             }
@@ -243,7 +243,7 @@ bool UMimeHeader::getNames(const UString& cdisposition, UString& name, UString& 
                {
                result = true;
 
-               if (filename.isQuoted()) filename.rep->unQuote();
+               if (filename.isQuoted()) filename.unQuote();
 
                uint32_t len    = filename.size();
                const char* ptr = filename.data();
@@ -313,9 +313,12 @@ void UMimeHeader::writeHeaders(UString& buffer)
 
    if (table.first())
       {
+      UStringRep* value;
+      const UStringRep* key;
+
       do {
-         const UStringRep* key = table.key();
-         UStringRep* value     = table.elem();
+         key   = table.key();
+         value = table.elem();
 
          tmp.setBuffer(key->size() + 2 + value->size() + 2);
 
@@ -373,9 +376,12 @@ U_EXPORT ostream& operator<<(ostream& os, UMimeHeader& h)
 
    if (h.table.first())
       {
+      UStringRep* value;
+      const UStringRep* key;
+
       do {
-         const UStringRep* key = h.table.key();
-         UStringRep* value     = h.table.elem();
+         key   = h.table.key();
+         value = h.table.elem();
 
          os.write(key->data(), key->size());
          os.write(": ", 2);
@@ -405,7 +411,7 @@ const char* UMimeHeader::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #  endif
 #endif

@@ -458,9 +458,7 @@ static int add_to_zip(int fd, const char* file)
          {
          if (U_ISDOTS(de->d_name)) continue;
 
-         d_namlen = NAMLEN(de);
-
-         (void) u__strncpy(t_ptr, de->d_name, d_namlen);
+         (void) memcpy(t_ptr, de->d_name, (d_namlen = NAMLEN(de)));
 
          t_ptr[d_namlen] = '\0';
 
@@ -804,11 +802,12 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
 {
    unsigned n = 0;
    char* names[1024];
-   int j, file_num = 0;
    unsigned names_len[1024];
+   int j, file_num = 0, f_fd, handle;
 
    U_INTERNAL_TRACE("zip_extract(%s,%p,%p,%p)", zipfile, files, filenames, filenames_len)
 
+#ifndef U_COVERITY_FALSE_POSITIVE
    if (zip_open(zipfile)) return 0; /* open the zipfile */
 
    if (files) while (files[file_num] != 0) ++file_num;
@@ -818,8 +817,8 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
 
    for (;;)
       {
-      int f_fd   = 0,
-          handle = 1; /* by default we'll extract/create the file */
+      f_fd   = 0;
+      handle = 1; /* by default we'll extract/create the file */
 
       U_INTERNAL_ASSERT(n < 1024)
 
@@ -843,14 +842,11 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
             }
          }
 
-      if (handle)
+      if (handle == 0) f_fd = -1;
+      else
          {
          names[n]     = strdup((const char*)filename);
          names_len[n] = fnlen;
-         }
-      else
-         {
-         f_fd = -1;
          }
 
       /**
@@ -859,7 +855,8 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
        * What a pain!
        */
 
-      if (strchr((const char*)filename, '/') != 0 && handle)
+      if (handle &&
+          strchr((const char*)filename, '/') != 0)
          {
          /* Loop through all the directories in the path, (everything w/ a '/') */
 
@@ -903,8 +900,6 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
                   return 0;
                   }
 
-#           ifndef U_COVERITY_FALSE_POSITIVE
-               /* coverity[toctou] */
                if (stat(tmp_buff, &sbuf) < 0)
                   {
                   if (errno != ENOENT)
@@ -916,21 +911,21 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
                      return 0;
                      }
                   }
-               else if (S_ISDIR(sbuf.st_mode))
-                  {
-                  U_INTERNAL_TRACE("Directory exists")
-
-                  continue;
-                  }
                else
                   {
+                  if (S_ISDIR(sbuf.st_mode))
+                     {
+                     U_INTERNAL_TRACE("Directory exists")
+
+                     continue;
+                     }
+
                   U_INTERNAL_TRACE("Hmmm.. %s exists but isn't a directory!", tmp_buff)
 
                   free(tmp_buff);
 
                   return 0;
                   }
-#           endif
                }
             }
 
@@ -960,9 +955,9 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
 
          if (f_fd < 0)
             {
-            U_ERROR("Error extracting ZIP archive - filename: %s", filename);
+            U_WARNING("Error extracting ZIP archive - filename: %s", filename);
 
-         // return 0;
+            return 0;
             }
          }
 
@@ -1002,8 +997,8 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
 
             (void) write(f_fd, rd_buff, rdamt);
 
+             in_a -= rdamt;
             out_a += rdamt;
-            in_a  -= rdamt;
 
             U_INTERNAL_TRACE("%d bytes written", out_a)
             }
@@ -1064,6 +1059,7 @@ unsigned zip_extract(const char* zipfile, const char** files, char*** filenames,
       *filenames = 0;
       *filenames_len = 0;
       }
+#endif
 
    return n;
 }

@@ -35,9 +35,9 @@ public:
 
    UMagic(int flags)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMagic, "%d", flags)
+      U_TRACE_CTOR(0, UMagic, "%d", flags)
 
-      if (magic == 0) (void) init();
+      if (magic == U_NULLPTR) (void) init();
 
       U_INTERNAL_ASSERT_POINTER(magic)
 
@@ -46,7 +46,7 @@ public:
 
    ~UMagic()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UMagic)
+      U_TRACE_DTOR(0, UMagic)
       }
 
    static void clear()
@@ -57,7 +57,7 @@ public:
          {
          U_SYSCALL_VOID(magic_close, "%p", magic);
 
-         magic = 0;
+         magic = U_NULLPTR;
          }
       }
 

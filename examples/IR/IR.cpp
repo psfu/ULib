@@ -46,25 +46,25 @@ IR::~IR()
 {
    U_TRACE(5, "IR::~IR()")
 
-   if (t) delete t;
+   if (t) U_DELETE(t)
 
    if (filter_ext)
       {
-      delete filter_cmd;
-      delete filter_ext;
+      U_DELETE(filter_cmd)
+      U_DELETE(filter_ext)
       }
 
-   if (posting)             delete posting;
-   if (bad_words)           delete bad_words;
-   if (suffix_bad_words)    delete suffix_bad_words;
-   if (suffix_skip_tag_xml) delete suffix_skip_tag_xml;
+   if (posting)             U_DELETE(posting)
+   if (bad_words)           U_DELETE(bad_words)
+   if (suffix_bad_words)    U_DELETE(suffix_bad_words)
+   if (suffix_skip_tag_xml) U_DELETE(suffix_skip_tag_xml)
 }
 
 void IR::setBadWords()
 {
    U_TRACE(5, "IR::setBadWords()")
 
-   if (t == 0) t = new UTokenizer;
+   if (t == U_NULLPTR) t = new UTokenizer;
 
    cfg_skip_tag_xml = cfg[U_STRING_FROM_CONSTANT("SKIP_TAG_XML")];
 
@@ -74,9 +74,7 @@ void IR::setBadWords()
 
    if (cfg_bad_words)
       {
-      U_NEW(UString, bad_words, UString(cfg_bad_words)); 
-
-      u_setPfnMatch(U_DOSMATCH_WITH_OR, UPosting::ignore_case);
+      U_NEW_STRING(bad_words, UString(cfg_bad_words)); 
 
       cfg_bad_words_ext = cfg[U_STRING_FROM_CONSTANT("BAD_WORDS_EXT")];
 
@@ -126,16 +124,16 @@ void IR::parse()
 
    t->setAvoidPunctuation(true);
 
-   bool bad_words_active = bad_words &&
-                           (suffix_bad_words == 0 ||
+   bool bad_words_active = bad_words                      &&
+                           (suffix_bad_words == U_NULLPTR ||
                             suffix_bad_words->find(suffix) != U_NOT_FOUND);
 
    if (suffix_skip_tag_xml) t->setSkipTagXML(suffix_skip_tag_xml->find(suffix) != U_NOT_FOUND);
 
-   while (t->next(*UPosting::word, (bool*)0))
+   while (t->next(*UPosting::word, (bool*)U_NULLPTR))
       {
       if (bad_words_active &&
-          UServices::match(*UPosting::word, *bad_words))
+          UServices::dosMatchWithOR(*UPosting::word, *bad_words, UPosting::ignore_case))
          {
          continue;
          }
@@ -189,7 +187,7 @@ void IR::loadFiles()
 
    if (operation == 3) (void) write(1, U_CONSTANT_TO_PARAM("OK")); // check
 
-   (void) UFile::chdir(0, true);
+   (void) UFile::chdir(U_NULLPTR, true);
 }
 
 void IR::loadFilters()

@@ -36,21 +36,21 @@ public:
 
    UElasticSearchClient() : uri(U_CAPACITY)
       {
-      U_TRACE_REGISTER_OBJECT(0, UElasticSearchClient, "", 0)
+      U_TRACE_CTOR(0, UElasticSearchClient, "")
 
-      client = 0;
+      client = U_NULLPTR;
       }
 
    ~UElasticSearchClient()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UElasticSearchClient)
+      U_TRACE_DTOR(0, UElasticSearchClient)
 
-      if (client) delete client;
+      if (client) U_DELETE(client)
       }
 
    // Connect to ElasticSearch server
 
-   bool connect(const char* host = 0, unsigned int _port = 9200);
+   bool connect(const char* host = U_NULLPTR, unsigned int _port = 9200);
 
    // SERVICES
 
@@ -115,7 +115,7 @@ public:
 
       // send GET(0) request to server and get response
 
-      if (client->sendRequest(0, U_CONSTANT_TO_PARAM("application/json"), 0, 0, U_STRING_TO_PARAM(uri))) U_RETURN(true);
+      if (client->sendRequest(0, U_CONSTANT_TO_PARAM("application/json"), U_NULLPTR, 0, U_STRING_TO_PARAM(uri))) U_RETURN(true);
 
       U_RETURN(false);
       }
@@ -175,7 +175,7 @@ public:
 
       // send DELETE(4) request to server and get response
 
-      if (client->sendRequest(4, U_CONSTANT_TO_PARAM("application/json"), 0, 0, U_STRING_TO_PARAM(uri))) U_RETURN(true);
+      if (client->sendRequest(4, U_CONSTANT_TO_PARAM("application/json"), U_NULLPTR, 0, U_STRING_TO_PARAM(uri))) U_RETURN(true);
 
       U_RETURN(false);
       }

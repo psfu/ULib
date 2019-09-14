@@ -32,7 +32,7 @@
  * persistent connections which can make more effective use of TCP/IP
  */
 
-class UMimeHeader;
+class UHTTP;
 class Application;
 class WiAuthNodog;
 class UServer_Base;
@@ -147,17 +147,17 @@ public:
 
    // ASYNC MODE (it creates a copy of itself, return pid child if parent)
 
-   int sendGETRequestAsync(const UString& _url, bool bqueue, const char* log_msg, int log_fd = -1)
+   int sendGETRequestAsync(const UString& _url, bool bqueue, const char* log_msg, int log_fd)
       { method_num = 0; return sendRequestAsync(_url, bqueue, log_msg, log_fd); }
 
-   int sendPOSTRequestAsync(const UString& _body, const UString& _url, bool bqueue, const char* log_msg, int log_fd = -1)
+   int sendPOSTRequestAsync(const UString& _body, const UString& _url, bool bqueue = false, const char* log_msg = U_NULLPTR, int log_fd = 0)
       { body = _body; method_num = 2; return sendRequestAsync(_url, bqueue, log_msg, log_fd); }
 
    // QUEUE MODE
 
    bool putRequestOnQueue();
 
-   bool sendPost(const UString& url, const UString& pbody,
+   bool sendPOST(const UString& url, const UString& body,
                  const char* content_type     =                 "application/x-www-form-urlencoded",
                  uint32_t    content_type_len = U_CONSTANT_SIZE("application/x-www-form-urlencoded"));
 
@@ -165,7 +165,8 @@ public:
    UString getSetCookie() const   { return setcookie; }
    UString getLastRequest() const { return last_request; }
 
-   bool upload(const UString& url, UFile& file, const char* filename = 0, uint32_t filename_len = 0, int method = 2); // 2 => POST
+   bool uploadByPUT( const UString& url, UFile& file, bool bresume = false);
+   bool uploadByPOST(const UString& url, UFile& file, const char* filename = U_NULLPTR, uint32_t filename_len = 0);
 
    // DEBUG
 
@@ -180,25 +181,25 @@ protected:
    uint32_t method_num;
    bool bFollowRedirects, bproxy;
 
-   static bool server_context_flag;
-   static struct uhttpinfo u_http_info_save;
+   static bool server_context_flag, data_chunked;
 
    bool sendRequestEngine();
-   void parseRequest(uint32_t n = 3);
-   void composeRequest(const char* content_type = 0, uint32_t content_type_len = 0);
+   bool parseRequest(uint32_t n);
    int  sendRequestAsync(const UString& url, bool bqueue, const char* log_msg, int log_fd);
+   void composeRequest(const char* content_type = U_NULLPTR, uint32_t content_type_len = 0);
    bool sendRequest(int method, const char* content_type, uint32_t content_type_len, const char* data, uint32_t data_len, const char* uri, uint32_t uri_len);
 
    // Add the MIME-type headers to the request for HTTP server
 
    static UString wrapRequest(UString* req, const UString& host_port, uint32_t method_num,
-                              const char* uri, uint32_t uri_len, const char* extension, const char* content_type = 0, uint32_t content_type_len = 0);
+                              const char* uri, uint32_t uri_len, const char* extension, const char* content_type = U_NULLPTR, uint32_t content_type_len = 0);
 
    // In response to a HTTP_UNAUTHORISED response from the HTTP server, this function will attempt to generate an Authentication header to satisfy the server
 
    UString getBasicAuthorizationHeader();
-   int     checkResponse(int& redirectCount);
-   bool    createAuthorizationHeader(bool bProxy);
+
+   int  checkResponse(int& redirectCount, const UString& _uri);
+   bool createAuthorizationHeader(bool bProxy, const UString& _uri);
 
    void setAuthorizationHeader(bool bProxy, const UString& headerValue)
       {
@@ -208,18 +209,19 @@ protected:
       else                 requestHeader->setHeader(U_CONSTANT_TO_PARAM("Proxy-Authorization"), headerValue);
       }
 
-    UHttpClient_Base(UFileConfig* _cfg = 0);
+    UHttpClient_Base(UFileConfig* _cfg = U_NULLPTR);
    ~UHttpClient_Base()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UHttpClient_Base)
+      U_TRACE_DTOR(0, UHttpClient_Base)
 
-      delete requestHeader;
-      delete responseHeader;
+      U_DELETE(requestHeader)
+      U_DELETE(responseHeader)
       }
 
 private:
    U_DISALLOW_COPY_AND_ASSIGN(UHttpClient_Base)
 
+   friend class UHTTP;
    friend class USSLSocket;
    friend class Application;
    friend class WiAuthNodog;
@@ -236,14 +238,14 @@ public:
 
    UHttpClient(UFileConfig* _cfg) : UHttpClient_Base(_cfg)
       {
-      U_TRACE_REGISTER_OBJECT(0, UHttpClient, "%p", _cfg)
+      U_TRACE_CTOR(0, UHttpClient, "%p", _cfg)
 
       U_NEW(Socket, UClient_Base::socket, Socket(UClient_Base::bIPv6));
       }
 
    ~UHttpClient()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UHttpClient)
+      U_TRACE_DTOR(0, UHttpClient)
       }
 
    // DEBUG
@@ -262,14 +264,14 @@ public:
 
    UHttpClient(UFileConfig* _cfg) : UHttpClient_Base(_cfg)
       {
-      U_TRACE_REGISTER_OBJECT(0, UHttpClient<USSLSocket>, "%p", _cfg)
+      U_TRACE_CTOR(0, UHttpClient<USSLSocket>, "%p", _cfg)
 
       UClient_Base::setSSLContext();
       }
 
    ~UHttpClient()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UHttpClient<USSLSocket>)
+      U_TRACE_DTOR(0, UHttpClient<USSLSocket>)
       }
 
    // DEBUG

@@ -11,6 +11,7 @@
 //
 // ============================================================================
 
+#include <ulib/utility/uhttp.h>
 #include <ulib/net/server/client_image.h>
 #include <ulib/net/server/server_plugin.h>
 #include <ulib/net/server/plugin/mod_echo.h>
@@ -29,7 +30,7 @@ U_CREAT_FUNC(server_plugin_echo, UEchoPlugIn)
 
 UEchoPlugIn::~UEchoPlugIn()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UEchoPlugIn)
+   U_TRACE_DTOR(0, UEchoPlugIn)
 }
 
 // Server-wide hooks
@@ -40,15 +41,17 @@ int UEchoPlugIn::handlerRequest()
 {
    U_TRACE_NO_PARAM(0, "UEchoPlugIn::handlerRequest()")
 
-   UClientImage_Base::body->clear();
+   U_ASSERT(UClientImage_Base::body->empty())
 
-   UClientImage_Base::setNoHeaderForResponse();
+   UClientImage_Base::bnoheader = true;
 
-#ifndef U_ECHO_RESPONSE_FOR_TEST
-   *UClientImage_Base::wbuffer = *UClientImage_Base::request;
-#else
+   UClientImage_Base::setRequestProcessed();
+
+#ifdef U_ECHO_RESPONSE_FOR_TEST
    (void) UClientImage_Base::wbuffer->assign(U_CONSTANT_TO_PARAM(U_ECHO_RESPONSE_FOR_TEST));
+#else
+   *UClientImage_Base::wbuffer = UClientImage_Base::request->substr(0U, U_http_info.endHeader) + *UHTTP::body;
 #endif
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_FINISHED);
+   U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 }

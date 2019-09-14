@@ -24,7 +24,10 @@
 /* IPv4 and IPv6                                                             */
 /*****************************************************************************/
 
-// ------------------------------------
+// struct in_addr {
+//    uint32_t s_addr; /* address in network byte order */
+// };
+//
 // struct sockaddr {
 //    u_short sa_family;
 //    char    sa_data[14];
@@ -44,11 +47,6 @@
 //    struct in6_addr sin6_addr;       /* IPv6 address */
 //    uint32_t        sin6_scope_id;   /* IPv6 scope-id */
 // };
-//
-// struct in_addr {
-//    u_long s_addr;
-// };
-// ------------------------------------
 
 class U_NO_EXPORT SocketAddress {
 public:
@@ -84,12 +82,12 @@ public:
       (void)bIPv6;
 #  endif
          {
-         addr.psaIP4Addr.sin_addr.s_addr = htonl(INADDR_ANY);
          addr.psaIP4Addr.sin_family      = AF_INET;
+         addr.psaIP4Addr.sin_addr.s_addr = htonl(INADDR_ANY);
          }
       }
 
-   // Sets the Address part of the sockaddr structure. First we set the family
+   // Sets the dddress part of the sockaddr structure. First we set the family
    // type based on the family type of the provided IP Address. We then make a
    // binary copy of the address stored in cAddr to the appropriate field in the
    // sockaddr structure
@@ -102,10 +100,14 @@ public:
 
 #  ifdef ENABLE_IPV6
       if (addr.psaGeneric.sa_family == AF_INET6)
+         {
          U_MEMCPY(&(addr.psaIP6Addr.sin6_addr), cAddr.get_in_addr(), cAddr.getInAddrLength());
-      else
+
+         return;
+         }
 #  endif
-         U_MEMCPY(&(addr.psaIP4Addr.sin_addr),  cAddr.get_in_addr(), cAddr.getInAddrLength());
+
+      U_MEMCPY(&(addr.psaIP4Addr.sin_addr), cAddr.get_in_addr(), cAddr.getInAddrLength());
       }
 
    // Sets the port number part of the sockaddr structure. Based on the value
@@ -115,23 +117,33 @@ public:
    void setPortNumber(int iPortNumber)
       {
 #  ifdef ENABLE_IPV6
-      if (addr.psaGeneric.sa_family == AF_INET6) addr.psaIP6Addr.sin6_port = htons(iPortNumber);
-      else
+      if (addr.psaGeneric.sa_family == AF_INET6)
+         {
+         addr.psaIP6Addr.sin6_port = htons(iPortNumber);
+
+         return;
+         }
 #  endif
-                                                 addr.psaIP4Addr.sin_port  = htons(iPortNumber);
+
+      addr.psaIP4Addr.sin_port = htons(iPortNumber);
       }
 
-   // Returns the Address stored in the sockaddr structure. Based on the family
+   // Returns the address stored in the sockaddr structure. Based on the family
    // type value, we set the IPAddress parameter equal to either the sin6_addr
    // or sin_addr fields. If the family type is not set, we assume it is IPv4
 
    void getIPAddress(UIPAddress& cAddr)
       {
 #  ifdef ENABLE_IPV6
-      if (addr.psaGeneric.sa_family == AF_INET6) cAddr.setAddress(&(addr.psaIP6Addr.sin6_addr), true);
-      else
+      if (addr.psaGeneric.sa_family == AF_INET6)
+         {
+         cAddr.setAddress(&(addr.psaIP6Addr.sin6_addr), true);
+
+         return;
+         }
 #  endif
-                                                 cAddr.setAddress(&(addr.psaIP4Addr.sin_addr), false);
+
+      cAddr.setAddress(&(addr.psaIP4Addr.sin_addr.s_addr), false);
       }
 
    // Returns the port number stored in the sockaddr structure. Based on the
@@ -142,9 +154,9 @@ public:
       {
 #  ifdef ENABLE_IPV6
       if (addr.psaGeneric.sa_family == AF_INET6) return ntohs(addr.psaIP6Addr.sin6_port);
-      else
 #  endif                                  
-                                                 return ntohs(addr.psaIP4Addr.sin_port);
+
+      return ntohs(addr.psaIP4Addr.sin_port);
       }
 
    // Returns the size of the structure pointed to by the (sockaddr*) cast.
@@ -156,13 +168,18 @@ public:
       {
 #  ifdef ENABLE_IPV6
       if (addr.psaGeneric.sa_family == AF_INET6) return sizeof(sockaddr_in6);
-      else
 #  endif
-                                                 return sizeof(sockaddr_in);
+
+      return sizeof(sockaddr_in);
       }
 
    operator       sockaddr*()       { return &(addr.psaGeneric); }
    operator const sockaddr*() const { return &(addr.psaGeneric); }
+
+#ifdef USE_FSTACK
+   operator       struct linux_sockaddr*()       { return (      struct linux_sockaddr*)&(addr.psaGeneric); }
+   operator const struct linux_sockaddr*() const { return (const struct linux_sockaddr*)&(addr.psaGeneric); }
+#endif
 
 #if defined(HAVE_GETADDRINFO) || defined(HAVE_GETNAMEINFO)
    /*
@@ -185,12 +202,16 @@ public:
 
 #  ifdef ENABLE_IPV6
       if (addr.psaGeneric.sa_family == AF_INET6)
+         {
          U_MEMCPY(&(addr.psaIP6Addr.sin6_addr),
                          &((struct sockaddr_in6*)result->ai_addr)->sin6_addr, sizeof(in6_addr));
-      else
+
+         return;
+         }
 #  endif
-         U_MEMCPY(&(addr.psaIP4Addr.sin_addr),
-                         &((struct sockaddr_in*)result->ai_addr)->sin_addr,   sizeof(in_addr));
+
+      U_MEMCPY(&(addr.psaIP4Addr.sin_addr),
+               &((struct sockaddr_in*)result->ai_addr)->sin_addr, sizeof(in_addr));
       }
 #endif
 
@@ -202,5 +223,4 @@ private:
 
    friend class USocket;
 };
-
 #endif

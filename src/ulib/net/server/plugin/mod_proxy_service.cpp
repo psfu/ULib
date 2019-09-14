@@ -22,25 +22,26 @@
 
 UModProxyService::UModProxyService()
 {
-   U_TRACE_REGISTER_OBJECT(0, UModProxyService, "")
+   U_TRACE_CTOR(0, UModProxyService, "")
 
-   command = 0;
-   vremote_address = 0;
+   command = U_NULLPTR;
+   vremote_address = U_NULLPTR;
    port = method_mask = 0;
    request_cert = follow_redirects = response_client = websocket = false;
 }
 
 UModProxyService::~UModProxyService()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UModProxyService)
+   U_TRACE_DTOR(0, UModProxyService)
 
-   if (vremote_address) delete vremote_address;
+   if (vremote_address) U_DELETE(vremote_address)
 }
 
 bool UModProxyService::loadConfig(UFileConfig& cfg)
 {
    U_TRACE(0, "UModProxyService::loadConfig(%p)", &cfg)
 
+   // -----------------------------------------------------------------------------------------------------------------------------------
    // proxy - plugin parameters
    // -----------------------------------------------------------------------------------------------------------------------------------
    // ERROR MESSAGE        Allows you to tell clients about what type of error
@@ -73,7 +74,7 @@ bool UModProxyService::loadConfig(UFileConfig& cfg)
 
       if (n)
          {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::vmsg_error, 0)
+         U_INTERNAL_ASSERT_EQUALS(UHTTP::vmsg_error, U_NULLPTR)
 
          U_NEW(UVector<UString>, UHTTP::vmsg_error, UVector<UString>(n));
 
@@ -81,7 +82,7 @@ bool UModProxyService::loadConfig(UFileConfig& cfg)
             {
             UStringRep* r = tmp.UVector<UStringRep*>::at(i);
 
-            UHTTP::vmsg_error->UVector<UStringRep*>::push(r);
+            UHTTP::vmsg_error->UVector<UStringRep*>::push_back(r);
             }
 
          tmp.clear();
@@ -181,8 +182,9 @@ loop:       switch (u_get_unalignedp32(msk))
 
             if (UIPAllow::parseMask(x, *(service->vremote_address)) == 0)
                {
-               delete service->vremote_address;
-                      service->vremote_address = 0;
+               U_DELETE(service->vremote_address)
+
+               service->vremote_address = U_NULLPTR;
                }
             }
 
@@ -225,13 +227,13 @@ __pure UModProxyService* UModProxyService::findService(const char* host, uint32_
 
          U_INTERNAL_DUMP("host_mask = %V method_mask = %B", elem->host_mask.rep, elem->method_mask)
 
-         if ((elem->method_mask     == 0    || (U_http_method_type & elem->method_mask) != 0)                                                  &&
-             (elem->vremote_address == 0    || UClientImage_Base::isAllowed(*(elem->vremote_address)))                                         &&
-             (elem->host_mask.empty()       || (host_len && UServices::dosMatchWithOR(host, host_len, U_STRING_TO_PARAM(elem->host_mask), 0))) &&
+         if ((elem->method_mask     == 0         || (U_http_method_type & elem->method_mask) != 0)                                                   &&
+             (elem->vremote_address == U_NULLPTR || UClientImage_Base::isAllowed(*(elem->vremote_address)))                                          &&
+             (elem->host_mask.empty()            || (host_len && UServices::dosMatchWithOR(host, host_len, U_STRING_TO_PARAM(elem->host_mask),  0))) &&
 #           ifdef USE_LIBPCRE
-             (elem->uri_mask.getPcre() == 0 || elem->uri_mask.search(uri, uri_len)))
+             (elem->uri_mask.getPcre() == U_NULLPTR || elem->uri_mask.search(uri, uri_len)))
 #           else
-             (elem->uri_mask.empty()        || UServices::dosMatchWithOR(uri, uri_len, U_STRING_TO_PARAM(elem->uri_mask), 0)))
+             (elem->uri_mask.empty()                || UServices::dosMatchWithOR(uri, uri_len, U_STRING_TO_PARAM(elem->uri_mask), 0)))
 #           endif
             {
             U_RETURN_POINTER(elem, UModProxyService);
@@ -239,7 +241,7 @@ __pure UModProxyService* UModProxyService::findService(const char* host, uint32_
          }
       }
 
-   U_RETURN_POINTER(0, UModProxyService);
+   U_RETURN_POINTER(U_NULLPTR, UModProxyService);
 }
 
 #define U_SRV_ADDR_FMT "%v/%.*s:%u.srv"
@@ -274,7 +276,7 @@ UString UModProxyService::getServer() const
 
    if (*ptr == '~')
       {
-      UString dir = UStringExt::expandPath(server, 0), pathname(U_CAPACITY);
+      UString dir = UStringExt::expandPath(server, U_NULLPTR), pathname(U_CAPACITY);
 
       U_INTERNAL_ASSERT(dir)
 
@@ -375,6 +377,6 @@ const char* UModProxyService::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

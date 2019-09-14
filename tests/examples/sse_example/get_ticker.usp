@@ -1,0 +1,12 @@
+<!--#sse:10
+static double price = 1.2;
+
+if (UServer_Base::isSSEStarted())
+	{
+	price = price + (double)rand() / RAND_MAX * 2.0 - 1;
+
+	if (price <= 0.01) price = 0.01;
+	}
+
+sse_data = UStringExt::numberToString(price);
+-->

@@ -51,6 +51,7 @@
 
 vPF               UDirWalk::call_if_up;
 vPF               UDirWalk::call_internal;
+int               UDirWalk::filter_flags;
 bool              UDirWalk::brecurse;     // recurse subdirectories ?
 bool              UDirWalk::bfollowlinks; // recurse subdirectories when are symbolic link ?
 bool              UDirWalk::tree_root;
@@ -65,38 +66,38 @@ UTree<UString>*   UDirWalk::ptree;
 UVector<UString>* UDirWalk::pvector;
 UHashMap<UFile*>* UDirWalk::cache_file_for_compare;
 
-void UDirWalk::ctor(const UString* dir, const char* _filter, uint32_t _filter_len)
+void UDirWalk::ctor(const UString* dir, const char* _filter, uint32_t _filter_len, int _filter_flags)
 {
-   U_TRACE(0, "UDirWalk::ctor(%p,%.*S,%u)", dir, _filter_len, _filter, _filter_len)
+   U_TRACE(0, "UDirWalk::ctor(%p,%.*S,%u,%d)", dir, _filter_len, _filter, _filter_len, _filter_flags)
 
    max               = 128U * 1024U;
    depth             = -1; // starting recursion depth
    pthis             = this;
-   sort_by           = 0;
-   call_if_up        = 0;
-   call_internal     = 0;
-   suffix_file_type  = 0;
+   sort_by           = U_NULLPTR;
+   call_if_up        = U_NULLPTR;
+   call_internal     = U_NULLPTR;
+   suffix_file_type  = U_NULLPTR;
    call_if_directory =
    brecurse          =
    is_directory      = false;
 
-   if (dir) (void) setDirectory(*dir, _filter, _filter_len);
+   if (dir) (void) setDirectory(*dir, _filter, _filter_len, _filter_flags);
    else
       {
       pathname[0]             = '.';
       pathname[(pathlen = 1)] = '\0';
 
-      setFilter(_filter, _filter_len);
+      setFilter(_filter, _filter_len, _filter_flags);
       }
 }
 
-bool UDirWalk::setDirectory(const UString& dir, const char* _filter, uint32_t _filter_len)
+bool UDirWalk::setDirectory(const char* dir, uint32_t dlen, const char* _filter, uint32_t _filter_len, int _filter_flags)
 {
-   U_TRACE(0, "UDirWalk::setDirectory(%V,%.*S,%u)", dir.rep, _filter_len, _filter, _filter_len)
+   U_TRACE(0, "UDirWalk::setDirectory(%.*S,%u,%.*S,%u,%d)", dlen, dir, dlen, _filter_len, _filter, _filter_len, _filter_flags)
 
-   pthis->pathlen = dir.size();
+   pthis->pathlen = dlen;
 
-   const char* pdir = u_getPathRelativ(dir.data(), &(pthis->pathlen));
+   const char* pdir = u_getPathRelativ(dir, &(pthis->pathlen));
 
    U_INTERNAL_ASSERT_MAJOR(pthis->pathlen, 0)
 
@@ -111,7 +112,7 @@ bool UDirWalk::setDirectory(const UString& dir, const char* _filter, uint32_t _f
       U_RETURN(false);
       }
 
-   setFilter(_filter, _filter_len);
+   setFilter(_filter, _filter_len, _filter_flags);
 
    U_RETURN(true);
 }
@@ -161,9 +162,11 @@ U_NO_EXPORT bool UDirWalk::isFile()
 
    const char* ptr = u_getsuffix(pathname+1, pathlen-1);
 
+   U_INTERNAL_DUMP("ptr = %S pathname(%u) = %.*S", ptr, pathlen, pathlen, pathname)
+
    if (ptr++)
       {
-      if (u_get_mimetype(ptr, 0)) U_RETURN(true);
+      if (u_get_mimetype(ptr, U_NULLPTR)) U_RETURN(true);
 
       if (suffix_file_type)
          {
@@ -171,7 +174,7 @@ U_NO_EXPORT bool UDirWalk::isFile()
           
          U_INTERNAL_DUMP("suffix(%u) = %.*S", len, len, ptr)
 
-         if (UServices::dosMatchWithOR(ptr, len, U_STRING_TO_PARAM(*suffix_file_type), 0)) U_RETURN(true);
+         if (UServices::dosMatchWithOR(ptr, len, U_STRING_TO_PARAM(*suffix_file_type))) U_RETURN(true);
          }
       }
 
@@ -184,7 +187,7 @@ void UDirWalk::recurse()
 
    U_INTERNAL_ASSERT_EQUALS(pthis, this)
 
-   DIR* dirp = 0;
+   DIR* dirp = U_NULLPTR;
 
    ++depth; // if this has been called, then we're one level lower
 
@@ -210,7 +213,7 @@ found_file:
       dirp = (DIR*) U_SYSCALL(opendir, "%S", U_PATH_CONV(pathname));
       }
 
-   is_directory = (dirp != 0);
+   is_directory = (dirp != U_NULLPTR);
 
    if (is_directory == false ||
        call_if_directory)
@@ -271,15 +274,15 @@ found_file:
          {
          uint32_t d_namlen = NAMLEN(dp);
 
-         U_INTERNAL_DUMP("d_namlen = %u d_name = %.*s filter(%u) = %.*S sort_by = %p",
-                          d_namlen,     d_namlen, dp->d_name, filter_len, filter_len, filter, sort_by)
+         U_INTERNAL_DUMP("d_namlen = %u d_name = %.*s filter(%u) = %.*S filter_flags = %d sort_by = %p",
+                          d_namlen,     d_namlen, dp->d_name, filter_len, filter_len, filter, filter_flags, sort_by)
 
          if (U_ISDOTS(dp->d_name)) continue;
 
          if (filter_len == 0 ||
-             UServices::dosMatchWithOR(dp->d_name, d_namlen, filter, filter_len, u_pfn_flags))
+             UServices::dosMatchWithOR(dp->d_name, d_namlen, filter, filter_len, filter_flags))
             {
-            if (sort_by == 0) prepareForCallingRecurse(dp->d_name, d_namlen, U_DT_TYPE);
+            if (sort_by == U_NULLPTR) prepareForCallingRecurse(dp->d_name, d_namlen, U_DT_TYPE);
             else
                {
                // NB: check if we must do reallocation...
@@ -440,7 +443,7 @@ U_NO_EXPORT void UDirWalk::vectorPush()
 
    UString str((void*)ptr, len);
 
-   pvector->push(str);
+   pvector->push_back(str);
 }
 
 U_NO_EXPORT int UDirWalk::cmp_modify(const void* a, const void* b)
@@ -451,7 +454,7 @@ U_NO_EXPORT int UDirWalk::cmp_modify(const void* a, const void* b)
 
    UFile* ra = (*cache_file_for_compare)[*(UStringRep**)a];
 
-   if (ra == 0)
+   if (ra == U_NULLPTR)
       {
       UString key(*(UStringRep**)a);
 
@@ -459,12 +462,14 @@ U_NO_EXPORT int UDirWalk::cmp_modify(const void* a, const void* b)
 
       (void) ra->stat();
 
-      cache_file_for_compare->insertAfterFind(key, ra);
+      cache_file_for_compare->hold(); // NB: we increases the reference string...
+
+      cache_file_for_compare->insertAfterFind(ra);
       }
 
    UFile* rb = (*cache_file_for_compare)[*(UStringRep**)b];
 
-   if (rb == 0)
+   if (rb == U_NULLPTR)
       {
       UString key(*(UStringRep**)b);
 
@@ -472,7 +477,9 @@ U_NO_EXPORT int UDirWalk::cmp_modify(const void* a, const void* b)
 
       (void) rb->stat();
 
-      cache_file_for_compare->insertAfterFind(key, rb);
+      cache_file_for_compare->hold(); // NB: we increases the reference string...
+
+      cache_file_for_compare->insertAfterFind(rb);
       }
 
    U_INTERNAL_DUMP("ra = %.*S", U_FILE_TO_TRACE(*ra))
@@ -503,7 +510,7 @@ uint32_t UDirWalk::walk(UVector<UString>& vec, qcompare compare_obj)
       if (compare_obj == U_ALPHABETIC_SORT) vec.sort();
       else
          {
-         if (cache_file_for_compare == 0) U_NEW(UHashMap<UFile*>, cache_file_for_compare, UHashMap<UFile*>);
+         if (cache_file_for_compare == U_NULLPTR) U_NEW(UHashMap<UFile*>, cache_file_for_compare, UHashMap<UFile*>);
 
          uint32_t sz       = n + (15 * (n / 100)) + 32,
                   capacity = cache_file_for_compare->capacity();
@@ -587,6 +594,7 @@ const char* UDirWalk::dump(bool reset) const
                   << "call_if_up                " << (void*)call_if_up       << '\n'
                   << "filter_len                " << filter_len              << '\n'
                   << "bfollowlinks              " << bfollowlinks            << '\n'
+                  << "filter_flags              " << filter_flags            << '\n'
                   << "is_directory              " << is_directory            << '\n'
                   << "call_if_directory         " << call_if_directory       << '\n'
                   << "suffix_file_type (UString " << (void*)suffix_file_type << ')';
@@ -598,6 +606,6 @@ const char* UDirWalk::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

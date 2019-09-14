@@ -19,9 +19,9 @@
 
 URPCParser::URPCParser(UVector<UString>* arg)
 {
-   U_TRACE_REGISTER_OBJECT(0, URPCParser, "%p", arg)
+   U_TRACE_CTOR(0, URPCParser, "%p", arg)
 
-   if (arg == 0)
+   if (arg == U_NULLPTR)
       {
       URPC::allocate();
 
@@ -43,8 +43,9 @@ void URPCParser::clearData()
 
    if (URPCMethod::pFault)
       {
-      delete URPCMethod::pFault;
-             URPCMethod::pFault = 0;
+      U_DELETE(URPCMethod::pFault)
+
+      URPCMethod::pFault = U_NULLPTR;
       }
 }
 
@@ -56,13 +57,11 @@ UString URPCParser::processMessage(const UString& msg, URPCObject& object, bool&
 
    envelope.methodName = msg;
 
-   UString retval = object.processMessage(envelope, bContainsFault);
-
-   retval.duplicate(); // NB: is needed to permit to call clearData() after...
+   UString retval = object.processMessage(envelope, bContainsFault), x = U_STRING_COPY(retval); // NB: is needed to permit to call clearData() after...
 
    clearData(); // to avoid DEAD OF SOURCE STRING WITH CHILD ALIVE...
 
-   U_RETURN_STRING(retval);
+   U_RETURN_STRING(x);
 }
 
 // DEBUG
@@ -79,6 +78,6 @@ const char* URPCParser::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

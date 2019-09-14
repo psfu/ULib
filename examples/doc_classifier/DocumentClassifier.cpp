@@ -29,9 +29,9 @@ void DocumentClassifier::addCertificate(UCertificate* cert)
 
    cert->duplicate();
 
-   if (vtcert == 0) U_NEW(UVector<TreeCertificate*>, vtcert, UVector<TreeCertificate*>);
+   if (vtcert == U_NULLPTR) U_NEW(UVector<TreeCertificate*>, vtcert, UVector<TreeCertificate*>);
 
-   if (ca == 0)
+   if (ca == U_NULLPTR)
       {
       UCertificate* ca_root;
       unsigned num_tree = vtcert->size();
@@ -96,18 +96,18 @@ int DocumentClassifier::verifyCallback(int ok, X509_STORE_CTX* ctx) // callback
 
    U_NEW(UCertificate, cert, UCertificate(UServices::verify_current_cert));
 
-   ok = cert->verify(0, certsVerificationTime);
+   ok = cert->verify(U_NULLPTR, certsVerificationTime);
 
    if (ok) addCertificate(cert);
    else
       {
       verify_result = false;
 
-      if (label_ko == 0) U_NEW(UString, label_ko, UString(4000U));
+      if (label_ko == U_NULLPTR) U_NEW_STRING(label_ko, UString(4000U));
 
       // TO DO
 
-      delete cert;
+      U_DELETE(cert)
       }
 
    // end time verification
@@ -192,13 +192,13 @@ void DocumentClassifier::printLabel(UTree<UCertificate*>* pnode)
    UString issuer = cert->getIssuerForLDAP();
 
    inner.snprintf(U_CONSTANT_TO_PARAM("<certificate issuer=\"%.*s\" serial=\"%d\" filename=\"%s\">\n"),
-                  U_STRING_TO_TRACE(issuer), cert->getSerialNumber(), u_basename(filename.data()));
+                  U_STRING_TO_TRACE(issuer), cert->getSerialNumber(), u_basename(U_STRING_TO_PARAM(filename)));
 
    buffer += inner;
 
    if (crl_exist)
       {
-      inner.snprintf(U_CONSTANT_TO_PARAM("<crl filename=\"%s\"/>\n"), u_basename(crl.data()));
+      inner.snprintf(U_CONSTANT_TO_PARAM("<crl filename=\"%s\"/>\n"), u_basename(U_STRING_TO_PARAM(crl)));
 
       buffer += inner;
       }
@@ -255,7 +255,7 @@ DocumentClassifier::DocumentClassifier(const char* pathfile) : description(4000U
    U_TRACE(5, "DocumentClassifier::DocumentClassifier(%S)", pathfile)
 
    binary  = false;
-   content = UFile::contentOf(UString(pathfile));
+   content = UFile::contentOf(UString(pathfile, strlen(pathfile)));
 
    if (content.empty())
       {
@@ -291,7 +291,7 @@ DocumentClassifier::DocumentClassifier(const char* pathfile) : description(4000U
 
 Element::~Element()
 {
-   U_TRACE_UNREGISTER_OBJECT(5, Element)
+   U_TRACE_DTOR(5, Element)
 
    if (node_to_delete)
       {
@@ -306,18 +306,18 @@ Element::~Element()
          UTree<Element*>* zip = node->pop();
          UTree<Element*>* xml = node->pop();
 
-         delete xml;
+         U_DELETE(xml)
 
-         delete ts->pop();
-         delete ts;
+         U_DELETE(ts->pop())
+         U_DELETE(ts)
 
          (void) zip->pop();
-         delete zip;
+         U_DELETE(zip)
 
-         delete node;
+         U_DELETE(node)
          }
 
-      delete node_to_delete;
+      U_DELETE(node_to_delete)
       }
 }
 
@@ -360,7 +360,7 @@ void DocumentClassifier::classifyEntry(void* e, void* pnode)
 
          child->setParent(parent);
 
-         if (parent == 0) ptree = child;
+         if (parent == U_NULLPTR) ptree = child;
          else
             {
             parent->replace(0, child);
@@ -765,7 +765,7 @@ const char* Element::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 #endif

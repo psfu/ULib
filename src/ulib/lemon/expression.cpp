@@ -318,8 +318,8 @@ typedef struct yyParser yyParser;
 
 #ifndef NDEBUG
 #include <stdio.h>
-static FILE *yyTraceFILE = 0;
-static char *yyTracePrompt = 0;
+static FILE *yyTraceFILE = U_NULLPTR;
+static char *yyTracePrompt = U_NULLPTR;
 #endif /* NDEBUG */
 
 #ifndef NDEBUG
@@ -343,8 +343,8 @@ static char *yyTracePrompt = 0;
 void expressionParserTrace(FILE *TraceFILE, char *zTracePrompt){
   yyTraceFILE = TraceFILE;
   yyTracePrompt = zTracePrompt;
-  if( yyTraceFILE==0 ) yyTracePrompt = 0;
-  else if( yyTracePrompt==0 ) yyTraceFILE = 0;
+  if( yyTraceFILE==U_NULLPTR ) yyTracePrompt = U_NULLPTR;
+  else if( yyTracePrompt==U_NULLPTR ) yyTraceFILE = U_NULLPTR;
 }
 #endif /* NDEBUG */
 
@@ -531,7 +531,7 @@ static void yy_destructor(
 #line 34 "expression.y"
 
    U_TRACE(0, "::params_destructor(%p)", (yypminor->yy49))
-   delete (yypminor->yy49);
+   U_DELETE((yypminor->yy49))
 
 #line 538 "expression.c"
 }
@@ -575,7 +575,7 @@ void expressionParserFree(
 ){
   yyParser *pParser = (yyParser*)p;
 #ifndef YYPARSEFREENEVERNULL
-  if( pParser==0 ) return;
+  if( pParser==U_NULLPTR ) return;
 #endif
   while( pParser->yyidx>=0 ) yy_pop_parser_stack(pParser);
 #if YYSTACKDEPTH<=0
@@ -868,7 +868,7 @@ static void yy_reduce(
 
    *result = *yymsp[0].minor.yy3;
 
-   delete yymsp[0].minor.yy3;
+   U_DELETE(yymsp[0].minor.yy3)
 }
 #line 875 "expression.c"
         break;
@@ -887,11 +887,11 @@ static void yy_reduce(
          bo = (yymsp[-1].minor.yy12 == U_TK_AND ? Bbo && Dbo
                              : Bbo || Dbo);
 
-   if (bo) U_NEW(UString, yygotominor.yy3, UString(*UString::str_true));
-   else    U_NEW(UString, yygotominor.yy3, UString);
+   if (bo) U_NEW_STRING(yygotominor.yy3, UString(*UString::str_true))
+   else    U_NEW_STRING(yygotominor.yy3, UString)
 
-   delete yymsp[-2].minor.yy3;
-   delete yymsp[0].minor.yy3;
+   U_DELETE(yymsp[-2].minor.yy3)
+   U_DELETE(yymsp[0].minor.yy3)
 
    U_INTERNAL_DUMP("yygotominor.yy3 = %V", yygotominor.yy3->rep)
 }
@@ -941,11 +941,11 @@ static void yy_reduce(
 
    U_INTERNAL_DUMP("bo = %b cmp = %d", bo, cmp)
 
-   if (bo) U_NEW(UString, yygotominor.yy3, UString(*UString::str_true));
-   else    U_NEW(UString, yygotominor.yy3, UString);
+   if (bo) U_NEW_STRING(yygotominor.yy3, UString(*UString::str_true))
+   else    U_NEW_STRING(yygotominor.yy3, UString)
 
-   delete yymsp[-2].minor.yy3;
-   delete yymsp[0].minor.yy3;
+   U_DELETE(yymsp[-2].minor.yy3)
+   U_DELETE(yymsp[0].minor.yy3)
 
    U_INTERNAL_DUMP("yygotominor.yy3 = %V", yygotominor.yy3->rep)
 }
@@ -992,11 +992,11 @@ static void yy_reduce(
 
    U_INTERNAL_DUMP("bo = %b cmp = %d", bo, cmp)
 
-   if (bo) U_NEW(UString, yygotominor.yy3, UString(*UString::str_true));
-   else    U_NEW(UString, yygotominor.yy3, UString);
+   if (bo) U_NEW_STRING(yygotominor.yy3, UString(*UString::str_true))
+   else    U_NEW_STRING(yygotominor.yy3, UString)
 
-   delete yymsp[-2].minor.yy3;
-   delete yymsp[0].minor.yy3;
+   U_DELETE(yymsp[-2].minor.yy3)
+   U_DELETE(yymsp[0].minor.yy3)
 
    U_INTERNAL_DUMP("yygotominor.yy3 = %V", yygotominor.yy3->rep)
 }
@@ -1032,10 +1032,10 @@ static void yy_reduce(
          lo = (yymsp[-1].minor.yy12 == U_TK_PLUS ? Blo + Dlo
                               : Blo - Dlo);
 
-   U_NEW(UString, yygotominor.yy3, UString(UStringExt::stringFromNumber(lo)));
+   U_NEW_STRING(yygotominor.yy3, UString(UStringExt::stringFromNumber(lo)))
 
-   delete yymsp[-2].minor.yy3;
-   delete yymsp[0].minor.yy3;
+   U_DELETE(yymsp[-2].minor.yy3)
+   U_DELETE(yymsp[0].minor.yy3)
 
    U_INTERNAL_DUMP("yygotominor.yy3 = %V", yygotominor.yy3->rep)
 }
@@ -1070,18 +1070,18 @@ static void yy_reduce(
         Blo = yymsp[-2].minor.yy3->strtol(),
         Dlo = yymsp[0].minor.yy3->strtol();
 
-   if (Dlo == 0) U_NEW(UString, yygotominor.yy3, UString(*UString::str_zero));
+   if (Dlo == 0) U_NEW_STRING(yygotominor.yy3, UString(*UString::str_zero))
    else
       {
       lo = (yymsp[-1].minor.yy12 == U_TK_MULT ? Blo * Dlo :
             yymsp[-1].minor.yy12 == U_TK_DIV  ? Blo / Dlo :
                              Blo % Dlo);
 
-      U_NEW(UString, yygotominor.yy3, UString(UStringExt::stringFromNumber(lo)));
+      U_NEW_STRING(yygotominor.yy3, UString(UStringExt::stringFromNumber(lo)))
       }
 
-   delete yymsp[-2].minor.yy3;
-   delete yymsp[0].minor.yy3;
+   U_DELETE(yymsp[-2].minor.yy3)
+   U_DELETE(yymsp[0].minor.yy3)
 
    U_INTERNAL_DUMP("yygotominor.yy3 = %V", yygotominor.yy3->rep)
 }
@@ -1111,10 +1111,10 @@ static void yy_reduce(
 
    U_INTERNAL_ASSERT_POINTER(yymsp[0].minor.yy3)
 
-   if (yymsp[0].minor.yy3->empty()) U_NEW(UString, yygotominor.yy3, UString(*UString::str_true));
-   else            U_NEW(UString, yygotominor.yy3, UString);
+   if (yymsp[0].minor.yy3->empty()) U_NEW_STRING(yygotominor.yy3, UString(*UString::str_true))
+   else                             U_NEW_STRING(yygotominor.yy3, UString)
 
-   delete yymsp[0].minor.yy3;
+   U_DELETE(yymsp[0].minor.yy3)
 
    U_INTERNAL_DUMP("yygotominor.yy3 = %V", yygotominor.yy3->rep)
   yy_destructor(yypParser,18,&yymsp[-1].minor);
@@ -1196,7 +1196,7 @@ static void yy_reduce(
     yygotominor.yy3  =  yymsp[-1].minor.yy3;
    *yygotominor.yy3 += *yymsp[0].minor.yy0;
 
-   delete yymsp[0].minor.yy0;
+   U_DELETE(yymsp[0].minor.yy0)
 
    U_INTERNAL_DUMP("yygotominor.yy3 = %V", yygotominor.yy3->rep)
 }
@@ -1371,15 +1371,15 @@ static void yy_reduce(
    lPFv addr = (lPFv) U_SYSCALL(dlsym, "%p,%S", RTLD_DEFAULT, yymsp[-2].minor.yy0->c_str());
 #endif
 
-   if (addr == 0) U_NEW(UString, yygotominor.yy3, UString);
+   if (addr == U_NULLPTR) U_NEW_STRING(yygotominor.yy3, UString)
    else
       {
       lo = (*addr)();
 
-      U_NEW(UString, yygotominor.yy3, UString(UStringExt::stringFromNumber(lo)));
+      U_NEW_STRING(yygotominor.yy3, UString(UStringExt::stringFromNumber(lo)))
       }
 
-   delete yymsp[-2].minor.yy0;
+   U_DELETE(yymsp[-2].minor.yy0)
   yy_destructor(yypParser,20,&yymsp[-1].minor);
   yy_destructor(yypParser,21,&yymsp[0].minor);
 }
@@ -1402,17 +1402,17 @@ static void yy_reduce(
    lPFll addr = (lPFll) U_SYSCALL(dlsym, "%p,%S", RTLD_DEFAULT, yymsp[-3].minor.yy0->c_str());
 #endif
 
-   if (addr == 0) U_NEW(UString, yygotominor.yy3, UString);
+   if (addr == U_NULLPTR) U_NEW_STRING(yygotominor.yy3, UString)
    else
       {
       lo0 = (*yymsp[-1].minor.yy49)[0].strtol();
       lo1 = (*yymsp[-1].minor.yy49)[1].strtol();
       lo  = (*addr)(lo0, lo1);
       
-      U_NEW(UString, yygotominor.yy3, UString(UStringExt::stringFromNumber(lo)));
+      U_NEW_STRING(yygotominor.yy3, UString(UStringExt::stringFromNumber(lo)));
       }
 
-   delete yymsp[-3].minor.yy0;
+   U_DELETE(yymsp[-3].minor.yy0)
   yy_destructor(yypParser,20,&yymsp[-2].minor);
   yy_destructor(yypParser,21,&yymsp[0].minor);
 }
@@ -1431,7 +1431,7 @@ static void yy_reduce(
 
    yygotominor.yy49->push_back(*yymsp[0].minor.yy0);
 
-   delete yymsp[0].minor.yy0;
+   U_DELETE(yymsp[0].minor.yy0)
 }
 #line 1438 "expression.c"
         break;
@@ -1449,7 +1449,7 @@ static void yy_reduce(
 
    yygotominor.yy49 = yymsp[-2].minor.yy49;
 
-   delete yymsp[0].minor.yy0;
+   U_DELETE(yymsp[0].minor.yy0)
   yy_destructor(yypParser,23,&yymsp[-1].minor);
 }
 #line 1457 "expression.c"

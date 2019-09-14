@@ -42,28 +42,28 @@ RETSIGTYPE UStreamPlugIn::handlerForSigTERM(int signo)
 
 UStreamPlugIn::UStreamPlugIn()
 {
-   U_TRACE_REGISTER_OBJECT(0, UStreamPlugIn, "")
+   U_TRACE_CTOR(0, UStreamPlugIn, "")
 
-   U_NEW(UString, uri_path,     UString);
-   U_NEW(UString, content_type, UString);
+   U_NEW_STRING(uri_path,     UString);
+   U_NEW_STRING(content_type, UString);
 }
 
 UStreamPlugIn::~UStreamPlugIn()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UStreamPlugIn)
+   U_TRACE_DTOR(0, UStreamPlugIn)
 
-   delete uri_path;
-   delete content_type;
+   U_DELETE(uri_path)
+   U_DELETE(content_type)
 
    if (command)
       {
-                delete command;
-      if (rbuf) delete rbuf;
+                U_DELETE(command)
+      if (rbuf) U_DELETE(rbuf)
 
       if (pid != -1) UProcess::kill(pid, SIGTERM);
       }
 
-   if (metadata) delete metadata;
+   if (metadata) U_DELETE(metadata)
 }
 
 // Server-wide hooks
@@ -72,6 +72,7 @@ int UStreamPlugIn::handlerConfig(UFileConfig& cfg)
 {
    U_TRACE(0, "UStreamPlugIn::handlerConfig(%p)", &cfg)
 
+   // ------------------------------------------------------------------------------------------------------------------------
    // stream - plugin parameters
    // ------------------------------------------------------------------------------------------------------------------------
    // URI_PATH     specifies the local part of the URL path at which you would like the content to appear (Ex. /my/video.mjpeg)
@@ -82,21 +83,16 @@ int UStreamPlugIn::handlerConfig(UFileConfig& cfg)
    // ENVIRONMENT  environment for command to execute
    // ------------------------------------------------------------------------------------------------------------------------
 
-   if (cfg.loadTable())
-      {
-      UString x = cfg.at(U_CONSTANT_TO_PARAM("METADATA"));
+   UString x = cfg.at(U_CONSTANT_TO_PARAM("METADATA"));
 
-      if (x) U_NEW(UString, metadata, UString(x));
+   if (x) U_NEW_STRING(metadata, UString(x))
 
-      *uri_path     = cfg.at(U_CONSTANT_TO_PARAM("URI_PATH"));
-      *content_type = cfg.at(U_CONSTANT_TO_PARAM("CONTENT_TYPE"));
+   *uri_path     = cfg.at(U_CONSTANT_TO_PARAM("URI_PATH"));
+   *content_type = cfg.at(U_CONSTANT_TO_PARAM("CONTENT_TYPE"));
 
-      command = UServer_Base::loadConfigCommand();
+   command = UServer_Base::loadConfigCommand();
 
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
-      }
-
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 }
 
 int UStreamPlugIn::handlerInit()
@@ -105,20 +101,19 @@ int UStreamPlugIn::handlerInit()
 
    static int fd_stderr;
 
-   if (command == 0) U_RETURN(U_PLUGIN_HANDLER_ERROR);
+   if (command == U_NULLPTR) U_RETURN(U_PLUGIN_HANDLER_ERROR);
 
    if (fd_stderr == 0) fd_stderr = UServices::getDevNull("/tmp/UStreamPlugIn.err");
 
-   bool result = command->execute(0, (UString*)-1, -1, fd_stderr);
+   bool result = command->execute(U_NULLPTR, (UString*)-1, -1, fd_stderr);
 
-#ifndef U_LOG_DISABLE
-   UServer_Base::logCommandMsgError(command->getCommand(), true);
-#endif
+   U_SRV_LOG_CMD_MSG_ERR(*command, false);
 
    if (result == false)
       {
-      delete command;
-             command = 0;
+      U_DELETE(command)
+
+      command = U_NULLPTR;
 
       U_RETURN(U_PLUGIN_HANDLER_ERROR);
       }
@@ -127,7 +122,7 @@ int UStreamPlugIn::handlerInit()
 
    (void) content_type->append(U_CONSTANT_TO_PARAM(U_CRLF));
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 int UStreamPlugIn::handlerRun()
@@ -153,7 +148,7 @@ int UStreamPlugIn::handlerRun()
       UProcess::setProcessGroup(pid, pgid);
       */
 
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+      U_RETURN(U_PLUGIN_HANDLER_OK);
       }
 
    if (proc.child())
@@ -175,7 +170,7 @@ int UStreamPlugIn::handlerRun()
       handlerForSigTERM(SIGTERM);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // Connection-wide hooks
@@ -184,11 +179,9 @@ int UStreamPlugIn::handlerRequest()
 {
    U_TRACE_NO_PARAM(0, "UStreamPlugIn::handlerRequest()")
 
-   if (U_HTTP_URI_EQUAL(*uri_path) == false) U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   if (U_HTTP_URI_EQUAL(*uri_path) == false) U_RETURN(U_PLUGIN_HANDLER_OK);
 
-   U_http_info.nResponseCode = HTTP_OK;
-
-   UHTTP::setResponse(*content_type, 0);
+   UHTTP::setResponse(*content_type, U_NULLPTR);
 
    UClientImage_Base::setCloseConnection();
 
@@ -205,7 +198,7 @@ int UStreamPlugIn::handlerRequest()
 
             rbuf->close(readd);
 
-            U_RETURN(U_PLUGIN_HANDLER_ERROR);
+            U_RETURN(U_PLUGIN_HANDLER_OK);
             }
 
          UTimeVal to_sleep(0L, 10 * 1000L);
@@ -224,7 +217,7 @@ int UStreamPlugIn::handlerRequest()
          }
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 }
 
 // DEBUG
@@ -245,6 +238,6 @@ const char* UStreamPlugIn::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

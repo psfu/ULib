@@ -40,12 +40,12 @@ bool UGeoIPPlugIn::setCountryCode()
 {
    U_TRACE_NO_PARAM(1, "UGeoIPPlugIn::setCountryCode()")
 
-   gir = 0;
-   region = 0;
-   domain_name = 0;
+   gir = U_NULLPTR;
+   region = U_NULLPTR;
+   domain_name = U_NULLPTR;
    netspeed = country_id = 0;
    bGEOIP_CITY_EDITION_REV1 = false;
-   country_code = country_name = org = 0;
+   country_code = country_name = org = U_NULLPTR;
 
    ipnum = U_SYSCALL(_GeoIP_lookupaddress, "%s", UServer_Base::client_address);
 
@@ -134,14 +134,14 @@ bool UGeoIPPlugIn::checkCountryForbidden()
 
 UGeoIPPlugIn::UGeoIPPlugIn()
 {
-   U_TRACE_REGISTER_OBJECT(0, UGeoIPPlugIn, "")
+   U_TRACE_CTOR(0, UGeoIPPlugIn, "")
 }
 
 UGeoIPPlugIn::~UGeoIPPlugIn()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UGeoIPPlugIn)
+   U_TRACE_DTOR(0, UGeoIPPlugIn)
 
-   if (country_forbidden_mask) delete country_forbidden_mask;
+   if (country_forbidden_mask) U_DELETE(country_forbidden_mask)
 
    for (uint32_t i = 0; i < NUM_DB_TYPES; ++i) if (gi[i]) U_SYSCALL_VOID(GeoIP_delete, "%p", gi[i]);
 }
@@ -156,19 +156,16 @@ int UGeoIPPlugIn::handlerConfig(UFileConfig& cfg)
    // COUNTRY_FORBIDDEN_MASK  mask (DOS regexp) of GEOIP country code that give forbidden access
    // ------------------------------------------------------------------------------------------
 
-   if (cfg.loadTable())
+   UString x = cfg.at(U_CONSTANT_TO_PARAM("COUNTRY_FORBIDDEN_MASK"));
+
+   if (x)
       {
-      UString x = cfg.at(U_CONSTANT_TO_PARAM("COUNTRY_FORBIDDEN_MASK"));
+      U_NEW_STRING(country_forbidden_mask, UString(x));
 
-      if (x)
-         {
-         U_NEW(UString, country_forbidden_mask, UString(x));
-
-         U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
-         }
+      U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 int UGeoIPPlugIn::handlerInit()
@@ -187,7 +184,7 @@ int UGeoIPPlugIn::handlerInit()
          {
          gi[i] = (GeoIP*) U_SYSCALL(GeoIP_open_type, "%d,%d", i, GEOIP_STANDARD);
 
-         if (gi[i] == 0)
+         if (gi[i] == U_NULLPTR)
             {
             U_SRV_LOG("WARNING: %s not available, skipping...", GeoIPDBDescription[i]);
             }
@@ -202,7 +199,7 @@ int UGeoIPPlugIn::handlerInit()
          }
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // Connection-wide hooks
@@ -220,7 +217,7 @@ int UGeoIPPlugIn::handlerREAD()
       U_RETURN(U_PLUGIN_HANDLER_ERROR);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 int UGeoIPPlugIn::handlerRequest()
@@ -268,7 +265,7 @@ int UGeoIPPlugIn::handlerRequest()
          gir->postal_code);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // DEBUG
@@ -286,6 +283,6 @@ const char* UGeoIPPlugIn::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

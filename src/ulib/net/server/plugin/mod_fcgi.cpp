@@ -152,14 +152,14 @@ UClient_Base* UFCGIPlugIn::connection;
 
 UFCGIPlugIn::UFCGIPlugIn()
 {
-   U_TRACE_REGISTER_OBJECT(0, UFCGIPlugIn, "")
+   U_TRACE_CTOR(0, UFCGIPlugIn, "")
 }
 
 UFCGIPlugIn::~UFCGIPlugIn()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UFCGIPlugIn)
+   U_TRACE_DTOR(0, UFCGIPlugIn)
 
-   if (connection) delete connection;
+   if (connection) U_DELETE(connection)
 }
 
 // Server-wide hooks
@@ -183,24 +183,19 @@ int UFCGIPlugIn::handlerConfig(UFileConfig& cfg)
    // LOG_FILE       location for file log (use server log if exist)
    // ------------------------------------------------------------------------------------------
 
-   if (cfg.loadTable())
-      {
-      UClient_Base::cfg = &cfg;
+   UClient_Base::pcfg = &cfg;
 
-      U_NEW(UClient_Base, connection, UClient_Base(&cfg));
+   U_NEW(UClient_Base, connection, UClient_Base(&cfg));
 
-      UString x = cfg.at(U_CONSTANT_TO_PARAM("FCGI_URI_MASK"));
+   UString x = cfg.at(U_CONSTANT_TO_PARAM("FCGI_URI_MASK"));
 
-      U_INTERNAL_ASSERT_EQUALS(UHTTP::fcgi_uri_mask,0)
+   U_INTERNAL_ASSERT_EQUALS(UHTTP::fcgi_uri_mask, U_NULLPTR)
 
-      if (x) U_NEW(UString, UHTTP::fcgi_uri_mask, UString(x));
+   if (x) U_NEW_STRING(UHTTP::fcgi_uri_mask, UString(x))
 
-      fcgi_keep_conn = cfg.readBoolean(U_CONSTANT_TO_PARAM("CGI_KEEP_CONN"));
+   fcgi_keep_conn = cfg.readBoolean(U_CONSTANT_TO_PARAM("CGI_KEEP_CONN"));
 
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
-      }
-
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 }
 
 int UFCGIPlugIn::handlerInit()
@@ -215,8 +210,8 @@ int UFCGIPlugIn::handlerInit()
 
       U_NEW(UTCPSocket, connection->socket, UTCPSocket(connection->bIPv6));
 #  else
-      if (connection->port) U_NEW(UTCPSocket,  connection->socket, UTCPSocket(connection->bIPv6));
-      else                  U_NEW(UUnixSocket, connection->socket, UUnixSocket);
+      if (connection->port) U_NEW(UTCPSocket,  connection->socket, UTCPSocket(connection->bIPv6))
+      else                  U_NEW(UUnixSocket, connection->socket, UUnixSocket)
 #  endif
 
       if (connection->connect())
@@ -230,22 +225,25 @@ int UFCGIPlugIn::handlerInit()
 #     else
          // NB: FCGI is NOT a static page...
 
-         if (UHTTP::valias == 0) U_NEW(UVector<UString>, UHTTP::valias, UVector<UString>(2U));
+         if (UHTTP::valias == U_NULLPTR) U_NEW(UVector<UString>, UHTTP::valias, UVector<UString>(2U))
 
          UHTTP::valias->push_back(*UHTTP::fcgi_uri_mask);
          UHTTP::valias->push_back(*UString::str_nostat);
 
          environment_type = (UHTTP::fcgi_uri_mask->equal(U_CONSTANT_TO_PARAM("*.php")) ? U_PHP : U_CGI);
 
-         U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+         U_RETURN(U_PLUGIN_HANDLER_OK);
 #     endif
          }
 
-      delete connection;
-             connection = 0;
+      U_DELETE(connection)
+
+     connection = U_NULLPTR;
+
+      U_RETURN(U_PLUGIN_HANDLER_ERROR);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_ERROR);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // Connection-wide hooks
@@ -276,7 +274,7 @@ int UFCGIPlugIn::handlerRequest()
 
       if (UHTTP::getCGIEnvironment(environment, environment_type) == false) U_RETURN(U_PLUGIN_HANDLER_ERROR);
 
-      n = u_split(U_STRING_TO_PARAM(environment), envp, 0);
+      n = u_split(U_STRING_TO_PARAM(environment), envp, U_NULLPTR);
 
       U_INTERNAL_ASSERT_MINOR(n, 128)
 
@@ -335,9 +333,9 @@ int UFCGIPlugIn::handlerRequest()
 
       // maybe we have some data to put on stdin of cgi process (POST)
 
-      U_INTERNAL_DUMP("UClientImage_Base::body(%u) = %V", UClientImage_Base::body->size(), UClientImage_Base::body->rep)
+      U_INTERNAL_DUMP("UHTTP::body(%u) = %V", UHTTP::body->size(), UHTTP::body->rep)
 
-      size = UClientImage_Base::body->size();
+      size = UHTTP::body->size();
 
       if (size)
          {
@@ -354,7 +352,7 @@ int UFCGIPlugIn::handlerRequest()
 
       if (size)
          {
-         (void) request.append(*UClientImage_Base::body);
+         (void) request.append(*UHTTP::body);
 
          fill_FCGIBeginRequest(FCGI_STDIN, 0);
 
@@ -369,7 +367,7 @@ int UFCGIPlugIn::handlerRequest()
          {
          UHTTP::setInternalError();
 
-         U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+         U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
          }
 
       if (fcgi_keep_conn == false)
@@ -448,20 +446,20 @@ int UFCGIPlugIn::handlerRequest()
                   {
                   U_INTERNAL_ASSERT_EQUALS(pos + clength, connection->response.size())
 
-                  if (UHTTP::processCGIOutput(false, false)) UClientImage_Base::setRequestProcessed();
-                  else                                       UHTTP::setInternalError();
+                  if (UHTTP::processCGIOutput(false, false) == false) UHTTP::setInternalError();
 
                   goto end;
                   }
                }
-            // NB: lack of break is intentional...
 
-            // not implemented
+            /* FALL THRU */
 
             case FCGI_UNKNOWN_TYPE:
             case FCGI_GET_VALUES_RESULT:
             default:
                {
+               // not implemented
+
                UHTTP::setInternalError();
 
                goto end;
@@ -487,10 +485,10 @@ end:  connection->clearData();
          connection->close();
          }
 
-      U_RETURN(U_PLUGIN_HANDLER_GO_ON | U_PLUGIN_HANDLER_PROCESSED);
+      U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // DEBUG
@@ -508,6 +506,6 @@ const char* UFCGIPlugIn::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

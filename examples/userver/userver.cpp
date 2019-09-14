@@ -5,14 +5,17 @@
 #ifdef U_SSL_SOCKET
 #  include <ulib/ssl/net/sslsocket.h>
 #  define Server UServer<USSLSocket>
-#elif defined(U_TCP_SOCKET)
-#  include <ulib/net/tcpsocket.h>
-#  define Server UServer<UTCPSocket>
+#elif defined(U_UDP_SOCKET)
+#  include <ulib/net/udpsocket.h>
+#  define Server UServer<UUDPSocket>
 #elif defined(U_UNIX_SOCKET)
 #  include <ulib/net/unixsocket.h>
 #  define Server UServer<UUnixSocket>
+#elif defined(U_TCP_SOCKET)
+#  include <ulib/net/tcpsocket.h>
+#  define Server UServer<UTCPSocket>
 #else
-#  error "you must define the socket type (U_SSL_SOCKET | U_TCP_SOCKET | U_UNIX_SOCKET)"
+#  error "you must define the socket type (U_SSL_SOCKET | U_TCP_SOCKET | U_UNIX_SOCKET | U_UDP_SOCKET)"
 #endif
 
 #include <ulib/net/server/server.h>
@@ -35,14 +38,14 @@ public:
       {
       U_TRACE(5, "Application::Application()")
 
-      server = 0;
+      server = U_NULLPTR;
       }
 
    ~Application()
       {
       U_TRACE(5, "Application::~Application()")
 
-      delete server;
+      U_DELETE(server)
       }
 
    void run(int argc, char* argv[], char* env[])
@@ -53,11 +56,9 @@ public:
 
       // manage options
 
-      UString cfg_str;
-
       if (UApplication::isOptions()) cfg_str = opt['c'];
 
-      // manage file configuration
+      // argpmanage file configuration
 
       if (cfg_str.empty()) cfg_str = U_STRING_FROM_CONSTANT(U_SYSCONFDIR "/userver.cfg");
 
@@ -80,7 +81,13 @@ public:
       //
       // LISTEN_BACKLOG             max number of ready to be delivered connections to accept()
       // SET_REALTIME_PRIORITY      flag indicating that the preforked processes will be scheduled under the real-time policies SCHED_FIFO
+      //
+      // CLIENT_THRESHOLD           min number of clients to active polling
       // CLIENT_FOR_PARALLELIZATION minum number of clients to active parallelization 
+      //
+      // LOAD_BALANCE_CLUSTER           list of comma separated IP address (IPADDR[/MASK]) to define the load balance cluster
+      // LOAD_BALANCE_DEVICE_NETWORK    network interface name of cluster of physical server
+      // LOAD_BALANCE_LOADAVG_THRESHOLD system load threshold to proxies the request on other userver on the network cluster ([0-9].[0-9])
       //
       // PID_FILE       write main process pid on file indicated
       // WELCOME_MSG    message of welcome to send initially to client connected
@@ -111,21 +118,67 @@ public:
       // PREFORK_CHILD  number of child server processes created at startup ( 0 - serialize, no forking
       //                                                                      1 - classic, forking after accept client)
       //                                                                     >1 - pool of process serialize plus monitoring process)
+      //argp
+      // CRASH_COUNT         this is the threshold for the number of crash of child server processes
+      // CRASH_EMAIL_NOTIFY  the email address to send a message whenever the number of crash > CRASH_COUNT
+      // ---------------------------------------------------------------------------------------------------------------------------------------
+      // This directive are for evasive action in the event of an HTTP DoS or DDoS attack or brute force attack
+      // ---------------------------------------------------------------------------------------------------------------------------------------
+      // DOS_PAGE_COUNT      this is the threshold for the number of requests for the same page (or URI) per page interval
+      // DOS_PAGE_INTERVAL   the interval for the page count threshold; defaults to 1 second intervals
+      // DOS_SITE_COUNT      this is the threshold for the total number of requests for any object by the same client per site interval
+      // DOS_SITE_INTERVAL   the interval for the site count threshold; defaults to 1 second intervals
+      // DOS_BLOCKING_PERIOD the blocking period is the amount of time (in seconds) that a client will be blocked for if they are added to the blocking list (defaults to 10)
+      // DOS_WHITE_LIST      list of comma separated IP addresses of trusted clients can be whitelisted to insure they are never denied (IPADDR[/MASK])
+      // DOS_EMAIL_NOTIFY    the email address to send a message whenever an IP address becomes blacklisted
+      // DOS_SYSTEM_COMMAND  the system command specified will be executed whenever an IP address becomes blacklisted. Use %.*s to denote the IP address of the blacklisted IP 
+      // DOS_LOGFILE         the file to write DOS event
       // ---------------------------------------------------------------------------------------------------------------------------------------
 
-#  ifdef U_SSL_SOCKET
+#  if defined(U_SSL_SOCKET)
       UServer_Base::bssl = true;
+#  elif defined(U_UDP_SOCKET)
+      UServer_Base::budp = true;
 #  elif defined(U_UNIX_SOCKET)
       UServer_Base::bipc = true;
+#  elif defined(USE_FSTACK)
+      UString x = cfg.at(U_CONSTANT_TO_PARAM("FSTACK_ARG"));
+
+      if (x.empty())
+         {
+         if (UFile::access("config.ini", R_OK) == false)
+            {
+            U_ERROR("file ./config.ini is missing, exiting...");
+            }
+
+         x = UString((void*)U_CONSTANT_TO_PARAM("-c config.ini -p 0 -t auto"));
+         }
+
+      const char* argp[10];
+      uint32_t n = u_split(U_STRING_TO_PARAM(x), (char**)argp+1, U_NULLPTR);
+
+      argp[0] = PACKAGE;
+
+      if (U_FF_SYSCALL(init, "%u,%p", n+1, (char* const*)argp)) // NB: load and parse ./config.ini
+       {
+       U_ERROR("Sorry, ff_init() failed, exiting...");
+       }
 #  endif
+
       server = new Server(&cfg);
 
-      server->run();
+#if defined(USE_FSTACK) && !defined(U_SSL_SOCKET) && !defined(U_UDP_SOCKET) && !defined(U_UNIX_SOCKET)
+      U_FF_SYSCALL_VOID(run, "%p,%p", UServer_Base::ff_run, U_NULLPTR);
+#  else
+      UServer_Base::run();
+#  endif
       }
 
 private:
    Server* server;
-   UFileConfig cfg; // NB: we put this here to avoid unnecessary destructor at runtime...
+   // NB: we put this here to avoid unnecessary destructor at runtime...
+   UString cfg_str;
+   UFileConfig cfg;
 
 #ifndef U_COVERITY_FALSE_POSITIVE
    U_DISALLOW_COPY_AND_ASSIGN(Application)

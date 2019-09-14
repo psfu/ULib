@@ -25,6 +25,10 @@
 #  if defined(U_LINUX) && !defined(SO_INCOMING_CPU)
 #     define SO_INCOMING_CPU 49
 #  endif
+#  ifdef USE_FSTACK
+#     include <ff_api.h>
+#     define sockaddr linux_sockaddr
+#  endif
 #endif
 
 #ifndef SOL_TCP
@@ -59,8 +63,10 @@ class UFile;
 class UHTTP;
 class UHTTP2;
 class UNotifier;
+class UWebSocket;
 class USocketExt;
 class UFtpClient;
+class UTimeThread;
 class UClient_Base;
 class UServer_Base;
 class SocketAddress;
@@ -101,14 +107,20 @@ public:
       SK_SSL_ACTIVE = 0x010
    };
 
-            USocket(bool bSocketIsIPv6 = false);
-   virtual ~USocket();
+   USocket(bool bSocketIsIPv6 = false, int fd = -1);
+
+   virtual ~USocket()
+      {
+      U_TRACE_DTOR(0, USocket)
+
+      if (isOpen()) _close_socket();
+      }
 
    int getFd() const
 #ifdef _MSWINDOWS_
-      { return fh; }
+   { return fh; }
 #else
-      { return iSockDesc; }
+   { return iSockDesc; }
 #endif
 
    bool isOpen() const      { return (iSockDesc != -1); }
@@ -149,7 +161,7 @@ public:
       {
       U_TRACE(1, "USocket::socket(%d,%d,%d)", domain, type, protocol)
 
-      int fd = U_SYSCALL(socket, "%d,%d,%d", domain, type, protocol);
+      int fd = U_FF_SYSCALL(socket, "%d,%d,%d", domain, type, protocol);
 
       U_RETURN(fd);
       }
@@ -228,7 +240,7 @@ public:
 
       U_INTERNAL_ASSERT(isOpen())
 
-      if (U_SYSCALL(getsockopt, "%d,%d,%d,%p,%p", getFd(), iCodeLevel, iOptionName, CAST(pOptionData), (socklen_t*)&iDataLength) == 0) U_RETURN(true);
+      if (U_FF_SYSCALL(getsockopt, "%d,%d,%d,%p,%p", getFd(), iCodeLevel, iOptionName, CAST(pOptionData), (socklen_t*)&iDataLength) == 0) U_RETURN(true);
 
       U_RETURN(false);
       }
@@ -245,7 +257,7 @@ public:
 
       U_INTERNAL_ASSERT(isOpen())
 
-      if (U_SYSCALL(setsockopt, "%d,%d,%d,%p,%u", getFd(), iCodeLevel, iOptionName, CAST(pOptionData), iDataLength) == 0) U_RETURN(true);
+      if (U_FF_SYSCALL(setsockopt, "%d,%d,%d,%p,%u", getFd(), iCodeLevel, iOptionName, CAST(pOptionData), iDataLength) == 0) U_RETURN(true);
 
       U_RETURN(false);
       }
@@ -283,7 +295,7 @@ public:
     */
 
    void reusePort(int flags);
-   bool setServer(unsigned int port, UString* localAddress = 0);
+   bool setServer(unsigned int port, void* localAddress = U_NULLPTR);
 
    /**
     * This method is called to accept a new pending connection on the server socket.
@@ -299,10 +311,27 @@ public:
 
    void setLocal();
 
-   UString getMacAddress(const char* device);
+   UIPAddress& localIPAddress() __pure
+      {
+      U_TRACE_NO_PARAM(0, "USocket::localIPAddress()")
 
-   UIPAddress&  localIPAddress()  __pure;
-   unsigned int localPortNumber() __pure;
+      U_CHECK_MEMORY
+
+      U_INTERNAL_ASSERT(isLocalSet())
+
+      return cLocalAddress;
+      }
+
+   unsigned int localPortNumber() __pure
+      {
+      U_TRACE_NO_PARAM(0, "USocket::localPortNumber()")
+
+      U_CHECK_MEMORY
+
+      U_INTERNAL_ASSERT(isLocalSet())
+
+      U_RETURN(iLocalPort);
+      }
 
    const char* getLocalInfo()
       {
@@ -339,6 +368,15 @@ public:
       U_CHECK_MEMORY
 
       return cRemoteAddress;
+      }
+
+   in_addr_t getClientAddress()
+      {
+      U_TRACE_NO_PARAM(0, "USocket::getClientAddress()")
+
+      U_CHECK_MEMORY
+
+      return cRemoteAddress.getInAddr();
       }
 
    /**
@@ -399,17 +437,23 @@ public:
 
       U_INTERNAL_ASSERT(isOpen())
 
-      if (U_SYSCALL(shutdown, "%d,%d", getFd(), how) == 0) U_RETURN(true);
+      if (U_FF_SYSCALL(shutdown, "%d,%d", getFd(), how) == 0) U_RETURN(true);
 
       U_RETURN(false);
       }
 
-   void          close();
+   void close()
+      {
+      U_TRACE_NO_PARAM(0, "USocket::close()")
+
+      close_socket();
+
+      iState = CLOSE;
+      }
+
    void abortive_close() /* Abort connection */
       {
       U_TRACE_NO_PARAM(0, "USocket::abortive_close()")
-
-      U_INTERNAL_ASSERT(isOpen())
 
       setTcpLingerOff();
 
@@ -475,7 +519,7 @@ public:
       U_TRACE_NO_PARAM(0, "USocket::setTcpDeferAccept()")
 
 #  if defined(TCP_DEFER_ACCEPT) && defined(U_LINUX)
-      (void) setSockOpt(SOL_TCP, TCP_DEFER_ACCEPT, (const int[]){ 1 });
+      (void) setSockOpt(SOL_TCP, TCP_DEFER_ACCEPT, (const int[]){ 10 });
 #  endif
       }
 
@@ -483,11 +527,11 @@ public:
       {
       U_TRACE_NO_PARAM(0, "USocket::setTcpFastOpen()")
 
-#  if !defined(U_SERVER_CAPTIVE_PORTAL) && defined(U_LINUX) // && LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+#  if defined(U_LINUX) && (!defined(U_SERVER_CAPTIVE_PORTAL) || defined(ENABLE_THREAD)) // && LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
 #    ifndef TCP_FASTOPEN
 #    define TCP_FASTOPEN 23 /* Enable FastOpen on listeners */
 #    endif
-      (void) setSockOpt(SOL_TCP, TCP_FASTOPEN, (const int[]){ 5 });
+      (void) setSockOpt(SOL_TCP, TCP_FASTOPEN, (const int[]){ 4096 });
 #  endif
       }
 
@@ -545,8 +589,27 @@ public:
     * @param timeoutMS the specified timeout value, in milliseconds. A zero value indicates no timeout, i.e. an infinite wait
     */
 
-   bool setTimeoutRCV(uint32_t timeoutMS = U_TIMEOUT_MS);
-   bool setTimeoutSND(uint32_t timeoutMS = U_TIMEOUT_MS);
+   bool setTimeoutRCV(uint32_t timeoutMS = U_TIMEOUT_MS)
+      {
+      U_TRACE(0, "USocket::setTimeoutRCV(%u)", timeoutMS)
+
+#  ifdef SO_RCVTIMEO
+      if (setTimeout(SO_RCVTIMEO, U_TIMEOUT_MS)) U_RETURN(true);
+#  endif
+
+      U_RETURN(false);
+      }
+
+   bool setTimeoutSND(uint32_t timeoutMS = U_TIMEOUT_MS)
+      {
+      U_TRACE(0, "USocket::setTimeoutSND(%u)", timeoutMS)
+
+#  ifdef SO_SNDTIMEO
+      if (setTimeout(SO_SNDTIMEO, U_TIMEOUT_MS)) U_RETURN(true);
+#  endif
+
+      U_RETURN(false);
+      }
 
    /**
     * The recvfrom() function is called with the proper parameters, params is placed for obtaining
@@ -555,11 +618,15 @@ public:
 
    int recvFrom(void* pBuffer, uint32_t iBufLength, uint32_t uiFlags, UIPAddress& cSourceIP, unsigned int& iSourcePortNumber);
 
+   int recvFrom(void* pBuffer, uint32_t iBufLength, uint32_t uiFlags = 0) { return recvFrom(pBuffer, iBufLength, uiFlags, cRemoteAddress, iRemotePort); }
+
    /**
-    * The socket transmits the data to the remote socket
+    * The socket transmits the data to the remote socket. The number of bytes written is returned
     */
 
    int sendTo(void* pPayload, uint32_t iPayloadLength, uint32_t uiFlags, UIPAddress& cDestinationIP, unsigned int iDestinationPortNumber);
+
+   int sendTo(void* pPayload, uint32_t iPayloadLength, uint32_t uiFlags = 0) { return sendTo(pPayload, iPayloadLength, uiFlags, cRemoteAddress, iRemotePort); }
 
    /**
     * This method is called to read a 16-bit binary value from the remote connection.
@@ -644,8 +711,6 @@ protected:
    bool connect();
    void setRemote();
    void setMsgError();
-   void setReusePort();
-   void setReuseAddress();
    void setAddress(void* address);
    void setLocal(const UIPAddress& addr);
    bool setHostName(const UString& pcNewHostName);
@@ -656,19 +721,104 @@ protected:
 
       U_INTERNAL_ASSERT(isOpen())
 
-      (void) U_SYSCALL(fcntl, "%d,%d,%d", iSockDesc, F_SETFL, (flags = _flags));
+      (void) U_FF_SYSCALL(fcntl, "%d,%d,%d", iSockDesc, F_SETFL, (flags = _flags));
       }
 
-#ifdef closesocket
-#undef closesocket
+   bool setTimeout(int type, uint32_t timeoutMS)
+      {
+      U_TRACE(1, "USocket::setTimeout(%d,%u)", type, timeoutMS)
+
+      U_INTERNAL_ASSERT(timeoutMS >= 200) // NB: minor of 200ms is very strange...
+
+#  ifdef _MSWINDOWS_
+      if (setSockOpt(SOL_SOCKET, type, (const char*)&timeoutMS)) U_RETURN(true);
+#  else
+      struct timeval timer = { (long)timeoutMS / 1000L, ((long)timeoutMS % 1000L) * 1000L }; // convert the timeout value (in milliseconds) into a timeval struct
+
+      U_INTERNAL_DUMP("timer = { %ld %ld }", timer.tv_sec, timer.tv_usec)
+
+      if (setSockOpt(SOL_SOCKET, type, &timer, sizeof(timer))) U_RETURN(true);
+#  endif
+
+      U_RETURN(false);
+      }
+
+   void setReuseAddress()
+      {
+      U_TRACE_NO_PARAM(0, "USocket::setReuseAddress()")
+
+      /**
+       * SO_REUSEADDR allows your server to bind to an address which is in a TIME_WAIT state.
+       * It does not allow more than one server to bind to the same address. It was mentioned
+       * that use of this flag can create a security risk because another server can bind to a
+       * the same port, by binding to a specific address as opposed to INADDR_ANY
+       */
+
+      (void) setSockOpt(SOL_SOCKET, SO_REUSEADDR, (const int[]){ 1 }); 
+      }
+
+   void setReusePort()
+      {
+      U_TRACE_NO_PARAM(0, "USocket::setReusePort()")
+
+      U_ASSERT_EQUALS(isIPC(), false)
+
+      /**
+       * With SO_REUSEPORT each of the processes will have a separate socket descriptor.
+       * Therefore each will own a dedicated UDP receive buffer. This avoids the contention issues.
+       * As with TCP, SO_REUSEPORT allows multiple UDP sockets to be bound to the same port. This facility could, for example,
+       * be useful in a DNS server operating over UDP. With SO_REUSEPORT, each thread could use recv() on its own socket to
+       * accept datagrams arriving on the port. The traditional approach is that all threads would compete to perform recv()
+       * calls on a single shared socket. This can lead to unbalanced loads across the threads. By contrast, SO_REUSEPORT
+       * distributes datagrams evenly across all of the receiving threads
+       */
+
+#  if defined(U_LINUX) && (!defined(U_SERVER_CAPTIVE_PORTAL) || defined(ENABLE_THREAD)) // && LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0)
+#   ifndef SO_REUSEPORT
+#   define SO_REUSEPORT 15
+#   endif
+      breuseport = setSockOpt(SOL_SOCKET, SO_REUSEPORT, (const int[]){ 1 });
+#  endif
+      }
+
+#if defined(U_LINUX) && (!defined(U_SERVER_CAPTIVE_PORTAL) || defined(ENABLE_THREAD)) && !defined(HAVE_OLD_IOSTREAM)
+#  ifndef SO_ATTACH_REUSEPORT_CBPF
+#  define SO_ATTACH_REUSEPORT_CBPF 51
+#  endif
+   bool enable_bpf();
 #endif
 
-   void  closesocket();
-   void _closesocket();
+   bool listen()
+      {
+      U_TRACE_NO_PARAM(0, "USocket::listen()")
+
+      if (isUDP() ||
+          U_FF_SYSCALL(listen, "%d,%d", iSockDesc, iBackLog) == 0)
+         {
+         U_RETURN(true);
+         }
+
+      U_RETURN(false);
+      }
+
+   void  close_socket();
+   void _close_socket();
+
+   void reOpen()
+      {
+      U_TRACE_NO_PARAM(0, "USocket::reOpen()")
+
+      _close_socket();
+
+      _socket();
+      }
 
    static SocketAddress* cLocal;
-   static bool tcp_reuseport, bincoming_cpu;
+   static bool breuseport, bincoming_cpu;
    static int iBackLog, incoming_cpu, accept4_flags; // If flags is 0, then accept4() is the same as accept()
+
+   static void setLocalInfo( USocket* p, SocketAddress* cLocal);
+   static void setRemoteInfo(USocket* p, SocketAddress* cRemote);
 
    /**
     * The _socket() function is called to create the socket of the specified type.
@@ -685,14 +835,15 @@ private:
                       friend class UHTTP2;
                       friend class UFile;
                       friend class UNotifier;
+                      friend class UWebSocket;
                       friend class USocketExt;
                       friend class UFtpClient;
+                      friend class UTimeThread;
                       friend class UClient_Base;
                       friend class UServer_Base;
                       friend class UStreamPlugIn;
                       friend class URDBClientImage;
                       friend class UHttpClient_Base;
-                      friend class UWebSocketPlugIn;
                       friend class UClientImage_Base;
                       friend class UREDISClient_Base;
    template <class T> friend class UServer;

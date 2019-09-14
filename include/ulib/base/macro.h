@@ -39,7 +39,7 @@
 #ifdef DEBUG
 #  define U_ASSERT_MACRO(assertion,msg,info) \
       if ((bool)(assertion) == false) { \
-         u__printf(STDERR_FILENO, U_CONSTANT_TO_PARAM("%W%N%W: %Q%W%s%W\n" \
+         u__printf(STDERR_FILENO, U_CONSTANT_TO_PARAM("%W%N%W: %9D %Q%W%s%W\n" \
          "-------------------------------------\n" \
          " pid: %W%P%W\n" \
          " file: %W%s%W\n" \
@@ -70,7 +70,7 @@
 #endif
 
 #if defined(DEBUG) || defined(U_TEST)
-#  if !defined(U_LINUX) || defined(U_SERVER_CAPTIVE_PORTAL)
+#  if !defined(U_LINUX) || (defined(U_SERVER_CAPTIVE_PORTAL) && !defined(ENABLE_THREAD))
 #     define U_NULL_POINTER (const void*)0
 #  else
 #     define U_NULL_POINTER (const void*)0x0000ffff
@@ -147,6 +147,8 @@
 
 #define U_STREQ(a,n,b) (n == U_CONSTANT_SIZE(b) && (memcmp((const char* restrict)(a),b,U_CONSTANT_SIZE(b)) == 0))
 
+#define U_STREQ2(a,b) U_STREQ(a,strlen(a),b)
+
 /* Defs */
 
 #ifndef U_min
@@ -174,6 +176,7 @@
 #define MAX_FILENAME_LEN 255U
 #endif
 
+#define U_1M    (1U*1024U*1024U)
 #define U_2M    (2U*1024U*1024U)
 #define U_1G (1024U*1024U*1024U)
 
@@ -200,12 +203,12 @@ enum AffermationType {
    U_CLOSE   = 0x0008
 };
 
-#define GZIP_MAGIC "\037\213" /* Magic header for gzip files, 1F 8B */
+#define GZIP_MAGIC "\037\213" /* Magic header for gzip files, (1F 8B) */
 
 /* MIME type */
 
-#define U_unknow  -1
 #define U_know    'K'
+#define U_unknow  -1
 
 #define U_css     'c' /* text/css */
 #define U_flv     'f' /* video/x-flv */
@@ -214,10 +217,12 @@ enum AffermationType {
 #define U_ico     'i' /* image/x-icon */
 #define U_js      'j' /* application/javascript */
 #define U_png     'p' /* image/png */
+#define U_svg     's' /* image/svg+xml */
 #define U_txt     't' /* text/plain */
 
 #define U_jpg     'J' /* image/jpg */
 #define U_gz      'Z' /* gzip */
+#define U_br      'B' /* brotli */
 
 /* MIME type for dynamic content */
 
@@ -230,8 +235,9 @@ enum AffermationType {
 #define U_perl   '6' /* Perl script */
 #define U_python '7' /* Python script */
 
-#define U_CTYPE_HTML "text/html; charset=UTF-8"
-#define U_CTYPE_TEXT "text/plain; charset=UTF-8"
+#define U_CTYPE_HTML              "text/html; charset=UTF-8"
+#define U_CTYPE_TEXT              "text/plain"
+#define U_CTYPE_TEXT_WITH_CHARSET "text/plain; charset=UTF-8"
 
 /**
  * Enumeration of Hash (Digest) types
@@ -252,8 +258,13 @@ typedef enum {
    U_HASH_RIPEMD160 = 9
 } UHashType;
 
-#define U_PTR2INT(x) ((unsigned int)(long)x)
-#define U_INT2PTR(x) (       (void*)(long)x)
+#if SIZEOF_LONG == 4
+#  define U_INT2PTR(x) ((void*)(long)(x))
+#  define U_PTR2INT(x) ((unsigned int)(long)x)
+#else
+#  define U_INT2PTR(x) ((void*)((long)(x) & 0x00000000FFFFFFFFULL))
+#  define U_PTR2INT(x) ((unsigned long long)(long)x)
+#endif
 
 union uucflag {
    unsigned char c[4];
@@ -325,18 +336,33 @@ union uucflag64 {
 #  define u_put_unalignedp16(ptr,val) (*(uint16_t*)(ptr) = (val))
 #  define u_put_unalignedp32(ptr,val) (*(uint32_t*)(ptr) = (val))
 #  define u_put_unalignedp64(ptr,val) (*(uint64_t*)(ptr) = (val))
+
+#  define u_parse_unalignedp16(p) ntohs(*(uint16_t*)(p))
+#  define u_parse_unalignedp32(p) ntohl(*(uint32_t*)(p))
 #else
 struct u_una_u16 { uint16_t x __attribute__((packed)); };
 struct u_una_u32 { uint32_t x __attribute__((packed)); };
 struct u_una_u64 { uint64_t x __attribute__((packed)); };
 
-static inline uint16_t u_get_unalignedp16(const void* p)               { const struct u_una_u16 *ptr = (const struct u_una_u16*)p; return ptr->x; }
-static inline uint32_t u_get_unalignedp32(const void* p)               { const struct u_una_u32 *ptr = (const struct u_una_u32*)p; return ptr->x; }
-static inline uint64_t u_get_unalignedp64(const void* p)               { const struct u_una_u64 *ptr = (const struct u_una_u64*)p; return ptr->x; }
-static inline void     u_put_unalignedp16(      void* p, uint16_t val) {       struct u_una_u16 *ptr = (      struct u_una_u16*)p;        ptr->x = val; } 
-static inline void     u_put_unalignedp32(      void* p, uint32_t val) {       struct u_una_u32 *ptr = (      struct u_una_u32*)p;        ptr->x = val; }
-static inline void     u_put_unalignedp64(      void* p, uint64_t val) {       struct u_una_u64 *ptr = (      struct u_una_u64*)p;        ptr->x = val; }
+static inline uint16_t u_get_unalignedp16(const void* p)               { const struct u_una_u16* ptr = (const struct u_una_u16*)p; return ptr->x; }
+static inline uint32_t u_get_unalignedp32(const void* p)               { const struct u_una_u32* ptr = (const struct u_una_u32*)p; return ptr->x; }
+static inline uint64_t u_get_unalignedp64(const void* p)               { const struct u_una_u64* ptr = (const struct u_una_u64*)p; return ptr->x; }
+static inline void     u_put_unalignedp16(      void* p, uint16_t val) {       struct u_una_u16* ptr = (      struct u_una_u16*)p;        ptr->x = val; } 
+static inline void     u_put_unalignedp32(      void* p, uint32_t val) {       struct u_una_u32* ptr = (      struct u_una_u32*)p;        ptr->x = val; }
+static inline void     u_put_unalignedp64(      void* p, uint64_t val) {       struct u_una_u64* ptr = (      struct u_una_u64*)p;        ptr->x = val; }
+
+#  define u_parse_unalignedp16(p) (          (p)[0]<< 8|(p)[1])
+#  define u_parse_unalignedp32(p) ((uint32_t)(p)[0]<<24|(p)[1]<<16|(ptr)[2]<< 8|(ptr)[3])
 #endif
+
+#if defined(__GNUC__) && __GNUC__ * 100 + __GNUC_MINOR__ < 408 && !defined(__clang__) // __builtin_bswap16 was missing prior to GCC 4.8
+#  define U_BYTESWAP16(x) (uint16_t)(__builtin_bswap32((uint32_t)(x) << 16))
+#else
+#  define U_BYTESWAP16 __builtin_bswap16
+#endif
+
+#define U_BYTESWAP32 __builtin_bswap32
+#define U_BYTESWAP64 __builtin_bswap64
 
 /**
  * u_get_unaligned - get value from possibly mis-aligned location
@@ -384,22 +410,22 @@ static inline void     u_put_unalignedp64(      void* p, uint64_t val) {       s
                                                            (uint64_t)(c)<<40|\
                                                           ((uint64_t)u_get_unalignedp16(u_ctn2s+((val3)*2))<<48))
 
-#  define U_MULTICHAR_CONSTANT16(a,b)               (uint16_t)((uint8_t)(a)|\
-                                                               (uint8_t)(b)<<8)
+#  define U_MULTICHAR_CONSTANT16(a,b)             (uint16_t)((uint8_t)(a)|\
+                                                             (uint8_t)(b)<<8)
 
-#  define U_MULTICHAR_CONSTANT32(a,b,c,d)           (uint32_t)((uint8_t)(a)|\
-                                                               (uint8_t)(b)<<8|\
-                                                               (uint8_t)(c)<<16|\
-                                                               (uint8_t)(d)<<24)
+#  define U_MULTICHAR_CONSTANT32(a,b,c,d)         (uint32_t)((uint8_t)(a)|\
+                                                             (uint8_t)(b)<<8|\
+                                                             (uint8_t)(c)<<16|\
+                                                             (uint8_t)(d)<<24)
 
-#  define U_MULTICHAR_CONSTANT64(a,b,c,d,e,f,g,h)   (uint64_t)((uint64_t)(a)|\
-                                                              ((uint64_t)(b))<<8|\
-                                                              ((uint64_t)(c))<<16|\
-                                                              ((uint64_t)(d))<<24|\
-                                                              ((uint64_t)(e))<<32|\
-                                                              ((uint64_t)(f))<<40|\
-                                                              ((uint64_t)(g))<<48|\
-                                                              ((uint64_t)(h))<<56)
+#  define U_MULTICHAR_CONSTANT64(a,b,c,d,e,f,g,h) (uint64_t)((uint64_t)(a)|\
+                                                             ((uint64_t)(b))<<8|\
+                                                             ((uint64_t)(c))<<16|\
+                                                             ((uint64_t)(d))<<24|\
+                                                             ((uint64_t)(e))<<32|\
+                                                             ((uint64_t)(f))<<40|\
+                                                             ((uint64_t)(g))<<48|\
+                                                             ((uint64_t)(h))<<56)
 #else /* the host byte order is Most Significant Byte first */
 
 #  define u_htonll(x) (x)
@@ -412,8 +438,8 @@ static inline void     u_put_unalignedp64(      void* p, uint64_t val) {       s
                         (((n) <<  8) & 0x00ff0000) | \
                         ( (n) << 24))
 
-#  define U_NUM2STR16(ptr,val1)  u_put_unalignedp16((ptr),(uint16_t)((uint8_t)(u_ctn2s[((val1)*2)+1])|\
-                                                                     (uint8_t)(u_ctn2s[((val1)*2)])<<8))
+#  define U_NUM2STR16(ptr,val1) u_put_unalignedp16((ptr),(uint16_t)((uint8_t)(u_ctn2s[((val1)*2)+1])|\
+                                                                    (uint8_t)(u_ctn2s[((val1)*2)])<<8))
 
 #  define U_NUM2STR32(ptr,val2,val1) u_put_unalignedp32((ptr),(uint16_t)((uint8_t)(u_ctn2s[((val1)*2)+1])|\
                                                                          (uint8_t)(u_ctn2s[((val1)*2)])<<8)|\
@@ -424,27 +450,27 @@ static inline void     u_put_unalignedp64(      void* p, uint64_t val) {       s
                                                                                  (uint8_t)(u_ctn2s[((val1)*2)])<<8))|\
                                                                      (((uint64_t)(c))<<16)|\
                                                                      (((uint64_t)((uint8_t)(u_ctn2s[((val2)*2)+1])|\
-                                                                                 (uint8_t)(u_ctn2s[((val2)*2)])<<8))<<24)|\
+                                                                                  (uint8_t)(u_ctn2s[((val2)*2)])<<8))<<24)|\
                                                                      (((uint64_t)(c))<<40)|\
                                                                      (((uint64_t)((uint8_t)(u_ctn2s[((val3)*2)+1])|\
-                                                                                 (uint8_t)(u_ctn2s[((val3)*2)])<<8))<<48))
+                                                                                  (uint8_t)(u_ctn2s[((val3)*2)])<<8))<<48))
 
-#  define U_MULTICHAR_CONSTANT16(b,a)               (uint16_t)((uint8_t)(a)|\
-                                                               (uint8_t)(b)<<8)
+#  define U_MULTICHAR_CONSTANT16(b,a)             (uint16_t)((uint8_t)(a)|\
+                                                             (uint8_t)(b)<<8)
 
-#  define U_MULTICHAR_CONSTANT32(d,c,b,a)           (uint32_t)((uint8_t)(a)|\
-                                                               (uint8_t)(b)<<8|\
-                                                               (uint8_t)(c)<<16|\
-                                                               (uint8_t)(d)<<24)
+#  define U_MULTICHAR_CONSTANT32(d,c,b,a)         (uint32_t)((uint8_t)(a)|\
+                                                             (uint8_t)(b)<<8|\
+                                                             (uint8_t)(c)<<16|\
+                                                             (uint8_t)(d)<<24)
 
-#  define U_MULTICHAR_CONSTANT64(h,g,f,e,d,c,b,a)   (uint64_t)((uint64_t)(a)|\
-                                                              ((uint64_t)(b))<<8|\
-                                                              ((uint64_t)(c))<<16|\
-                                                              ((uint64_t)(d))<<24|\
-                                                              ((uint64_t)(e))<<32|\
-                                                              ((uint64_t)(f))<<40|\
-                                                              ((uint64_t)(g))<<48|\
-                                                              ((uint64_t)(h))<<56)
+#  define U_MULTICHAR_CONSTANT64(h,g,f,e,d,c,b,a) (uint64_t)((uint64_t)(a)|\
+                                                             ((uint64_t)(b))<<8|\
+                                                             ((uint64_t)(c))<<16|\
+                                                             ((uint64_t)(d))<<24|\
+                                                             ((uint64_t)(e))<<32|\
+                                                             ((uint64_t)(f))<<40|\
+                                                             ((uint64_t)(g))<<48|\
+                                                             ((uint64_t)(h))<<56)
 #endif
 
 /* Check for dot entry in directory */
@@ -456,34 +482,29 @@ static inline void     u_put_unalignedp64(      void* p, uint64_t val) {       s
 
 /* Memory alignment for pointer */
 
-#define U_MEMORY_ALIGNMENT(ptr, alignment)  ptr += alignment - ((long)ptr & (alignment - 1))
+#define U_MEMORY_ALIGNMENT(ptr, alignment) ptr += alignment-((long)ptr & (alignment-1))
 
 /* Manage number suffix */
 
-#define U_NUMBER_SUFFIX(number,suffix) \
+#define U_NUMBER_SUFFIX(num,suffix) \
    switch (suffix) { \
-      case 'G': number <<= 10; \
-      case 'M': number <<= 10; \
-      case 'K': \
-      case 'k': number <<= 10; \
-      break; }
+      case 'G': num <<= 10; /* FALL THRU */ \
+      case 'M': num <<= 10; /* FALL THRU */ \
+      case 'K':             /* FALL THRU */ \
+      case 'k': num <<= 10; /* FALL THRU */ }
 #endif
 
 /* Optimization if it is enough a resolution of one second */
 
 #if defined(U_LINUX) && defined(ENABLE_THREAD)
-#  if defined(U_LOG_DISABLE) && !defined(USE_LIBZ)
-#     define U_gettimeofday
-#  else
-#     define U_gettimeofday { if (u_pthread_time == 0) u_now->tv_sec = time(0); }
-#  endif
+#  define U_gettimeofday { if (u_pthread_time == U_NULLPTR) u_now->tv_sec = time(U_NULLPTR); }
 #else
-#  define U_gettimeofday u_now->tv_sec = time(0);
+#  define U_gettimeofday u_now->tv_sec = time(U_NULLPTR);
 #endif
 
 /* To print size of class */
 
-#define U_PRINT_SIZEOF(class) printf("%u sizeof(%s)\n", sizeof(class), #class)
+#define U_PRINT_SIZEOF(class) printf("%lu sizeof(%s)\n", sizeof(class), #class)
 
 /* Avoid "unused parameter" warnings */
 

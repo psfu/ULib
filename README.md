@@ -13,12 +13,12 @@ It include as application example a powerful search engine with relative [web in
 
 The current version offers the following features :
 
-   * HTTP/1.0 and 1.1 protocols supported and experimental implementations of HTTP/2.
+   * HTTP/1.0, 1.1 and HTTP/2 ([h2spec compliant](https://github.com/summerwind/h2spec)) protocols supported.
    * Persistent connections for HTTP/1.1 and Keep-Alive support for HTTP/1.0.
    * Browser cache management (headers: If-Modified-Since/Last-modified).
    * Chunk-encoding transfers support.
    * HTTP multi-range request support.
-   * Memory caching of document root for (small) static pages with smart gzip compression and CSS/JS reduction.
+   * Memory caching of document root for (small) static pages with smart (gzip-zopfli,brotli) compression and CSS/JS reduction.
    * Support for automatic update of caching document root with inotify (on Linux).
    * Support for pipelining.
    * Support for virtual hosts (also with SSL).
@@ -28,12 +28,12 @@ The current version offers the following features :
    * Support for aliases/redirection.
    * Support for switch the site to a maintenance page only.
    * Support for URL traffic based throttling (experimental).
-   * Support for overriden of error messages by local document (ErrorDocument/40x|500.html).
+   * Support for overriden of error messages by local document (ex. ErrorDocument/400.html).
    * Support for RewriteRule (lighttpd-like) that check for file existence as they do on Apache, some CMS (SilverStripe) require it.
-   * Support for (apache-like) log [NCSA extended/combined format](http://httpd.apache.org/docs/2.0/mod/mod_log_config.html)
+   * Support for (apache-like) log [NCSA extended/combined format](http://httpd.apache.org/docs/2.0/mod/mod_log_config.html).
    * Support for [JSONRequest](http://json.org/JSONRequest.html).
-   * Accept HTTP uploads up to 4 GB without increasing memory usage.
-   * General [CGI](http://it.wikipedia.org/wiki/Common_Gateway_Interface) support (run any CGI script) with automatic output compression (using gzip method).
+   * Accept HTTP uploads (with possible resume) up to 4 GB without increasing memory usage.
+   * General [CGI](http://it.wikipedia.org/wiki/Common_Gateway_Interface) support (run any CGI script) with automatic output compression (using gzip,brotli method).
    * CGI support for shell script processes (with automatic management of form and cookie).
    * CGI support for the X-Sendfile feature and also supports X-Accel-Redirect headers transparently.
    * Support for minify HTML CGI output by wrapping [google page speed SDK](http://code.google.com/speed/page-speed/download.html#pagespeed-sdk).
@@ -42,6 +42,9 @@ The current version offers the following features :
    * [C Servlet Support](http://bellard.org/tcc/) with libtcc (if available) as a backend for dynamic code generation (experimental).
    * Support for running Ruby on Rails applications natively (experimental).
    * Support for running natively PHP applications whith a php (embedded) library (experimental).
+   * Support for load balance between physical server via udp brodcast (experimental).
+   * Support for serialize object by [FlatBuffer schema-less](http://google.github.io/flatbuffers/index.html) like implementation.
+   * Support for [SSE (Server Sent Event)](http://en.wikipedia.org/wiki/Server-sent_events) via ULib Servlet Page (USP) dedicate process.
    * Preforking mode to improve concurrency with dedicated process for long-time request.
    * Support for Windows (without preforking).
    * Customizable builds (you can remove unneeded functionality).
@@ -67,20 +70,25 @@ The current version offers the following features :
        * [Algorithmic Complexity Attacks](http://lwn.net/Articles/474365/) prevention by randomizing hash seed.
        * [DNS rebinding](http://en.wikipedia.org/wiki/DNS_rebinding) prevention by RFC1918 filtering and Host header validation.
        * selective uri support (DOS regex) for [HTTP Strict Transport Security](https://developer.mozilla.org/en/Security/HTTP_Strict_Transport_Security).
-   * Immune to [Slow Read DoS attack](http://code.google.com/p/slowhttptest/)
-   * [High SSL server quality score](https://www.ssllabs.com/ssltest/analyze.html?d=wifi-aaa2.comune.fi.it)
+   * Immune to [Slow Read DoS attack](http://code.google.com/p/slowhttptest/).
+   * Provide evasive action in the event of an HTTP DoS or DDoS attack or brute force attack.
+   * High SSL server quality score.
 
 ## Who is Using ULib
 
-It is the main software component of [city of Florence wireless network](http://wifi-aaa2.comune.fi.it/login?mac=00%3A00%3A00%3A00%3A00%3A00&ip=172.22.11.124&redirect=http%3A//pasta.dianxinos.com/api/data&gateway=159.213.248.230%3A5280&timeout=0&token=1810300063&ap=05@159.213.248.230&ts=ts=21467819142)
+It is the main software component of [city of Florence wireless network](http://wifi-aaa.comune.fi.it/welcome?url=http%3A//captive.apple.com/hotspot-detect.html&mac=4400101a2174&apid=64&gateway=172.20.63.254%3A5280)
 
 ## Benchmark
 
 userver application server is since 10th round in the [TechEmpower's web framework benchmarks](http://www.techempower.com/benchmarks). This independent work tests a large number of frameworks and platforms against a set of tests common to web applications, such as JSON serialization, database queries and templating.
 
+## Getting Started With ULib (donated generously by jonathan kelly)
+
+* [wiki](https://github.com/stefanocasazza/ULib/wiki/Getting-Started-With-ULib)
+
 ## Contributing
 
-1. Fork it ( http://github.com/<my-github-username>/ULib/fork )
+1. Fork it ( http://github.com/stefanocasazza/ULib/fork )
 2. Create your feature branch (`git checkout -b my-new-feature`)
 3. Commit your changes (`git commit -am 'Add some feature'`)
 4. Push to the branch (`git push origin my-new-feature`)
@@ -93,3 +101,11 @@ ULib is normally built and installed as a set of shared object libraries and hea
 Comments and suggestions are welcome.
 
 	stefano casazza <stefano.casazza@gmail.com>
+
+Please, excuse me for my bad english, it's not my natural language, if some parts of this page seems wrong to you, feel free to suggest me better ones.
+
+## Donation
+
+If this project help you reduce time to develop, you can give me a cup of coffee :)
+
+[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://paypal.me/stefanocasazza)

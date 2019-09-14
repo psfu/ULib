@@ -21,14 +21,14 @@ void UCDB::init_internal(int ignore_case)
    (void) U_SYSCALL(memset, "%p,%d,%d",  &key, 0, sizeof(datum));
    (void) U_SYSCALL(memset, "%p,%d,%d", &data, 0, sizeof(datum));
 
-   hr   = 0;
-   slot = 0;
-   hp   = 0;
+   hr   = U_NULLPTR;
+   slot = U_NULLPTR;
+   hp   = U_NULLPTR;
 
-   pattern                 = 0;
-   pbuffer                 = 0;
-   ptr_vector              = 0;
-   function_to_call        = 0;
+   pattern                 = U_NULLPTR;
+   pbuffer                 = U_NULLPTR;
+   ptr_vector              = U_NULLPTR;
+   function_to_call        = U_NULLPTR;
    filter_function_to_call = functionCall;
 
    // when mmap not available we use this storage...
@@ -50,7 +50,9 @@ void UCDB::init_internal(int ignore_case)
 
    U_cdb_ignore_case(this) = ignore_case;
 
-   flag[1] = flag[2] = flag[3] = 0;
+   flag[1] =
+   flag[2] =
+   flag[3] = 0;
 }
 
 bool UCDB::open(bool brdonly)
@@ -70,7 +72,7 @@ bool UCDB::open(bool brdonly)
 
          if (UFile::map == MAP_FAILED)
             {
-            data.dptr = 0;
+            data.dptr = U_NULLPTR;
 
             hp   =   &hp_buf;
             hr   =   &hr_buf;
@@ -176,6 +178,8 @@ U_NO_EXPORT inline bool UCDB::match(uint32_t pos)
 
       data.dsize = u_get_unaligned32(hr->dlen);
       data.dptr  = U_SYSCALL(malloc, "%lu", data.dsize);
+
+      U_INTERNAL_ASSERT_POINTER_MSG(data.dptr, "cannot allocate memory, exiting...")
 
       (void) UFile::pread(data.dptr, data.dsize, pos);
 
@@ -456,14 +460,14 @@ void UCDB::callForAllEntrySorted(iPFprpr function)
          }
       }
 
-   function_to_call = 0;
+   function_to_call = U_NULLPTR;
 }
 
 void UCDB::callForAllEntryWithPattern(iPFprpr function, UString* _pattern)
 {
    U_TRACE(1, "UCDB::callForAllEntryWithPattern(%p,%p)", function, _pattern)
 
-   U_INTERNAL_ASSERT_MAJOR(UFile::st_size,0)
+   U_INTERNAL_ASSERT_MAJOR(UFile::st_size, 0)
    U_INTERNAL_ASSERT_DIFFERS(UFile::map, MAP_FAILED)
 
    char* ptr  = start();
@@ -474,7 +478,7 @@ void UCDB::callForAllEntryWithPattern(iPFprpr function, UString* _pattern)
    U_INTERNAL_ASSERT_MINOR(ptr,_end)
 
    char* tmp;
-   char* pattern_data = 0;
+   char* pattern_data = U_NULLPTR;
    uint32_t klen, dlen, pattern_size = 0;
 
    if (_pattern)
@@ -486,7 +490,7 @@ void UCDB::callForAllEntryWithPattern(iPFprpr function, UString* _pattern)
 
       pattern = (char*) u_find(tmp, _end - tmp, pattern_data, pattern_size);
 
-      if (pattern == 0) goto fine;
+      if (pattern == U_NULLPTR) goto fine;
       }
 
    function_to_call = function;
@@ -517,7 +521,7 @@ void UCDB::callForAllEntryWithPattern(iPFprpr function, UString* _pattern)
 
          pattern = (char*) u_find(ptr, _end - ptr, pattern_data, pattern_size);
 
-         if (pattern == 0) break;
+         if (pattern == U_NULLPTR) break;
 
          U_INTERNAL_ASSERT_MINOR(pattern, _end)
          }
@@ -529,7 +533,7 @@ end_loop:
 fine:
    U_INTERNAL_ASSERT(tmp <= _end)
 
-   function_to_call = 0;
+   function_to_call = U_NULLPTR;
 }
 
 void UCDB::call1()
@@ -557,13 +561,13 @@ void UCDB::call1()
          {
          U_INTERNAL_ASSERT_POINTER(ptr_vector)
 
-         ptr_vector->UVector<void*>::push(skey);
+         ptr_vector->UVector<void*>::push_back(skey);
 
          if (U_cdb_add_entry_to_vector(this) == false) goto next;
 
          U_cdb_add_entry_to_vector(this) = false;
 
-         ptr_vector->UVector<void*>::push(sdata);
+         ptr_vector->UVector<void*>::push_back(sdata);
 
          return;
          }
@@ -620,8 +624,8 @@ void UCDB::getKeys2(UCDB* pcdb, char* src)
 
    U_NEW(UStringRep, skey, UStringRep(src, klen));
 
-   if (pcdb->filter_function_to_call(skey, 0) == 0) skey->release();
-   else                                             pcdb->ptr_vector->UVector<void*>::push(skey);
+   if (pcdb->filter_function_to_call(skey, U_NULLPTR) == 0) skey->release();
+   else                                                     pcdb->ptr_vector->UVector<void*>::push_back(skey);
 }
 
 void UCDB::print2(UCDB* pcdb, char* src)
@@ -697,7 +701,7 @@ uint32_t UCDB::getValuesWithKeyNask(UVector<UString>& vec_values, const UString&
 
          U_NEW(UStringRep, rep, UStringRep(tmp - dlen, dlen));
 
-         vec_values.UVector<void*>::push(rep);
+         vec_values.UVector<void*>::push_back(rep);
 
          if (_size) *_size += dlen;
          }
@@ -736,6 +740,68 @@ UString UCDB::print()
 
 // Save memory hash table as constant database
 
+static char*    writeTo_ptr;
+static UCDB*    writeTo_cdb;
+static pvPFpvpb writeTo_func;
+
+bool UCDB::writeTo(UStringRep* key, void* elem) // callWithDeleteForAllEntry()...
+{
+   U_TRACE(0, "UCDB::writeTo(%V,%p)", key, elem)
+
+   UStringRep* value;
+   bool bdelete = false;
+
+   if (writeTo_func == U_NULLPTR) value = (UStringRep*)UHashMap<void*>::node->elem;
+   else
+      {
+      value = (UStringRep*) writeTo_func((void*)UHashMap<void*>::node->elem, &bdelete);
+
+      U_INTERNAL_DUMP("bdelete = %b", bdelete)
+      }
+
+   if (value)
+      {
+      const UStringRep* k = UHashMap<void*>::node->key;
+
+      uint32_t klen =     k->size(), //  key length
+               dlen = value->size(); // data length
+
+      UCDB::cdb_record_header* _hr = (UCDB::cdb_record_header*) writeTo_ptr;
+
+      u_put_unaligned32(_hr->klen, klen);
+      u_put_unaligned32(_hr->dlen, dlen);
+
+      U_INTERNAL_DUMP("hr = { %u, %u }", klen, dlen)
+
+      writeTo_ptr += sizeof(UCDB::cdb_record_header);
+
+      U_MEMCPY(writeTo_ptr, k->data(), klen);
+
+      U_INTERNAL_DUMP("key = %.*S", klen, writeTo_ptr)
+
+      writeTo_ptr += klen;
+
+      U_MEMCPY(writeTo_ptr, value->data(), dlen);
+
+      U_INTERNAL_DUMP("data = %.*S", dlen, writeTo_ptr)
+
+      writeTo_ptr += dlen;
+
+      if (writeTo_func)
+         {
+         writeTo_cdb->nrecord++;
+
+         value->release();
+         }
+      }
+
+   // check if asked to delete node of the table...
+
+   if (bdelete) U_RETURN(true);
+
+   U_RETURN(false);
+}
+
 bool UCDB::writeTo(UCDB& cdb, UHashMap<void*>* table, uint32_t tbl_space, pvPFpvpb func)
 {
    U_TRACE(1, "UCDB::writeTo(%p,%p,%u,%p)", &cdb, table, tbl_space, func)
@@ -748,107 +814,14 @@ bool UCDB::writeTo(UCDB& cdb, UHashMap<void*>* table, uint32_t tbl_space, pvPFpv
 
    if (result)
       {
-      result = cdb.memmap(PROT_READ | PROT_WRITE);
+      if (cdb.memmap(PROT_READ | PROT_WRITE) == false) U_RETURN(false);
 
-      if (result == false) U_RETURN(false);
+      writeTo_ptr  = (writeTo_cdb = &cdb)->start(); // init of DATA
+      writeTo_func = func;
 
-      bool bdelete;
-      UStringRep* value;
-      const UStringRep* _key;
-      char* ptr = cdb.start(); // init of DATA
-      UCDB::cdb_record_header* _hr;
+      table->callWithDeleteForAllEntry(writeTo);
 
-      U_INTERNAL_DUMP("table->_length = %u", table->_length)
-
-      UHashMapNode* node;
-      UHashMapNode** pnode;
-      UHashMapNode** tbl = table->table;
-
-      uint32_t klen; //  key length
-      uint32_t dlen; // data length
-
-      for (uint32_t index = 0, capacity = table->_capacity; index < capacity; ++index)
-         {
-         if (tbl[index])
-            {
-            node  = tbl[index];
-            pnode = tbl + index;
-
-            do {
-               if (func == 0) value = (UStringRep*) node->elem;
-               else
-                  {
-                  value = (UStringRep*) func((void*)node->elem, &bdelete);
-
-                  U_INTERNAL_DUMP("bdelete = %b", bdelete)
-
-                  if (bdelete) // ask for to delete node of table...
-                     {
-                     *pnode = node->next; // lo si toglie dalla lista collisioni...
-
-                     /**
-                      * NB: it must be do in the function
-                      * ---------------------------------
-                      * elem = (T*) node->elem;
-                      *
-                      * u_destroy<T>(elem);
-                      * ---------------------------------
-                      */
-
-                     delete node;
-
-                     table->_length--;
-                     }
-                  }
-
-               if (value)
-                  {
-                  _key = node->key;
-
-                  klen =  _key->size(); //  key length
-                  dlen = value->size(); // data length
-
-                  _hr = (UCDB::cdb_record_header*) ptr;
-
-                  u_put_unaligned32(_hr->klen, klen);
-                  u_put_unaligned32(_hr->dlen, dlen);
-
-                  U_INTERNAL_DUMP("hr = { %u, %u }", klen, dlen)
-
-                  ptr += sizeof(UCDB::cdb_record_header);
-
-                  U_MEMCPY(ptr, _key->data(), klen);
-
-                  U_INTERNAL_DUMP("key = %.*S", klen, ptr)
-
-                  ptr += klen;
-
-                  U_MEMCPY(ptr, value->data(), dlen);
-
-                  U_INTERNAL_DUMP("data = %.*S", dlen, ptr)
-
-                  ptr += dlen;
-
-                  if (func)
-                     {
-                     cdb.nrecord++;
-
-                     value->release();
-                     }
-                  }
-
-               // check if asked to delete node of the table...
-
-               if (func    == 0 ||
-                   bdelete == false) pnode = &(*pnode)->next;
-               }
-            while ((node = *pnode));
-            }
-         }
-
-      U_INTERNAL_DUMP("table->_length = %u", table->_length)
-
-      cdb.hr = (UCDB::cdb_record_header*) ptr; // end of DATA
+      cdb.hr = (UCDB::cdb_record_header*) writeTo_ptr; // end of DATA
 
       uint32_t pos = cdb.makeFinish(true);
 
@@ -908,6 +881,13 @@ U_NO_EXPORT void UCDB::checkForAllEntry()
 // STREAM
 
 #ifdef U_STDCPP_ENABLE
+vpFpcu UCDB::getValueFromBuffer;
+
+class mystreambuf : public streambuf {
+public:
+   char* gptr() { return streambuf::gptr(); } // expose the terribly named cur pointer
+};
+
 U_EXPORT istream& operator>>(istream& is, UCDB& cdb)
 {
    U_TRACE(0+256, "UCDB::operator>>(%p,%p)", &is, &cdb)
@@ -945,7 +925,6 @@ U_EXPORT istream& operator>>(istream& is, UCDB& cdb)
       U_INTERNAL_DUMP("hr = { %u, %u }", klen, dlen)
 
       u_put_unaligned32(hr->klen, klen);
-      u_put_unaligned32(hr->dlen, dlen);
 
       ptr += sizeof(UCDB::cdb_record_header);
 
@@ -960,13 +939,32 @@ U_EXPORT istream& operator>>(istream& is, UCDB& cdb)
 
       ptr += klen;
 
-#  ifndef U_COVERITY_FALSE_POSITIVE /* TAINTED_SCALAR */
-      is.read(ptr, dlen);
-#  endif
+      if (UCDB::getValueFromBuffer == U_NULLPTR)
+         {
+         u_put_unaligned32(hr->dlen, dlen);
 
-      U_INTERNAL_DUMP("data = %.*S", dlen, ptr)
+#     ifndef U_COVERITY_FALSE_POSITIVE // TAINTED_SCALAR
+         is.read(ptr, dlen);
+#     endif
 
-      ptr += dlen;
+         U_INTERNAL_DUMP("data = %.*S", dlen, ptr)
+
+         ptr += dlen;
+         }
+      else
+         {
+         streambuf* sb = is.rdbuf();
+
+         UCDB::getValueFromBuffer(((mystreambuf*)sb)->gptr(), dlen);
+
+         is.seekg(dlen, ios::cur);
+
+         u_put_unaligned32(hr->dlen, u_buffer_len);
+
+         U_MEMCPY(ptr, u_buffer, u_buffer_len);
+                  ptr +=         u_buffer_len;
+                                 u_buffer_len = 0;
+         }
 
       cdb.nrecord++;
 
@@ -1027,7 +1025,7 @@ const char* UCDB::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #  endif
 #endif

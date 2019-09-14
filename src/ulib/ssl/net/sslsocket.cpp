@@ -11,9 +11,11 @@
 //
 // ============================================================================
 
+#include <ulib/net/tcpsocket.h>
+#include <ulib/utility/base64.h>
+#include <ulib/net/client/http.h>
 #include <ulib/utility/services.h>
 #include <ulib/ssl/net/sslsocket.h>
-#include <ulib/net/client/client.h>
 #include <ulib/net/server/server.h>
 
 #ifdef _MSWINDOWS_
@@ -31,11 +33,12 @@
 #define SSL_ERROR_WANT_ACCEPT SSL_ERROR_WANT_READ
 #endif
 
-int         USSLSocket::session_cache_index;
-SSL_CTX*    USSLSocket::cctx; // client
-SSL_CTX*    USSLSocket::sctx; // server
+int      USSLSocket::session_cache_index;
+SSL_CTX* USSLSocket::cctx; // client
+SSL_CTX* USSLSocket::sctx; // server
 
-#if !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
+#if defined(ENABLE_THREAD) && !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
+bool                 USSLSocket::ocsp_nonce;
 USSLSocket::stapling USSLSocket::staple;
 #endif
 
@@ -61,9 +64,9 @@ USSLSocket::stapling USSLSocket::staple;
  * requiring a bi-directional message exchange; both SSL_read() and SSL_write() will try to continue any pending handshake
  */
 
-USSLSocket::USSLSocket(bool bSocketIsIPv6, SSL_CTX* _ctx, bool bserver) : USocket(bSocketIsIPv6)
+USSLSocket::USSLSocket(bool bSocketIsIPv6, SSL_CTX* _ctx, bool bserver, int fd) : USocket(bSocketIsIPv6, fd)
 {
-   U_TRACE_REGISTER_OBJECT(0, USSLSocket, "%b,%p,%b", bSocketIsIPv6, _ctx, bserver)
+   U_TRACE_CTOR(0, USSLSocket, "%b,%p,%b,%d", bSocketIsIPv6, _ctx, bserver, fd)
 
    ciphersuite_model = Intermediate;
 
@@ -72,13 +75,13 @@ USSLSocket::USSLSocket(bool bSocketIsIPv6, SSL_CTX* _ctx, bool bserver) : USocke
       {
       if (bserver)
          {
-         if (sctx == 0) sctx = getServerContext();
+         if (sctx == U_NULLPTR) sctx = getServerContext();
 
          ctx = sctx;
          }
       else
          {
-         if (cctx == 0) cctx = getClientContext();
+         if (cctx == U_NULLPTR) cctx = getClientContext();
 
          ctx = cctx;
          }
@@ -94,7 +97,7 @@ USSLSocket::USSLSocket(bool bSocketIsIPv6, SSL_CTX* _ctx, bool bserver) : USocke
    SSL_CTX_up_ref(ctx);
 #endif
 
-   ssl = 0;
+   ssl = U_NULLPTR;
    ret = renegotiations = 0;
 
    U_socket_Type(this) |= USocket::SK_SSL;
@@ -104,12 +107,13 @@ USSLSocket::USSLSocket(bool bSocketIsIPv6, SSL_CTX* _ctx, bool bserver) : USocke
 
 USSLSocket::~USSLSocket()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, USSLSocket)
+   U_TRACE_DTOR(0, USSLSocket)
 
    U_INTERNAL_ASSERT_POINTER(ctx)
 
    if (ssl) SSL_free(ssl); // SSL_free will free UServices::store
-            SSL_CTX_free(ctx);
+
+   SSL_CTX_free(ctx);
 }
 
 void USSLSocket::info_callback(const SSL* ssl, int where, int ret)
@@ -143,7 +147,7 @@ SSL_CTX* USSLSocket::getContext(SSL_METHOD* method, bool bserver, long options)
 {
    U_TRACE(0, "USSLSocket::getContext(%p,%b,%ld)", method, bserver, options)
 
-   if (method == 0)
+   if (method == U_NULLPTR)
       {
       /**
        * Counter-intuitively, the OpenSSL folks have TLSv1_client_method() negotiate only TLSv1.0, and SSLv23_client_method()
@@ -252,7 +256,7 @@ long USSLSocket::getOptions(const UVector<UString>& vec)
    { U_CONSTANT_TO_PARAM("SESSION_RESUMPTION_ON_RENEGOTIATION"), SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION, 0 },
 #endif
 #ifdef SSL_OP_NO_COMPRESSION
-   { U_CONSTANT_TO_PARAM("COMPRESSION"), SSL_OP_NO_COMPRESSION, 0 },
+   { U_CONSTANT_TO_PARAM("COMPRESSION"), SSL_OP_NO_COMPRESSION, 0 }, // disable tls compression to avoid "CRIME" attacks (see http://en.wikipedia.org/wiki/CRIME)
 #endif
 #ifdef SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION
    { U_CONSTANT_TO_PARAM("ALLOW_UNSAFE_LEGACY_RENEGOTIATION"), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION, 1 },
@@ -349,16 +353,16 @@ bool USSLSocket::useDHFile(const char* dh_file)
     * the RSA private key
     */
 
-   DH* dh = 0;
+   DH* dh = U_NULLPTR;
 
    if ( dh_file &&
        *dh_file)
       {
       FILE* paramfile = (FILE*) U_SYSCALL(fopen, "%S,%S", dh_file, "r");
 
-      if (paramfile == 0) U_RETURN(false);
+      if (paramfile == U_NULLPTR) U_RETURN(false);
 
-      dh = (DH*) U_SYSCALL(PEM_read_DHparams, "%p,%p,%p,%p", paramfile, 0, 0, 0);
+      dh = (DH*) U_SYSCALL(PEM_read_DHparams, "%p,%p,%p,%p", paramfile, U_NULLPTR, U_NULLPTR, U_NULLPTR);
 
       (void) U_SYSCALL(fclose, "%p", paramfile);
       }
@@ -437,7 +441,7 @@ bool USSLSocket::useDHFile(const char* dh_file)
 #  endif
       }
 
-   if (dh == 0) U_RETURN(false);
+   if (dh == U_NULLPTR) U_RETURN(false);
 
    /*
 #ifdef DEBUG
@@ -457,8 +461,21 @@ bool USSLSocket::useDHFile(const char* dh_file)
    U_RETURN(true);
 }
 
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-U_NO_EXPORT int USSLSocket::selectProto(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg)
+#ifndef U_HTTP2_DISABLE
+#ifdef U_USE_NPN
+U_NO_EXPORT int USSLSocket::nextProto(SSL* ssl, const unsigned char** data, unsigned int* len, void* arg) // NPN selection callback
+{
+   U_TRACE(0, "USSLSocket::nextProto(%p,%p,%p,%p)", ssl, data, len, arg)
+
+   *data = (unsigned char*)arg;
+    *len = U_CONSTANT_SIZE("\x2h2\x5h2-16\x5h2-14");
+
+   U_RETURN(SSL_TLSEXT_ERR_OK);
+}
+#endif
+
+#ifdef U_USE_ALPN
+U_NO_EXPORT int USSLSocket::selectProto(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg) // ALPN selection callback
 {
    U_TRACE(0, "USSLSocket::selectProto(%p,%p,%p,%.*S,%u,%p)", ssl, out, outlen, inlen, in, inlen, arg)
 
@@ -494,6 +511,7 @@ U_NO_EXPORT int USSLSocket::selectProto(SSL* ssl, const unsigned char** out, uns
    U_RETURN(SSL_TLSEXT_ERR_NOACK);
 }
 #endif
+#endif
 
 bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const char* private_key_file,
                             const char* passwd,  const char* CAfile,    const char* CApath, int verify_mode)
@@ -522,8 +540,10 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
 
       if (result == 0) U_RETURN(false);
 
-#  if !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
-      staple.cert = UCertificate::readX509(UFile::contentOf(UString(cert_file)), "PEM");
+#  if defined(ENABLE_THREAD) && !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
+      UString str(cert_file, u__strlen(cert_file, __PRETTY_FUNCTION__));
+
+      staple.cert = UCertificate::readX509(UFile::contentOf(str), "PEM");
 
       U_INTERNAL_DUMP("staple.cert = %p", staple.cert)
 #  endif
@@ -568,15 +588,15 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
 
       if (result == 0) U_RETURN(false);
 
-#  if !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
-      staple.pkey = UServices::loadKey(UFile::contentOf(UString(private_key_file)), "PEM", true, passwd, 0);
+#  if defined(ENABLE_THREAD) && !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
+   // staple.pkey = UServices::loadKey(UFile::contentOf(UString(private_key_file, u__strlen(private_key_file, __PRETTY_FUNCTION__))), "PEM", true, passwd, 0);
 
       U_INTERNAL_DUMP("staple.pkey = %p", staple.pkey)
 #  endif
       }
 
-   if (CAfile && *CAfile == '\0') CAfile = 0;
-   if (CApath && *CApath == '\0') CApath = 0;
+   if (CAfile && *CAfile == '\0') CAfile = U_NULLPTR;
+   if (CApath && *CApath == '\0') CApath = U_NULLPTR;
 
    if (CAfile ||
        CApath)
@@ -611,6 +631,72 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
     * Intermediate Firefox 1, Chrome 1, IE 7, Opera 5, Safari 1, Windows XP IE8, Android 2.3, Java 7
     * Old          Windows XP IE6, Java 6
     */
+   
+   /*
+      ECDSA over RSA
+   
+         https://blog.cloudflare.com/ecdsa-the-digital-signature-algorithm-of-a-better-internet/
+
+         ECC-enabled TLS is faster and more scalable on our servers and provides the same or better security than the default cryptography in use on the web.
+
+         According to the ECRYPT II recommendations on key length, a 256-bit elliptic curve key provides as much protection as a 3,248-bit asymmetric key. Typical RSA keys in website certificates are 2048-bits. If we compare the portion of the TLS handshake that happens on the server for 256-bit ECDSA keys against the cryptographically much weaker 2048-bit RSA keys we get the following:
+
+                                     sign/s
+         256 bit ecdsa (nistp256)    9516.8
+         rsa 2048 bits               1001.8
+
+         (openssl 1.0.2 beta on x86_64 with enable-ec_nistp_64_gcc_128)
+         That table shows the number of ECDSA and RSA signatures possible per second. On our servers, using an ECDSA certificate reduces the cost of the private key operation by a factor of 9.5x, saving a lot of CPU cycles.
+
+      ECDHE over RSA
+
+         https://www.cult-of-tech.net/2016/04/testing-tls-cipher-performance/
+            RSA is really fast... But it doesn’t support perfect forward security (PFS). ECDHE is slightly slower, but it supports PFS. DHE is considerably slower than either RSA or ECDHE, and supports PFS.
+
+      AES128 over AES256
+
+         https://www.cult-of-tech.net/2016/04/testing-tls-cipher-performance/
+            AES256 is ~11% slower than AES128.
+
+         https://github.com/ssllabs/research/wiki/SSL-and-TLS-Deployment-Best-Practices
+            There are no clear benefits of using encryption above 128 bits.
+
+      GCM over CBC
+
+         https://www.cult-of-tech.net/2016/04/testing-tls-cipher-performance/
+            AES-NI doubles CBC across the board. AES-NI also speeds up GCM by 4.2 to 8.5 times. Without AES-NI, CBC is faster than GCM in all packet sizes.
+   
+      SHA-512 (and SHA-384) over SHA-256
+
+         https://crypto.stackexchange.com/questions/26336/sha512-faster-than-sha256/26351#26351
+            SHA-512 has 25% more rounds than SHA-256. On a 64-bit processor each round takes the same amount of operations, yet can process double the data per round, because the instructions process 64-bit words instead of 32-bit words. Therefore, 2 / 1.25 = 1.6, which is how much faster SHA-512 can be under optimal conditions.
+
+      
+      CHACHA20_POLY1305 is preferred on older mobile devices (that lack AES hardware acceleration)
+         
+         https://github.com/henrinormak/Heimdall/issues/15
+
+             iOS Security—White Paper | June 2015: Every iOS device has a dedicated AES 256 crypto engine built into the DMA path between the flash storage and main system memory, making file encryption highly efficient.
+
+            Google engineer tweeted that on newer phones with ARMv8 chip AES GCM is faster than Chacha20 (due to hardware support for AES) and Chrome switches to AES GCM in such cases
+
+         https://blog.cloudflare.com/do-the-chacha-better-mobile-performance-with-cryptography/
+         
+            ChaCha20-Poly1305 is three times faster than AES-128-GCM on mobile devices
+
+            Intel processors since Westmere in 2010 come with AES hardware support that makes AES operations effectively free. This makes it an ideal cipher choice for both our servers and for web visitors using modern desktop and laptop computers. It’s not ideal for older computers and mobile devices. Phones and tablets don’t typically have cryptographic hardware for AES and are therefore required to use software implementations of ciphers. The AES-GCM cipher can be particularly costly when implemented in software. This is less than optimal on devices where every processor cycle can cost you precious battery life. 
+
+      https://crypto.stackexchange.com/questions/63796/why-does-tls-1-3-support-two-ccm-variants
+
+         CCM variants are for embedded devices
+
+      
+      AES128 + SHA256 still faster than AES256 + SHA384
+         https://jbp.io/2019/07/02/rustls-vs-openssl-bulk-performance.html
+            Receiving
+               ECDHE-RSA-AES128-GCM-SHA256   2138.1 MB/s
+               ECDHE-RSA-AES256-GCM-SHA384   1902.82 MB/s
+   */
 
    const char* ciphersuite;
    int options = SSL_CTX_get_options(ctx);
@@ -621,6 +707,13 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
       {
       case Modern:
          {
+#     ifdef TLS1_3_VERSION
+         (void) U_SYSCALL(SSL_CTX_set_min_proto_version, "%p,%d", ctx, TLS1_3_VERSION);
+
+         ciphersuite = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
+
+         // (void) U_SYSCALL(SSL_CTX_set1_sigalgs_list, "%p,%S", ctx, "ECDSA+SHA384:ECDSA+SHA512:ECDSA+SHA256:RSA+SHA384:RSA+SHA512:RSA+SHA256");
+#     else
          options |= SSL_OP_NO_SSLv2 |
                     SSL_OP_NO_SSLv3 |
                     SSL_OP_NO_TLSv1; 
@@ -632,6 +725,7 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
             "ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:"
             "DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:"
             "DHE-RSA-AES256-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK";
+#     endif
          }
       break;
 
@@ -639,6 +733,19 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
          {
          options |= SSL_OP_NO_SSLv2;
 
+#     ifdef TLS1_3_VERSION
+         options |= SSL_OP_NO_SSLv3;
+
+         ciphersuite = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:"
+                       "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:"
+                       "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+                       "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:"
+                       "ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:"
+                       "ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:"
+                       "ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:"
+                       "DHE-RSA-AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:"
+                       "AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA";
+#     else
          ciphersuite =
             "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:"
             "ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:"
@@ -648,6 +755,7 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
             "DHE-RSA-AES256-SHA:ECDHE-RSA-DES-CBC3-SHA:ECDHE-ECDSA-DES-CBC3-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:"
             "AES128-SHA:AES256-SHA:AES:DES-CBC3-SHA:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:"
             "!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA";
+#     endif
          }
       break;
 
@@ -656,13 +764,23 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
          options |= SSL_OP_NO_SSLv2 |
                     SSL_OP_NO_SSLv3;
 
+#     ifdef TLS1_3_VERSION
+         options |= SSL_OP_NO_TLSv1;
+
+         ciphersuite = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:"
+                       "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:"
+                       "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+                       "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
+#     else
          ciphersuite =
             "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:"
             "DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:"
             "ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:"
             "ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:"
             "DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA:AES:CAMELLIA:"
-            "DES-CBC3-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA";
+            "!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA"
+            ":!DES-CBC3-SHA:!DHE-RSA-DES-CBC3-SHA";
+#     endif
          }
       break;
       }
@@ -677,10 +795,7 @@ bool USSLSocket::setContext(const char* dh_file, const char* cert_file, const ch
    (void) U_SYSCALL(SSL_CTX_set_cipher_list, "%p,%S", ctx, ciphersuite);
 
 #ifndef U_HTTP2_DISABLE
-   U_SYSCALL_VOID(SSL_CTX_set_next_protos_advertised_cb, "%p,%p,%p", ctx, nextProto, (unsigned char*)"\x2h2\x5h2-16\x5h2-14");
-# if OPENSSL_VERSION_NUMBER >= 0x10002000L
-   U_SYSCALL_VOID(SSL_CTX_set_alpn_select_cb, "%p,%p,%p", ctx, selectProto, 0); // ALPN selection callback
-# endif
+   setupProtocolNegotiationMethods();
 #endif
 
    U_RETURN(true);
@@ -883,7 +998,7 @@ bool USSLSocket::askForClientCertificate()
     * object that it is called on
     */
 
-   U_SYSCALL_VOID(SSL_set_verify, "%p,%d,%p", ssl, SSL_VERIFY_PEER_STRICT, 0); // | SSL_VERIFY_CLIENT_ONCE
+   U_SYSCALL_VOID(SSL_set_verify, "%p,%d,%p", ssl, SSL_VERIFY_PEER_STRICT, U_NULLPTR); // | SSL_VERIFY_CLIENT_ONCE
 
    // Stop the client from just resuming the un-authenticated session
 
@@ -913,7 +1028,6 @@ bool USSLSocket::askForClientCertificate()
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
    ssl->state = SSL_ST_ACCEPT;
-#endif
 
    ret = U_SYSCALL(SSL_do_handshake, "%p", ssl);
 
@@ -925,6 +1039,29 @@ bool USSLSocket::askForClientCertificate()
 
       U_RETURN(false);
       }
+#else
+   char peekbuf[1];
+
+   if (U_SYSCALL(SSL_is_init_finished, "%p", ssl) == false)
+      {
+#  ifdef DEBUG
+      dumpStatus(true);
+#  endif
+
+      U_RETURN(false);
+      }
+
+   (void) U_SYSCALL(SSL_peek, "%p,%p,%d", ssl, peekbuf, 0);
+
+   if (U_SYSCALL(SSL_is_init_finished, "%p", ssl) == false)
+      {
+#  ifdef DEBUG
+      dumpStatus(true);
+#  endif
+
+      U_RETURN(false);
+      }
+#endif
 
    U_RETURN(true);
 }
@@ -938,7 +1075,7 @@ bool USSLSocket::acceptSSL(USSLSocket* pcNewConnection)
 
    U_DUMP("fd = %d isBlocking() = %b", fd, pcNewConnection->isBlocking())
 
-   U_INTERNAL_ASSERT_EQUALS(ssl, 0)
+   U_INTERNAL_ASSERT_EQUALS(ssl, U_NULLPTR)
 
    ssl = (SSL*) U_SYSCALL(SSL_new, "%p", ctx);
 
@@ -965,7 +1102,7 @@ loop:
       pcNewConnection->iState         = CONNECT;
       pcNewConnection->renegotiations = 0;
 
-      ssl = 0;
+      ssl = U_NULLPTR;
 
       U_RETURN(true);
       }
@@ -991,22 +1128,18 @@ loop:
    errno = -pcNewConnection->iState;
 
    U_SYSCALL_VOID(SSL_free, "%p", ssl);
-                                  ssl = 0;
+                                  ssl = U_NULLPTR;
 
-   pcNewConnection->USocket::_closesocket();
+   pcNewConnection->USocket::_close_socket();
 
    U_INTERNAL_DUMP("pcNewConnection->ret = %d", pcNewConnection->ret)
 
    U_RETURN(false);
 }
 
-#ifdef closesocket
-#undef closesocket
-#endif
-
-void USSLSocket::closesocket()
+void USSLSocket::close_socket()
 {
-   U_TRACE_NO_PARAM(1, "USSLSocket::closesocket()")
+   U_TRACE_NO_PARAM(1, "USSLSocket::close_socket()")
 
    if (ssl)
       {
@@ -1035,7 +1168,7 @@ loop: ret = U_SYSCALL(SSL_shutdown, "%p", ssl); // Send SSL shutdown signal to p
          }
 
       U_SYSCALL_VOID(SSL_free, "%p", ssl);
-                                     ssl = 0;                
+                                     ssl = U_NULLPTR;
       }
 
    USocket::setSSLActive(false);
@@ -1171,11 +1304,10 @@ end:
    U_RETURN(iBytesWrite);
 }
 
-#if !defined(OPENSSL_NO_TLSEXT) && defined(SSL_set_tlsext_host_name)
-
 // This callback function is executed when OpenSSL encounters an extended
 // client hello with a server name indication extension ("SNI", cf. RFC 6066)
 
+#if !defined(OPENSSL_NO_TLSEXT) && defined(SSL_set_tlsext_host_name)
 int USSLSocket::callback_ServerNameIndication(SSL* _ssl, int* alert, void* data)
 {
    U_TRACE(1, "USSLSocket::callback_ServerNameIndication(%p,%p,%p)", _ssl, alert, data)
@@ -1184,7 +1316,7 @@ int USSLSocket::callback_ServerNameIndication(SSL* _ssl, int* alert, void* data)
 
    const char* servername = (const char*) U_SYSCALL(SSL_get_servername, "%p,%d", _ssl, TLSEXT_NAMETYPE_host_name);
 
-   if (servername == 0)
+   if (servername == U_NULLPTR)
       {
    // U_DEBUG("SSL: server name not provided via TLS extension");
 
@@ -1221,37 +1353,49 @@ int USSLSocket::callback_ServerNameIndication(SSL* _ssl, int* alert, void* data)
  * downloading OCSP responses
  */
 
-#if !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
+#if defined(ENABLE_THREAD) && !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
 bool USSLSocket::setDataForStapling()
 {
    U_TRACE_NO_PARAM(1, "USSLSocket::setDataForStapling()")
 
    U_INTERNAL_ASSERT_POINTER(sctx)
 
-   if (staple.cert == 0) U_RETURN(false);
+   if (staple.cert == U_NULLPTR) U_RETURN(false);
 
    char* s;
+   X509* issuer;
    bool result = false;
-   STACK_OF(X509)* chain;
    X509_STORE_CTX* store_ctx;
    STACK_OF(OPENSSL_STRING)* aia;
 
-#if OPENSSL_VERSION_NUMBER >= 0x10001000L
-   SSL_CTX_get_extra_chain_certs(sctx, &chain);
-#else
-   chain = sctx->extra_certs;
+#ifdef SSL_CTRL_SELECT_CURRENT_CERT
+   /* OpenSSL 1.0.2+ */
+   SSL_CTX_select_current_cert(sctx, staple.cert);
 #endif
 
-   int n = U_SYSCALL(sk_X509_num, "%p", chain);
+#ifdef SSL_CTRL_GET_EXTRA_CHAIN_CERTS
+   /* OpenSSL 1.0.1+ */
+   SSL_CTX_get_extra_chain_certs(sctx, &staple.chain);
+#else
+   staple.chain = sctx->extra_certs;
+#endif
+
+   U_INTERNAL_DUMP("staple.chain = %p", staple.chain)
+
+   int n = U_SYSCALL(sk_X509_num, "%p", staple.chain);
+
+   U_DEBUG("SSL get issuer: %d extra certs", n);
 
    for (int i = 0; i < n; ++i)
       {
-      staple.issuer = sk_X509_value(chain, i);
+      issuer = sk_X509_value(staple.chain, i);
 
-      if (U_SYSCALL(X509_check_issued, "%p,%p", staple.issuer, staple.cert) == X509_V_OK)
+      if (U_SYSCALL(X509_check_issued, "%p,%p", issuer, staple.cert) == X509_V_OK)
          {
-#     if OPENSSL_VERSION_NUMBER < 0x10100000L
-         CRYPTO_add(&(staple.issuer->references), 1, CRYPTO_LOCK_X509);
+#     if OPENSSL_VERSION_NUMBER >= 0x10100001L
+         X509_up_ref(issuer);
+#     else
+         CRYPTO_add(&issuer->references, 1, CRYPTO_LOCK_X509);
 #     endif
 
          goto next;
@@ -1262,15 +1406,11 @@ bool USSLSocket::setDataForStapling()
 
    store_ctx = (X509_STORE_CTX*) U_SYSCALL_NO_PARAM(X509_STORE_CTX_new); // create an X509 store context
 
-   if (store_ctx == 0) U_RETURN(false);
+   if (store_ctx == U_NULLPTR) U_RETURN(false);
 
-#ifdef HAVE_OPENSSL_97
-   (void) U_SYSCALL(X509_STORE_CTX_init, "%p,%p,%p,%p", store_ctx, UServices::store, 0, 0);
-#else
-   U_SYSCALL_VOID(  X509_STORE_CTX_init, "%p,%p,%p,%p", store_ctx, UServices::store, 0, 0);
-#endif
+   if (U_SYSCALL(X509_STORE_CTX_init, "%p,%p,%p,%p", store_ctx, UServices::store, U_NULLPTR, U_NULLPTR) == 0) U_RETURN(false);
 
-   n = U_SYSCALL(X509_STORE_CTX_get1_issuer, "%p,%p,%p", &staple.issuer, store_ctx, staple.cert);
+   n = U_SYSCALL(X509_STORE_CTX_get1_issuer, "%p,%p,%p", &issuer, store_ctx, staple.cert);
 
    U_SYSCALL_VOID(X509_STORE_CTX_free, "%p", store_ctx);
 
@@ -1289,11 +1429,16 @@ bool USSLSocket::setDataForStapling()
       U_RETURN(false);
       }
 
-next: // extract OCSP responder URL from certificate
+next:
+   staple.issuer = issuer;
+
+   U_DEBUG("SSL get issuer: found %p in extra certs", issuer);
+
+   // extract OCSP responder URL from certificate
 
    aia = (STACK_OF(OPENSSL_STRING)*) U_SYSCALL(X509_get1_ocsp, "%p", staple.cert);
 
-   if (aia == 0) U_RETURN(false);
+   if (aia == U_NULLPTR) U_RETURN(false);
 
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
    s = sk_OPENSSL_STRING_value(aia, 0);
@@ -1309,105 +1454,110 @@ next: // extract OCSP responder URL from certificate
 
       if (u_isURL(s, len))
          {
-         int ssl = 0;
-         char* host = 0;
-         char* port = 0;
-
          U_INTERNAL_ASSERT_EQUALS(memcmp(s,"http://",7), 0)
 
-         s[len] = 0;
+         staple.id = (OCSP_CERTID*) U_SYSCALL(OCSP_cert_to_id, "%p,%p,%p", U_NULLPTR, staple.cert, staple.issuer);
 
-         if (U_SYSCALL(OCSP_parse_url, "%S,%p,%p,%p,%p", s, &host, &port, &staple.path, &ssl))
-            {
-            U_INTERNAL_ASSERT_POINTER(port)
-            U_INTERNAL_ASSERT_POINTER(host)
-            U_INTERNAL_ASSERT_EQUALS(ssl, 0)
+         if (staple.id == U_NULLPTR) U_RETURN(false);
 
-            U_SYSCALL_VOID(OPENSSL_free, "%p", port);
-            U_SYSCALL_VOID(OPENSSL_free, "%p", host);
+         staple.req = OCSP_REQUEST_new();
 
-            staple.req = OCSP_REQUEST_new();
+         if (U_SYSCALL(OCSP_request_add0_id, "%p,%p", staple.req, staple.id) == U_NULLPTR) U_RETURN(false);
 
-            staple.id = (OCSP_CERTID*) U_SYSCALL(OCSP_cert_to_id, "%p,%p,%p", 0, staple.cert, staple.issuer);
+         if (ocsp_nonce) (void) U_SYSCALL(OCSP_request_add1_nonce, "%p,%p,%d", staple.req, U_NULLPTR, -1);
 
-            U_NEW(UString, staple.url, UString((void*)s, len));
+         if (staple.pkey) (void) U_SYSCALL(OCSP_request_sign, "%p,%p,%p,%p,%p,%ld", staple.req, staple.cert, staple.pkey, EVP_sha1(), U_NULLPTR, 0); // sign the request
 
-            (void) U_SYSCALL(OCSP_request_add0_id, "%p,%p", staple.req, staple.id);
+         SSL_CTX_set_tlsext_status_cb(sctx, USSLSocket::OCSP_resp_callback);
 
-            (void) U_SYSCALL(OCSP_request_add1_nonce, "%p,%p,%d", staple.req, 0, -1);
+         result = true;
 
-            // sign the request
+         U_INTERNAL_ASSERT_EQUALS(staple.url, U_NULLPTR)
+         U_INTERNAL_ASSERT_EQUALS(staple.client, U_NULLPTR)
+         U_INTERNAL_ASSERT_EQUALS(staple.request, U_NULLPTR)
 
-            if (staple.pkey) (void) U_SYSCALL(OCSP_request_sign, "%p,%p,%p,%p,%p,%ld", staple.req, staple.cert, staple.pkey, EVP_sha1(), 0, 0);
+         U_NEW_STRING(staple.url,     UString((void*)s, len));
+         U_NEW_STRING(staple.request, UString(U_CAPACITY));
 
-            SSL_CTX_set_tlsext_status_cb(sctx, USSLSocket::certificate_status_callback);
+         U_NEW(UHttpClient<UTCPSocket>, staple.client, UHttpClient<UTCPSocket>(U_NULLPTR));
 
-            result = true;
-            }
+         unsigned char* p = (unsigned char*) staple.request->data();
+
+         staple.request->size_adjust(i2d_OCSP_REQUEST(staple.req, &p));
+
+         /*
+#     ifdef DEBUG
+         U_FILE_WRITE_TO_TMP(*(staple.request), "ocsp.request.%P");
+#     endif
+
+         UString buffer(U_CAPACITY);
+
+         UString path = staple.client->getUrlPath(),
+                 host = staple.client->getUrlHost();
+
+         UBase64::encodeEscape(*(staple->request), buffer);
+
+         if (path.equal('/')) staple.request->snprintf(U_CONSTANT_TO_PARAM("GET /%v HTTP/1.0\r\nHost: %v\r\n\r\n"),             buffer.rep, host.rep);
+         else                 staple.request->snprintf(U_CONSTANT_TO_PARAM("GET %v/%v HTTP/1.0\r\nHost: %v\r\n\r\n"), path.rep, buffer.rep, host.rep);
+
+         (void) staple.client->setUrl( *(staple.url));
+                staple.client->prepareRequest(*(staple.request));
+         */
          }
       }
 
    U_SYSCALL_VOID(X509_email_free, "%p", aia);
 
-   if (staple.cert)
-      {
-      U_SYSCALL_VOID(X509_free,"%p", staple.cert);
-                                     staple.cert = 0;
-      }
-
-   if (staple.issuer)
-      {
-      U_SYSCALL_VOID(X509_free, "%p", staple.issuer);
-                                      staple.issuer = 0;
-      }
-
-   if (staple.pkey)
-      {
-      U_SYSCALL_VOID(EVP_PKEY_free, "%p", staple.pkey);
-                                          staple.pkey = 0;
-      }
-
    U_RETURN(result);
 }
 
-bool USSLSocket::doStapling()
+uint32_t USSLSocket::doStapling()
 {
    U_TRACE_NO_PARAM(1, "USSLSocket::doStapling()")
 
    U_INTERNAL_ASSERT_POINTER(sctx)
-   U_INTERNAL_ASSERT_POINTER(staple.id)
-   U_INTERNAL_ASSERT_POINTER(staple.req)
-   U_INTERNAL_ASSERT_POINTER(staple.path)
    U_INTERNAL_ASSERT_POINTER(staple.client)
 
    bool result = false;
-   OCSP_RESPONSE* resp = 0;
-   OCSP_BASICRESP* basic = 0;
+   uint32_t tv_sec = 30;
+   OCSP_RESPONSE* ocsp = U_NULLPTR;
+   OCSP_BASICRESP* basic = U_NULLPTR;
 
-   if (staple.client->connect())
+   // send the request and get a response
+
+   if (staple.client->sendPOST(*(staple.url), *(staple.request), U_CONSTANT_TO_PARAM("application/ocsp-request")))
       {
-      unsigned char* p;
+      /*
       BIO* conn = (BIO*) U_SYSCALL(BIO_new_fd, "%d,%d", staple.client->getFd(), BIO_NOCLOSE);
 
-      // send the request and get a response
-
-      resp = (OCSP_RESPONSE*) U_SYSCALL(OCSP_sendreq_bio, "%p,%S,%p", conn, staple.path, staple.req);
+      ocsp = (OCSP_RESPONSE*) U_SYSCALL(OCSP_sendreq_bio, "%p,%S,%p", conn, staple.path, staple.req);
 
       U_SYSCALL_VOID(BIO_free_all, "%p", conn);
+      */
 
-      if (resp)
+      UString response = staple.client->getContent();
+
+      size_t len = response.size();
+#  if OPENSSL_VERSION_NUMBER >= 0x0090707fL
+      const
+#  endif
+      unsigned char* p = (const unsigned char*) response.data();
+
+      ocsp = d2i_OCSP_RESPONSE(U_NULLPTR, &p, len);
+
+      if (ocsp)
          {
          UString nextupdate_str;
          ASN1_GENERALIZEDTIME* thisupdate;
          ASN1_GENERALIZEDTIME* nextupdate;
 
-         int status, rc = U_SYSCALL(OCSP_response_status, "%p", resp);
+         int status, rc = U_SYSCALL(OCSP_response_status, "%p", ocsp);
 
          result = (rc == OCSP_RESPONSE_STATUS_SUCCESSFUL);
 
 #     ifdef DEBUG
-         const char* descr  = 0;
-         const char* errstr = 0;
+         const char* descr  = U_NULLPTR;
+         const char* errstr = U_NULLPTR;
 
          switch (rc)
             {
@@ -1461,82 +1611,123 @@ bool USSLSocket::doStapling()
 
          // verify the response
 
-         basic = (OCSP_BASICRESP*) U_SYSCALL(OCSP_response_get1_basic, "%p", resp);
+         basic = (OCSP_BASICRESP*) U_SYSCALL(OCSP_response_get1_basic, "%p", ocsp);
 
-         result = (basic && U_SYSCALL(OCSP_check_nonce, "%p,%p", staple.req, basic) > 0);
-
-         if (result == false) goto end;
-
-         // verify signature
-
-         result = (U_SYSCALL(OCSP_basic_verify, "%p,%p,%p,%lu", basic, 0, UServices::store, staple.verify ? OCSP_TRUSTOTHER : OCSP_NOVERIFY) == 1);
-
-         if (result == false) goto end;
-
-         result = (U_SYSCALL(OCSP_resp_find_status, "%p,%p,%p,%lu", basic, staple.id, &status, 0, 0, &thisupdate, &nextupdate) == 1);
-
-         nextupdate_str = UStringExt::ASN1TimetoString(nextupdate);
-
-         U_INTERNAL_DUMP("OCSP_resp_find_status() - %d: %s This update: %s Next update: %v", status,
-                          OCSP_cert_status_str(status), UStringExt::ASN1TimetoString(thisupdate).data(), nextupdate_str.rep)
-
-         if (result == false ||
-             status != V_OCSP_CERTSTATUS_GOOD)
+         if (basic == U_NULLPTR)
             {
+            result = false;
+
+            goto end;
+            }
+  
+         if (ocsp_nonce &&
+             U_SYSCALL(OCSP_check_nonce, "%p,%p", staple.req, basic) <= 0)
+            {
+            result = false;
+
+            U_DEBUG("ocsp: check nonce failed");
+
+            goto end;
+            }
+
+         result = (U_SYSCALL(OCSP_basic_verify, "%p,%p,%p,%lu", basic, staple.chain, UServices::store, OCSP_NOVERIFY) == 1);
+
+         if (result == false)
+            {
+            U_DEBUG("ocsp: couldn't verify OCSP basic response");
+
+            goto end;
+            }
+
+         result = (U_SYSCALL(OCSP_resp_find_status, "%p,%p,%p,%p,%p,%p,%p", basic, staple.id, &status, U_NULLPTR, U_NULLPTR, &thisupdate, &nextupdate) == 1);
+
+         if (result == false)
+            {
+            U_DEBUG("ocsp: no status found");
+
+            goto end;
+            }
+
+         if (status != V_OCSP_CERTSTATUS_GOOD)
+            {
+            result = false;
+
             goto end;
             }
 
          // check if the response is valid for at least six minutes
 
-         result = (U_SYSCALL(OCSP_check_validity, "%p,%p,%p,%lu", thisupdate, nextupdate, 360, -1) == 1);
+         result = (U_SYSCALL(OCSP_check_validity, "%p,%p,%ld,%ld", thisupdate, nextupdate, 300, -1) == 1);
 
          if (result == false) goto end;
 
-         staple.valid = u_now->tv_sec + UTimeDate::getSecondFromTime(nextupdate_str.data(), true);
+         nextupdate_str = UStringExt::ASN1TimetoString(nextupdate);
 
-         U_INTERNAL_DUMP("staple.valid = %ld now = %ld", staple.valid, u_now->tv_sec)
+         U_SRV_VALID_OCSP_STAPLE = UTimeDate::getSecondFromDate(nextupdate_str.data());
 
-         p = (unsigned char*) staple.data;
+         U_INTERNAL_ASSERT_POINTER(staple.data)
+
+         p = (const unsigned char*) staple.data;
 
 #     if defined(ENABLE_THREAD) && !defined(_MSWINDOWS_)
          UServer_Base::lock_ocsp_staple->lock();
 #     endif
 
-         staple.len = i2d_OCSP_RESPONSE(resp, &p);
+         U_SRV_LEN_OCSP_STAPLE = i2d_OCSP_RESPONSE(ocsp, (unsigned char**)&p);
 
 #     if defined(ENABLE_THREAD) && !defined(_MSWINDOWS_)
          UServer_Base::lock_ocsp_staple->unlock();
 #     endif
 
-         U_INTERNAL_DUMP("staple.data(%d) = %p %#.*S", staple.len, staple.data, staple.len, staple.data)
+         U_DEBUG("ocsp: OCSP_resp_find_status() - %d: %s This update: %V Next update: %V now = %#19D U_SRV_VALID_OCSP_STAPLE = %#19D staple.data(%d) = %p %#.*S",
+                  status, OCSP_cert_status_str(status), UStringExt::ASN1TimetoString(thisupdate).rep, nextupdate_str.rep, u_now->tv_sec,
+                  U_SRV_VALID_OCSP_STAPLE, U_SRV_LEN_OCSP_STAPLE, staple.data, U_SRV_LEN_OCSP_STAPLE, staple.data)
 
-         U_INTERNAL_ASSERT_MINOR(staple.len, U_OCSP_MAX_RESPONSE_SIZE)
+         U_INTERNAL_ASSERT_MINOR(U_SRV_LEN_OCSP_STAPLE, U_OCSP_MAX_RESPONSE_SIZE)
          }
       }
 
 end:
-   if (resp)  OCSP_RESPONSE_free(resp);
+   if (ocsp)  OCSP_RESPONSE_free(ocsp);
    if (basic) OCSP_BASICRESP_free(basic);
 
    if (staple.client->isOpen()) staple.client->close();
 
-   U_RETURN(result);
+   if (result == false)
+      {
+      ERR_print_errors_fp(stderr);
+
+      U_DEBUG("SSL: OCSP request for stapling to %V has FAILED", staple.url->rep);
+      }
+   else
+      {
+      U_DEBUG("SSL: OCSP request for stapling to %V has succes", staple.url->rep);
+
+      tv_sec = U_min(U_SRV_VALID_OCSP_STAPLE - u_now->tv_sec - 30, 3600);
+      }
+
+   U_RETURN(tv_sec);
 }
 
-void USSLSocket::certificate_status_callback(SSL* _ssl, void* data)
+/**
+ * Certificate Status callback. This is called when a client includes a certificate status request extension.
+ * Check for cached responses in session cache. If valid send back to client. If absent or no longer valid query responder and update cache
+ */
+
+int USSLSocket::OCSP_resp_callback(SSL* _ssl, void* data)
 {
-   U_TRACE(0, "USSLSocket::certificate_status_callback(%p,%p)", _ssl, data)
+   U_TRACE(0, "USSLSocket::OCSP_resp_callback(%p,%p)", _ssl, data)
 
    U_INTERNAL_ASSERT_POINTER(sctx)
 
-   U_INTERNAL_DUMP("staple.data(%d) = %p %#.*S", staple.len, staple.data, staple.len, staple.data)
+// U_DEBUG("ocsp: OCSP_resp_callback(%p) - U_SRV_VALID_OCSP_STAPLE = %#19D now = %#19D", _ssl, U_SRV_VALID_OCSP_STAPLE, u_now->tv_sec)
 
-   if (staple.len &&
-       staple.valid < u_now->tv_sec)
+   if (U_SRV_LEN_OCSP_STAPLE  &&
+       U_SRV_VALID_OCSP_STAPLE >= (uint32_t)u_now->tv_sec)
       {
       unsigned char* p;
 
-      U_INTERNAL_ASSERT_MINOR(staple.len, U_OCSP_MAX_RESPONSE_SIZE)
+      U_INTERNAL_ASSERT_MINOR(U_SRV_LEN_OCSP_STAPLE, U_OCSP_MAX_RESPONSE_SIZE)
 
 #  if defined(ENABLE_THREAD) && !defined(_MSWINDOWS_)
       UServer_Base::lock_ocsp_staple->lock();
@@ -1544,41 +1735,49 @@ void USSLSocket::certificate_status_callback(SSL* _ssl, void* data)
 
       // we have to copy ocsp response as OpenSSL will free it by itself
 
-      p = (unsigned char*) OPENSSL_malloc(staple.len);
+      p = (unsigned char*) OPENSSL_malloc(U_SRV_LEN_OCSP_STAPLE);
 
-      U_MEMCPY(p, staple.data, staple.len);
+      U_MEMCPY(p, staple.data, U_SRV_LEN_OCSP_STAPLE);
+
+      (void) SSL_set_tlsext_status_ocsp_resp(_ssl, p, U_SRV_LEN_OCSP_STAPLE);
 
 #  if defined(ENABLE_THREAD) && !defined(_MSWINDOWS_)
       UServer_Base::lock_ocsp_staple->unlock();
 #  endif
 
-      SSL_set_tlsext_status_ocsp_resp(_ssl, p, staple.len);
+//    U_DEBUG("ocsp: OCSP_resp_callback() - SSL_set_tlsext_status_ocsp_resp(%p,%#.*S,%d) = %ld", _ssl, U_SRV_LEN_OCSP_STAPLE, p, U_SRV_LEN_OCSP_STAPLE, result)
+
+      /**
+       * The callback when used on the server side should return with either SSL_TLSEXT_ERR_OK (meaning that the OCSP response that has been set should be returned),
+       * SSL_TLSEXT_ERR_NOACK (meaning that an OCSP response should not be returned) or SSL_TLSEXT_ERR_ALERT_FATAL (meaning that a fatal error has occurred)
+       */
+
+      U_RETURN(SSL_TLSEXT_ERR_OK);
       }
+
+   U_RETURN(SSL_TLSEXT_ERR_NOACK);
 }
 
 void USSLSocket::cleanupStapling()
 {
    U_TRACE_NO_PARAM(1, "USSLSocket::cleanupStapling()")
 
-   if (staple.id)  OCSP_CERTID_free(staple.id);
-// if (staple.req) OCSP_REQUEST_free(staple.req);
+   if (staple.url)     U_DELETE(staple.url)
+   if (staple.client)  U_DELETE(staple.client)
+   if (staple.request) U_DELETE(staple.request)
 
-   if (staple.url)    delete staple.url;
-   if (staple.client) delete staple.client;
+   if (staple.cert)   U_SYSCALL_VOID(X509_free,         "%p", staple.cert);
+   if (staple.pkey)   U_SYSCALL_VOID(EVP_PKEY_free,     "%p", staple.pkey);
+   if (staple.issuer) U_SYSCALL_VOID(X509_free,         "%p", staple.issuer);
+// if (staple.id)     U_SYSCALL_VOID(OCSP_CERTID_free,  "%p", staple.id);
+   if (staple.req)    U_SYSCALL_VOID(OCSP_REQUEST_free, "%p", staple.req);
 
-   if (staple.cert)   U_SYSCALL_VOID(X509_free,     "%p", staple.cert);
-   if (staple.issuer) U_SYSCALL_VOID(X509_free,     "%p", staple.issuer);
-   if (staple.path)   U_SYSCALL_VOID(OPENSSL_free,  "%p", staple.path);
-   if (staple.pkey)   U_SYSCALL_VOID(EVP_PKEY_free, "%p", staple.pkey);
-
-   staple.id     = 0;
-   staple.req    = 0;
-   staple.url    = 0;
-   staple.cert   = 0;
-   staple.path   = 0;
-   staple.pkey   = 0;
-   staple.issuer = 0;
-   staple.client = 0;
+   staple.id     = U_NULLPTR;
+   staple.req    = U_NULLPTR;
+   staple.cert   = U_NULLPTR;
+   staple.pkey   = U_NULLPTR;
+   staple.issuer = U_NULLPTR;
+   staple.client = U_NULLPTR;
 }
 #endif
 
@@ -1603,6 +1802,6 @@ const char* USSLSocket::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

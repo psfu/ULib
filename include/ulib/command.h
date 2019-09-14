@@ -39,25 +39,26 @@ public:
 
    void zero()
       {
-      envp = 0;
-      pathcmd = 0;
-      ncmd = nenv = nfile = 0;
+      envp        = U_NULLPTR;
+      pathcmd     = U_NULLPTR;
+      argv_exec   =
+      envp_exec   = U_NULLPTR;
       flag_expand = U_NOT_FOUND;
-      argv_exec = envp_exec = 0;
+      ncmd = nenv = nfile = 0;
       }
 
    void reset(const UString* penv);
 
    UCommand()
       {
-      U_TRACE_REGISTER_OBJECT(0, UCommand, "", 0)
+      U_TRACE_CTOR(0, UCommand, "")
 
       zero();
       }
 
-   UCommand(const UString& cmd, char** penv = 0) : command(cmd)
+   UCommand(const UString& cmd, char** penv = U_NULLPTR) : command(cmd)
       {
-      U_TRACE_REGISTER_OBJECT(0, UCommand, "%V,%p", cmd.rep, penv)
+      U_TRACE_CTOR(0, UCommand, "%V,%p", cmd.rep, penv)
 
       zero();
       setCommand();
@@ -66,7 +67,16 @@ public:
 
    UCommand(const UString& cmd, const UString* penv) : command(cmd)
       {
-      U_TRACE_REGISTER_OBJECT(0, UCommand, "%V,%p", cmd.rep, penv)
+      U_TRACE_CTOR(0, UCommand, "%V,%p", cmd.rep, penv)
+
+      zero();
+      setCommand();
+      setEnvironment(penv);
+      }
+
+   UCommand(const char* cmd, uint32_t len, const UString* penv) : command(cmd, len)
+      {
+      U_TRACE_CTOR(0, UCommand, "%.*S,%u,%p", len, cmd, len, penv)
 
       zero();
       setCommand();
@@ -75,9 +85,9 @@ public:
 
    ~UCommand()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UCommand)
+      U_TRACE_DTOR(0, UCommand)
 
-      reset(0);
+      reset(U_NULLPTR);
       }
 
    // MANAGE GENERIC ENVIRONMENT
@@ -100,9 +110,9 @@ public:
 
       U_INTERNAL_ASSERT_POINTER(argv_exec)
 
-      argv_exec[ncmd--] = 0;
+      argv_exec[ncmd--] = U_NULLPTR;
 
-      U_INTERNAL_DUMP("ncmd = %d", ncmd)
+      U_INTERNAL_DUMP("ncmd = %u", ncmd)
 
       U_INTERNAL_ASSERT_RANGE(1,ncmd,U_ADD_ARGS)
       }
@@ -115,16 +125,18 @@ public:
       U_INTERNAL_ASSERT(u_isText((const unsigned char*)argument, u__strlen(argument, __PRETTY_FUNCTION__)))
 
       argv_exec[++ncmd] = (char*) argument;
-      argv_exec[ncmd+1] = 0;
+      argv_exec[ncmd+1] = U_NULLPTR;
 
-      U_INTERNAL_DUMP("ncmd = %d", ncmd)
+      U_INTERNAL_DUMP("ncmd = %u", ncmd)
 
       U_INTERNAL_ASSERT_RANGE(1,ncmd,U_ADD_ARGS)
       }
 
-   void setArgument(int n, const char* argument)
+   void setArgument(uint32_t n, const char* argument)
       {
-      U_TRACE(0, "UCommand::setArgument(%d,%S)", n, argument)
+      U_TRACE(0, "UCommand::setArgument(%u,%S)", n, argument)
+
+      U_INTERNAL_DUMP("ncmd = %u", ncmd)
 
       U_INTERNAL_ASSERT_RANGE(2,n,ncmd)
       U_INTERNAL_ASSERT_POINTER(argv_exec)
@@ -138,24 +150,24 @@ public:
       U_TRACE(0, "UCommand::setLastArgument(%S)", argument)
 
       U_INTERNAL_ASSERT_POINTER(argv_exec)
-      U_INTERNAL_ASSERT_EQUALS(argv_exec[ncmd+1],0)
+      U_INTERNAL_ASSERT_EQUALS(argv_exec[ncmd+1], U_NULLPTR)
       U_INTERNAL_ASSERT(u_isText((const unsigned char*)argument, u__strlen(argument, __PRETTY_FUNCTION__)))
 
       argv_exec[ncmd] = (char*) argument;
       }
 
-   char* getArgument(int n) const __pure
+   char* getArgument(uint32_t n) const __pure
       {
-      U_TRACE(0, "UCommand::getArgument(%d)", n)
+      U_TRACE(0, "UCommand::getArgument(%u)", n)
 
-      char* arg = (argv_exec ? argv_exec[n] : 0);
+      char* arg = (argv_exec ? argv_exec[n] : U_NULLPTR);
 
-      U_INTERNAL_ASSERT(arg == 0 || u_isText((const unsigned char*)arg, u__strlen(arg, __PRETTY_FUNCTION__)))
+      U_INTERNAL_ASSERT(arg == U_NULLPTR || u_isText((const unsigned char*)arg, u__strlen(arg, __PRETTY_FUNCTION__)))
 
       U_RETURN(arg);
       }
 
-   void setNumArgument(int32_t n = 1, bool bfree = false);
+   void setNumArgument(uint32_t n = 1, bool bfree = false);
 
    // MANAGE FILE ARGUMENT
 
@@ -167,18 +179,18 @@ public:
       U_INTERNAL_ASSERT_POINTER(argv_exec)
       U_INTERNAL_ASSERT(u_isText((const unsigned char*)pathfile, u__strlen(pathfile, __PRETTY_FUNCTION__)))
 
-      U_INTERNAL_DUMP("ncmd = %d", ncmd)
+      U_INTERNAL_DUMP("ncmd = %u", ncmd)
 
       U_INTERNAL_ASSERT_RANGE(2,nfile,ncmd)
 
       argv_exec[nfile] = (char*) pathfile;
       }
 
-   int32_t getNumArgument() const       { return ncmd; }
-   int32_t getNumFileArgument() const   { return nfile; }
+   uint32_t getNumArgument() const     { return ncmd; }
+   uint32_t getNumFileArgument() const { return nfile; }
 
-   UString getStringCommand()           { return command; }
-   UString getStringEnvironment()       { return environment; }
+   UString getStringCommand()     { return command; }
+   UString getStringEnvironment() { return environment; }
 
    void setCommand(const UString& cmd)
       {
@@ -189,7 +201,7 @@ public:
       setCommand();
       }
 
-   void set(const UString& cmd, char** penv = 0)
+   void set(const UString& cmd, char** penv = U_NULLPTR)
       {
       U_TRACE(0, "UCommand::set(%V,%p)", cmd.rep, penv)
 
@@ -228,17 +240,17 @@ public:
 
    static void setTimeout(int seconds) { timeoutMS = (seconds * 1000); }
 
-   static int32_t setEnvironment(const UString& env, char**& envp);
-   static void   freeEnvironment(char** _envp, int32_t n) { UMemoryPool::_free(_envp, n + 1, sizeof(char*)); } // NB: we consider the null terminator...
+   static uint32_t setEnvironment(const UString& env, char**& envp);
+   static void    freeEnvironment(char** _envp, uint32_t n) { UMemoryPool::_free(_envp, n + 1, sizeof(char*)); } // NB: we consider the null terminator...
 
    // run command
 
    bool executeWithFileArgument(UString* output, UFile* file);
 
-   bool executeAndWait(UString* input = 0,                           int fd_stdin = -1, int fd_stderr = -1);
-   bool execute(       UString* input = 0, UString* output = 0,      int fd_stdin = -1, int fd_stderr = -1);
+   bool executeAndWait(UString* input = U_NULLPTR,                              int fd_stdin = -1, int fd_stderr = -1);
+   bool execute(       UString* input = U_NULLPTR, UString* output = U_NULLPTR, int fd_stdin = -1, int fd_stderr = -1);
 
-   static UString outputCommand(const UString& cmd, char** envp = 0, int fd_stdin = -1, int fd_stderr = -1);
+   static UString outputCommand(const UString& cmd, char** envp = U_NULLPTR, int fd_stdin = -1, int fd_stderr = -1);
 
    bool checkForExecute(int mode = R_OK | X_OK)
       {
@@ -295,9 +307,8 @@ protected:
    char* pathcmd;
    char** argv_exec;
    char** envp_exec;
-   uint32_t flag_expand;
-   int32_t ncmd, nenv, nfile;
    UString command, environment;
+   uint32_t flag_expand, ncmd, nenv, nfile;
 
    void  setCommand();
    void freeCommand();
@@ -306,7 +317,7 @@ protected:
    static void outputCommandWithDialog(const UString& cmd, char** envp, UString* output, int fd_stdin, int fd_stderr, bool dialog);
 
 private:
-          void setEnvironment(const UString& env) U_NO_EXPORT;
+          void setEnvironment(UString& env) U_NO_EXPORT;
    inline void execute(bool flag_stdin, bool flag_stdout, bool flag_stderr) U_NO_EXPORT;
 
    static bool wait() U_NO_EXPORT;

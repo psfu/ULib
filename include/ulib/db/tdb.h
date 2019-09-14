@@ -49,14 +49,14 @@ public:
 
    UTDB()
       {
-      U_TRACE_REGISTER_OBJECT(0, UTDB, "", 0)
+      U_TRACE_CTOR(0, UTDB, "")
 
-      context = 0;
+      context = U_NULLPTR;
       }
 
    ~UTDB()
       {
-      U_TRACE_UNREGISTER_OBJECT(1, UTDB)
+      U_TRACE_DTOR(1, UTDB)
 
       if (context) close();
       }
@@ -109,7 +109,7 @@ public:
       U_INTERNAL_ASSERT_POINTER(context)
 
       (void) U_SYSCALL(tdb_close, "%p", context);
-                                        context = 0;
+                                        context = U_NULLPTR;
       }
 
    // Store an element in the database
@@ -253,9 +253,9 @@ public:
 
    // DEBUG
 
-#  ifdef DEBUG
+# ifdef DEBUG
    const char* dump(bool reset) const;
-#  endif
+# endif
 #endif
 
 private:

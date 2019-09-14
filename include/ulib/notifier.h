@@ -44,13 +44,14 @@
 #define EPOLLROUNDROBIN 0 // (1 << 27)
 #endif
 
-#if defined(HAVE_EPOLL_WAIT) && !defined(USE_LIBEVENT) && !defined(U_SERVER_CAPTIVE_PORTAL) && \
-      (!defined(U_LINUX) || !defined(ENABLE_THREAD) || !defined(U_LOG_DISABLE) || defined(USE_LIBZ))
+#if defined(HAVE_EPOLL_WAIT) && !defined(USE_LIBEVENT) && !defined(U_SERVER_CAPTIVE_PORTAL)
 #  define U_EPOLLET_POSTPONE_STRATEGY
 #endif
 
 #include <ulib/event/event_fd.h>
 #include <ulib/event/event_time.h>
+
+#define U_NOTIFY_DELETE 0x010
 
 class USocket;
 class UTimeStat;
@@ -100,14 +101,14 @@ public:
       }
 
    static void clear();
-   static void modify(UEventFd* handler_event);
+   static bool modify(UEventFd* handler_event);
    static void callForAllEntryDynamic(bPFpv function);
    static void insert(UEventFd* handler_event, int op = 0);
 
 #ifndef USE_LIBEVENT
    static void init();
-   static void resume(UEventFd* item);
    static void suspend(UEventFd* item);
+   static void  resume(UEventFd* item, uint32_t flags = EPOLLOUT);
 
    static void waitForEvent();
    static void waitForEvent(                                                 UEventTime* ptimeout);
@@ -147,7 +148,7 @@ public:
 
       U_INTERNAL_ASSERT_POINTER(item)
 
-      // TODO
+      // TODO: implement suspend() for libevent
       }
 
    static void resume(UEventFd* item)
@@ -156,7 +157,7 @@ public:
 
       U_INTERNAL_ASSERT_POINTER(item)
 
-      // TODO
+      // TODO: implement resume() for libevent
       }
 
    static int waitForEvent(int fd_max, fd_set* read_set, fd_set* write_set, UEventTime* ptimeout)
@@ -201,11 +202,11 @@ public:
 #endif
 
 protected:
-   static bool bread;
    static int nfd_ready; // the number of file descriptors ready for the requested I/O
    static UEventFd** lo_map_fd;
    static UEventFd* handler_event;
-   static UGenericHashMap<int,UEventFd*>* hi_map_fd; // maps a fd to a node pointer
+   static bool bread, flag_sigterm;
+   static UGenericHashMap<unsigned int,UEventFd*>* hi_map_fd; // maps a fd to a node pointer
    static uint32_t bepollet_threshold, lo_map_fd_len;
 
 #ifndef USE_LIBEVENT
@@ -250,7 +251,7 @@ protected:
    static bool setHandler(int fd);
 
 private:
-   static void handlerDelete(int fd, int mask);
+   static void handlerDelete(unsigned int fd, int mask);
 
 #ifndef USE_LIBEVENT
    static void notifyHandlerEvent() U_NO_EXPORT;
@@ -272,12 +273,12 @@ private:
 
    U_DISALLOW_COPY_AND_ASSIGN(UNotifier)
 
-   friend void ULib_init();
-
+   friend class ULib;
    friend class USocket;
    friend class UTimeStat;
    friend class USocketExt;
    friend class UHttpPlugIn;
+   friend class UApplication;
    friend class UServer_Base;
    friend class UClientImage_Base;
    friend class UClientThrottling;

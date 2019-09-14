@@ -34,14 +34,14 @@ public:
 
       RSIGN_SIGN()
          {
-         U_TRACE_REGISTER_OBJECT(5, RSIGN_SIGN, "")
+         U_TRACE_CTOR(5, RSIGN_SIGN, "")
 
          URPCMethod::method_name = U_STRING_FROM_CONSTANT("SIG2");
          }
 
       virtual ~RSIGN_SIGN()
          {
-         U_TRACE_UNREGISTER_OBJECT(5, RSIGN_SIGN)
+         U_TRACE_DTOR(5, RSIGN_SIGN)
          }
 
       // Transforms the method into something that SOAP servers and clients can send.
@@ -91,14 +91,14 @@ public:
       {
       U_TRACE(5, "Application::Application()")
 
-      client = 0;
+      client = U_NULLPTR;
       }
 
    ~Application()
       {
       U_TRACE(5, "Application::~Application()")
 
-      delete client;
+      U_DELETE(client)
       }
 
    void run(int argc, char* argv[], char* env[])
@@ -172,6 +172,8 @@ public:
             if (result) U_WARNING("%v", result.rep);
             }
          }
+
+      client->closeLog();
       }
 
 private:

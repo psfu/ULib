@@ -56,7 +56,7 @@ bool UUnixSocket::connectServer(const UString& server, unsigned int iServPort, i
 
    if (isClosed())
       {
-      if (path == 0)
+      if (path == U_NULLPTR)
          {
          U_INTERNAL_ASSERT(server.isNullTerminated())
 
@@ -67,7 +67,7 @@ bool UUnixSocket::connectServer(const UString& server, unsigned int iServPort, i
       }
 
 loop:
-   result = U_SYSCALL(connect, "%d,%p,%d", iSockDesc, &addr.psaGeneric, len);
+   result = U_FF_SYSCALL(connect, "%d,%p,%d", iSockDesc, &addr.psaGeneric, len);
 
    if (result == 0)
       {
@@ -108,6 +108,6 @@ const char* UUnixSocket::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

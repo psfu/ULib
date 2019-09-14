@@ -25,7 +25,7 @@ void USmtpClient::setStatus()
 
    switch (response)
       {
-      case CONNREFUSED:                   descr = 0;                                   break; //   1
+      case CONNREFUSED:                   descr = U_NULLPTR;                           break; //   1
       case GREET:                         descr = "greeting from server";              break; // 200
       case GOODBYE:                       descr = "server acknolages quit";            break; // 221
       case SUCCESSFUL:                    descr = "command successful";                break; // 250
@@ -58,9 +58,7 @@ bool USmtpClient::_connectServer(const UString& server, unsigned int port, int t
 
       U_INTERNAL_ASSERT_EQUALS(u_buffer_len, 0)
 
-      // NB: the last argument (0) is necessary...
-
-      u_buffer_len = u__snprintf(u_buffer, U_BUFFER_SIZE, U_CONSTANT_TO_PARAM("Sorry, couldn't connect to server '%v:%u'%R"), server.rep, port, 0);
+      u_buffer_len = u__snprintf(u_buffer,U_BUFFER_SIZE,U_CONSTANT_TO_PARAM("Sorry, couldn't connect to server '%v:%u'%R"),server.rep,port,0); // NB: the last argument (0) is necessary...
       }
    else
       {
@@ -91,6 +89,7 @@ bool USmtpClient::_connectServer(UFileConfig& cfg, unsigned int port, int timeou
 
    U_ASSERT_EQUALS(cfg.empty(), false)
 
+   // ----------------------------------------------------------------------------------------------------------------------
    // USmtpClient - configuration parameters
    // ----------------------------------------------------------------------------------------------------------------------
    // SMTP_SERVER host name or ip address for server
@@ -173,8 +172,10 @@ U_NO_EXPORT void USmtpClient::setStateFromResponse()
       {
       case -1:              state = CERROR; break;
       case GREET:           state = LOG_IN; break;
+      case CHALLENGE:       state = LOG_IN; break;
       case GOODBYE:         state = QUIT;   break;
       case READYDATA:       state = DATA;   break;
+      case AUTHENTICATED:   response = SUCCESSFUL;  break;
 
       case SUCCESSFUL:
          {
@@ -238,9 +239,31 @@ bool USmtpClient::startTLS()
    U_RETURN(false);
 }
 
+bool USmtpClient::authLogin(const UString* username, const UString* password)
+{
+  U_TRACE_NO_PARAM(0, "USmtpClient::auth_login()")
+  syncCommand(U_CONSTANT_TO_PARAM("HELO"));
+
+#ifdef USE_LIBSSL
+    if (((USSLSocket*)this)->isSSLActive()
+        && username->isBase64() && password->isBase64()){
+
+      if (syncCommand(U_CONSTANT_TO_PARAM("auth login"))
+          && syncCommand(username->c_str(),username->size())
+          && syncCommand(password->c_str(),password->size())
+          && response == SUCCESSFUL){
+            U_RETURN(true);
+         }
+         }
+#endif
+
+  U_RETURN(false);
+}
+
+
 // Execute an smtp transaction
 
-bool USmtpClient::sendMessage(bool secure)
+bool USmtpClient::sendMessage(bool secure, const UString* username, const UString* password)
 {
    U_TRACE(0, "USmtpClient::sendMessage(%b)", secure)
 
@@ -262,14 +285,23 @@ bool USmtpClient::sendMessage(bool secure)
       {
       (void) syncCommand(U_CONSTANT_TO_PARAM("ehlo %v"), domainName.rep);
 
-      if (response != SUCCESSFUL                ||
-          strstr(u_buffer, "250-STARTTLS") == 0 ||
+      if (response != SUCCESSFUL                        ||
+          strstr(u_buffer, "250-STARTTLS") == U_NULLPTR ||
           startTLS() == false)
          {
          U_RETURN(false);
          }
+      else
+         {
+          if(username && password)
+          {
+            if(!authLogin(username,password)){
+              U_RETURN(false);
+            }
+          }
 
       (void) syncCommand(U_CONSTANT_TO_PARAM("ehlo %v"), domainName.rep);
+      }
       }
 
    if (response != SUCCESSFUL) U_RETURN(false);
@@ -309,7 +341,7 @@ bool USmtpClient::sendMessage(bool secure)
       {
       U_line_terminator_len = 2;
 
-      messageBody = UMimeMultipartMsg::section(messageBody, 0, 0, UMimeMultipartMsg::AUTO, "", "", U_CONSTANT_TO_PARAM("MIME-Version: 1.0"));
+      messageBody = UMimeMultipartMsg::section(U_STRING_TO_PARAM(messageBody), U_NULLPTR, 0, UMimeMultipartMsg::AUTO, "", "", U_CONSTANT_TO_PARAM("MIME-Version: 1.0"));
       }
 
    UString msg(rcptoAddress.size() + messageSubject.size() + messageHeader.size() + messageBody.size() + 32U);
@@ -337,6 +369,58 @@ bool USmtpClient::sendMessage(bool secure)
    U_RETURN(true);
 }
 
+void USmtpClient::sendEmail(const UString& emailAddress, const UString& subject, const UString& body)
+{
+   U_TRACE(0, "USmtpClient::sendEmail(%V,%V,%V)", emailAddress.rep, subject.rep, body.rep)
+
+   UString server, rcpt;
+   uint32_t index = emailAddress.find(':');
+
+   if (index == U_NOT_FOUND)
+      {
+      rcpt   = emailAddress;
+      server = *UString::str_localhost;
+      }
+   else
+      {
+      rcpt   = emailAddress.substr(index+1);
+      server = emailAddress.substr(0U, index).copy();
+      }
+
+   U_DEBUG("sending email to %V: %V", emailAddress.rep, body.rep);
+
+   if (_connectServer(server) == false)
+      {
+      if (u_buffer_len)
+         {
+         U_WARNING("%.*s", u_buffer_len, u_buffer);
+
+         u_buffer_len = 0;
+         }
+
+      return;
+      }
+
+   setMessageBody(body);
+   setRecipientAddress(rcpt);
+   setMessageSubject(subject);
+
+#ifdef USE_LIBSSL
+   bool bsecure = true;
+#else
+   bool bsecure = false;
+#endif
+
+   if (sendMessage(bsecure) == false)
+      {
+      setStatus();
+
+      U_WARNING("email notification to %V failed: %.*s", emailAddress.rep, u_buffer_len, u_buffer);
+
+      u_buffer_len = 0;
+      }
+}
+
 #if defined(U_STDCPP_ENABLE) && defined(DEBUG)
 const char* USmtpClient::dump(bool reset) const
 {
@@ -359,6 +443,6 @@ const char* USmtpClient::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

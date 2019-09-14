@@ -15,26 +15,26 @@
 
 UZIP::UZIP() : tmpdir(U_CAPACITY)
 {
-   U_TRACE_REGISTER_OBJECT(0, UZIP, "")
+   U_TRACE_CTOR(0, UZIP, "")
 
    npart         = 0;
-   file          = 0;
+   file          = U_NULLPTR;
    valid         = false;
-   filenames     = filecontents = 0;
-   zippartname   = zippartcontent = 0;
-   filenames_len = filecontents_len = 0;
+   filenames     = filecontents = U_NULLPTR;
+   zippartname   = zippartcontent = U_NULLPTR;
+   filenames_len = filecontents_len = U_NULLPTR;
 }
 
 UZIP::UZIP(const UString& _content) : content(_content), tmpdir(U_CAPACITY)
 {
-   U_TRACE_REGISTER_OBJECT(0, UZIP, "%V", _content.rep)
+   U_TRACE_CTOR(0, UZIP, "%V", _content.rep)
 
    npart         = 0;
-   file          = 0;
+   file          = U_NULLPTR;
    valid         = (strncmp(_content.data(), U_CONSTANT_TO_PARAM(U_ZIP_ARCHIVE)) == 0);
-   filenames     = filecontents = 0;
-   zippartname   = zippartcontent = 0;
-   filenames_len = filecontents_len = 0;
+   filenames     = filecontents = U_NULLPTR;
+   zippartname   = zippartcontent = U_NULLPTR;
+   filenames_len = filecontents_len = U_NULLPTR;
 }
 
 void UZIP::clear()
@@ -45,16 +45,18 @@ void UZIP::clear()
       {
       U_INTERNAL_ASSERT(tmpdir)
 
-      delete file;
-             file = 0;
+      U_DELETE(file)
+
+      file = U_NULLPTR;
 
       (void) UFile::rmdir(tmpdir, true);
       }
 
    if (zippartname)
       {
-      delete zippartname;
-             zippartname = 0;
+      U_DELETE(zippartname)
+
+      zippartname = U_NULLPTR;
 
       U_INTERNAL_ASSERT_MAJOR(npart,0)
 
@@ -66,14 +68,15 @@ void UZIP::clear()
       U_SYSCALL_VOID(free, "%p", filenames);
       U_SYSCALL_VOID(free, "%p", filenames_len);
 
-      filenames     = 0;
-      filenames_len = 0;
+      filenames     = U_NULLPTR;
+      filenames_len = U_NULLPTR;
       }
 
    if (zippartcontent)
       {
-      delete zippartcontent;
-             zippartcontent = 0;
+      U_DELETE(zippartcontent)
+
+      zippartcontent = U_NULLPTR;
 
       U_INTERNAL_ASSERT_MAJOR(npart,0)
 
@@ -85,8 +88,8 @@ void UZIP::clear()
       U_SYSCALL_VOID(free, "%p", filecontents);
       U_SYSCALL_VOID(free, "%p", filecontents_len);
 
-      filecontents     = 0;
-      filecontents_len = 0;
+      filecontents     = U_NULLPTR;
+      filecontents_len = U_NULLPTR;
       }
 }
 
@@ -96,7 +99,7 @@ U_NO_EXPORT void UZIP::assignFilenames()
 
    U_INTERNAL_ASSERT_MAJOR(npart, 0)
    U_INTERNAL_ASSERT_POINTER(filenames)
-   U_INTERNAL_ASSERT_EQUALS(zippartname, 0)
+   U_INTERNAL_ASSERT_EQUALS(zippartname, U_NULLPTR)
    U_INTERNAL_ASSERT_POINTER(filenames_len)
 
    U_NEW(UVector<UString>, zippartname, UVector<UString>(npart));
@@ -131,7 +134,7 @@ bool UZIP::extract(const UString* _tmpdir, bool bdir)
    if (UFile::mkdirs(dir) &&
        UFile::chdir(dir, true))
       {
-      if (file == 0) U_NEW(UFile, file, UFile);
+      if (file == U_NULLPTR) U_NEW(UFile, file, UFile);
 
       file->setPath(U_STRING_FROM_CONSTANT("tmp.zip"));
 
@@ -141,10 +144,10 @@ bool UZIP::extract(const UString* _tmpdir, bool bdir)
          file->fsync();
          file->close();
 
-         npart = U_SYSCALL(zip_extract, "%S,%p,%p,%p", "tmp.zip", 0, &filenames, &filenames_len);
+         npart = U_SYSCALL(zip_extract, "%S,%p,%p,%p", "tmp.zip", U_NULLPTR, &filenames, &filenames_len);
          }
 
-      if (bdir) (void) UFile::chdir(0, true);
+      if (bdir) (void) UFile::chdir(U_NULLPTR, true);
       }
 
    if (npart > 0)
@@ -216,7 +219,7 @@ UString UZIP::archive(const char** add_to_filenames)
          result = UFile::contentOf(U_STRING_FROM_CONSTANT("tmp.zip"));
          }
 
-      (void) UFile::chdir(0, true);
+      (void) UFile::chdir(U_NULLPTR, true);
       }
 
    U_RETURN_STRING(result);
@@ -229,7 +232,7 @@ bool UZIP::readContent()
    U_CHECK_MEMORY
 
    U_INTERNAL_ASSERT(content)
-   U_INTERNAL_ASSERT_EQUALS(zippartname, 0)
+   U_INTERNAL_ASSERT_EQUALS(zippartname, U_NULLPTR)
 
    npart = U_SYSCALL(zip_get_content, "%p,%u,%p,%p,%p,%p", U_STRING_TO_PARAM(content), &filenames, &filenames_len, &filecontents, &filecontents_len);
 
@@ -241,9 +244,13 @@ bool UZIP::readContent()
 
       for (uint32_t i = 0; i < npart; ++i)
          {
-         UString item(filecontents[i], filecontents_len[i]);
+         if (filecontents_len[i] == 0) zippartcontent->push_back(UString::getStringNull());
+         else
+            {
+            UString item(filecontents[i], filecontents_len[i]);
 
-         zippartcontent->push_back(item);
+            zippartcontent->push_back(item);
+            }
          }
 
       U_RETURN(true);
@@ -299,6 +306,6 @@ const char* UZIP::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

@@ -19,14 +19,16 @@ void WeightWord::clear()
 
       tbl->deallocate();
 
-      delete tbl;
-             tbl = 0;
+      U_DELETE(tbl)
+
+      tbl = U_NULLPTR;
       }
 
    if (vec)
       {
-      delete vec;
-             vec = 0;
+      U_DELETE(vec)
+
+      vec = U_NULLPTR;
       }
 }
 
@@ -44,21 +46,23 @@ void WeightWord::push()
 
    if (check_for_duplicate)
       {
-      if (tbl == 0) U_NEW(UHashMap<WeightWord*>, tbl, UHashMap<WeightWord*>);
+      if (tbl == U_NULLPTR) U_NEW(UHashMap<WeightWord*>, tbl, UHashMap<WeightWord*>);
 
       if (tbl->find(*UPosting::filename))
          {
          U_INTERNAL_DUMP("DUPLICATE")
 
-         delete item;
+         U_DELETE(item)
 
          return;
          }
 
-      tbl->insertAfterFind(*UPosting::filename, item);
+      tbl->hold();
+
+      tbl->insertAfterFind(item);
       }
 
-   if (vec == 0) U_NEW(UVector<WeightWord*>, vec, UVector<WeightWord*>);
+   if (vec == U_NULLPTR) U_NEW(UVector<WeightWord*>, vec, UVector<WeightWord*>);
 
    vec->push_back(item);
 }
@@ -67,9 +71,17 @@ __pure int WeightWord::compareObj(const void* obj1, const void* obj2)
 {
    U_TRACE(5, "WeightWord::compareObj(%p,%p)", obj1, obj2)
 
-   int cmp = ((*(const WeightWord**)obj1)->word_freq < (*(const WeightWord**)obj2)->word_freq ?  1 :
-              (*(const WeightWord**)obj1)->word_freq > (*(const WeightWord**)obj2)->word_freq ? -1 :
-              (*(const WeightWord**)obj1)->filename.compare((*(const WeightWord**)obj2)->filename));
+   int cmp;
+
+#ifdef U_STDCPP_ENABLE
+   cmp = (((const WeightWord*)obj1)->word_freq < ((const WeightWord*)obj2)->word_freq ? 1 :
+          ((const WeightWord*)obj1)->word_freq > ((const WeightWord*)obj2)->word_freq ? 0 :
+          ((const WeightWord*)obj1)->filename.compare(((const WeightWord*)obj2)->filename) < 0);
+#else
+   cmp = ((*(const WeightWord**)obj1)->word_freq < (*(const WeightWord**)obj2)->word_freq ?  1 :
+          (*(const WeightWord**)obj1)->word_freq > (*(const WeightWord**)obj2)->word_freq ? -1 :
+          (*(const WeightWord**)obj1)->filename.compare((*(const WeightWord**)obj2)->filename));
+#endif
 
    return cmp;
 }
@@ -104,11 +116,11 @@ Query::Query()
 {
    U_TRACE(5, "Query::Query()")
 
-   U_INTERNAL_ASSERT_EQUALS(parser,  0)
-   U_INTERNAL_ASSERT_EQUALS(request, 0)
+   U_INTERNAL_ASSERT_EQUALS(parser,  U_NULLPTR)
+   U_INTERNAL_ASSERT_EQUALS(request, U_NULLPTR)
 
    U_NEW(UQueryParser, parser, UQueryParser);
-   U_NEW(UString, request, UString);
+   U_NEW_STRING(request, UString);
 }
 
 Query::~Query()
@@ -117,8 +129,8 @@ Query::~Query()
 
    clear();
 
-   delete parser;
-   delete request;
+   U_DELETE(parser)
+   U_DELETE(request)
 }
 
 void Query::clear()
@@ -191,7 +203,7 @@ const char* Query::checkQuoting(char* argv[], uint32_t& len)
 
    const char* ptr = argv[optind];
 
-   if (argv[optind+1] == 0) len = u__strlen(ptr, __PRETTY_FUNCTION__);
+   if (argv[optind+1] == U_NULLPTR) len = u__strlen(ptr, __PRETTY_FUNCTION__);
    else
       {
       request->setBuffer(U_CAPACITY);
@@ -199,7 +211,7 @@ const char* Query::checkQuoting(char* argv[], uint32_t& len)
       do {
          U_INTERNAL_DUMP("ptr = %S", ptr)
 
-         bool bquote = (*ptr != '"' && strchr(ptr, ' ') != 0);
+         bool bquote = (*ptr != '"' && strchr(ptr, ' ') != U_NULLPTR);
 
                      request->push_back(' ');
          if (bquote) request->push_back('"');
@@ -245,7 +257,7 @@ void Query::run(const char* ptr, uint32_t len, UVector<WeightWord*>* vec)
          {
          parser->startEvaluate(UPosting::findDocID);
 
-         cdb_names->callForAllEntryWithPattern(query_expr, 0);
+         cdb_names->callForAllEntryWithPattern(query_expr, U_NULLPTR);
          }
       }
    else
@@ -261,12 +273,12 @@ void Query::run(const char* ptr, uint32_t len, UVector<WeightWord*>* vec)
          {
          if (is_space) U_ERROR("syntax error on query");
 
-         if (UPosting::word->equal(U_CONSTANT_TO_PARAM("*"))) cdb_names->callForAllEntryWithPattern(push, 0);
+         if (UPosting::word->equal(U_CONSTANT_TO_PARAM("*"))) cdb_names->callForAllEntryWithPattern(push, U_NULLPTR);
          else
             {
             WeightWord::check_for_duplicate = true;
 
-            cdb_words->callForAllEntryWithPattern(query_meta, 0);
+            cdb_words->callForAllEntryWithPattern(query_meta, U_NULLPTR);
 
             WeightWord::check_for_duplicate = false;
             }
@@ -289,6 +301,6 @@ const char* WeightWord::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

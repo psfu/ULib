@@ -71,49 +71,49 @@ PEC_report::~PEC_report()
 
    if (id)
       {
-      delete t;
-      delete file;
-      delete date;
-      delete date1;
-      delete title;
-      delete directory;
-      delete last_dominio;
-      delete last_value_field;
+      U_DELETE(t)
+      U_DELETE(file)
+      U_DELETE(date)
+      U_DELETE(date1)
+      U_DELETE(title)
+      U_DELETE(directory)
+      U_DELETE(last_dominio)
+      U_DELETE(last_value_field)
 
-      delete id;
-      delete mittente;
-      delete identifier;
+      U_DELETE(id)
+      U_DELETE(mittente)
+      U_DELETE(identifier)
 
-      delete line;
-      delete content;
+      U_DELETE(line)
+      U_DELETE(content)
 
       if (rejected)
          {
-         delete scan_form;
+         U_DELETE(scan_form)
          }
       else
          {
-         delete fix;
-         delete vtipo;
-         delete vtipos;
+         U_DELETE(fix)
+         U_DELETE(vtipo)
+         U_DELETE(vtipos)
 
          if (domain)
             {
-            delete vdomain;
-            delete domain;
+            U_DELETE(vdomain)
+            U_DELETE(domain)
             }
          }
 
-      delete vfield;
-      delete vfields;
+      U_DELETE(vfield)
+      U_DELETE(vfields)
       }
 
-   if (to)         delete to;
-   if (vid)        delete vid;
-   if (from)       delete from;
-   if (filter)     delete filter;
-   if (filter_ext) delete filter_ext;
-   if (tfile)      delete tfile;
+   if (to)         U_DELETE(to)
+   if (vid)        U_DELETE(vid)
+   if (from)       U_DELETE(from)
+   if (filter)     U_DELETE(filter)
+   if (filter_ext) U_DELETE(filter_ext)
+   if (tfile)      U_DELETE(tfile)
 }
 
 uint32_t PEC_report::findField(int i)
@@ -502,7 +502,7 @@ bool PEC_report::setLineID()
 
       id->duplicate(); // NB: need duplicate string because depends on mmap()'s content of document...
 
-      vid->push(*id);
+      vid->push_back(*id);
       }
 
    *id = vid->at(id_index);  
@@ -534,7 +534,7 @@ void PEC_report::setLineIdentifier()
       if (identifier->size() == 9 &&
           ptr2[3] == ' ' &&
           ptr2[6] == ' ' &&
-          u_getMonth(ptr2))
+          getMonth(ptr2))
          {
 /*
 Feb 24 19:42:21 PEC_Milter root [1542]: Feb 24 19:42:35 PEC_Milter root [1546]: E452BE9C.0004057A.F50FB719.D305B319.posta-certificata@postecert.it: tipo=posta-certificata (BustaTrasporto): mittente=ifinanziarie@pec.gdf.it: destinatari=attivitariunite@actaliscertymail.it (certificato): oggetto=Richiesta n.<jdz9yb_1wrjlt>: message-id=E452BE9C.0004057A.F50FB719.D305B319.posta-certificata@postecert.it: gestore=Postecom S.p.A.: tipo_ricevuta=sintetica
@@ -818,7 +818,7 @@ loop1:
          {
          const char* ptr = line->data();
 
-         mese1 = u_getMonth(ptr);
+         mese1 = getMonth(ptr);
 
          U_INTERNAL_DUMP("mese1 = %d", mese1)
 
@@ -846,7 +846,7 @@ loop2:
 
       while ((*end == '\n') && (++end < enddoc)) {}
 
-      mese2 = u_getMonth(end);
+      mese2 = getMonth(end);
 
       U_INTERNAL_DUMP("mese2 = %d", mese2)
 
@@ -892,8 +892,8 @@ bool PEC_report::readContent()
 
    // loop for all lines in file
 
-   const char* ptr = 0;
-   const char* prev = 0;
+   const char* ptr = U_NULLPTR;
+   const char* prev = U_NULLPTR;
    bool ok = false, dicembre = false;
 
    // depends on content...
@@ -912,7 +912,7 @@ bool PEC_report::readContent()
 
    // time[8] = '\0';
 
-      if (prev == 0 ||
+      if (prev == U_NULLPTR ||
           memcmp(ptr, prev, U_LINEDATA) != 0)
          {
          prev = ptr;
@@ -931,11 +931,11 @@ bool PEC_report::readContent()
 
          // month[3] = '\0';
 
-         day = atoi(ptr + 4);
+         day = u_atoi(ptr + 4);
 
          if (rejected == false)
             {
-            year = atoi(ptr + U_LINEDATA + 10);
+            year = u_atoi(ptr + U_LINEDATA + 10);
 
             year_present = (year > 0); // check if year is present or not...
 
@@ -944,7 +944,7 @@ bool PEC_report::readContent()
 
          U_INTERNAL_DUMP("scan line date: %d/%s/%d - %s", day, month, year, time)
 
-         U_INTERNAL_ASSERT_EQUALS(mese1, (int)u_getMonth(month))
+         U_INTERNAL_ASSERT_EQUALS(mese1, (int)getMonth(month))
 
          date->set(day, mese1, year);
 
@@ -1022,7 +1022,9 @@ bool PEC_report::readContent()
          }
       }
 
-   U_RETURN(ptr != 0);
+   if (ptr != U_NULLPTR) U_RETURN(true);
+
+   U_RETURN(false);
 }
 
 bool PEC_report::processFile(UStringRep* key, void* elem)
@@ -1055,7 +1057,7 @@ void PEC_report::processFiles()
 {
    U_TRACE(5, "PEC_report::processFiles()")
 
-   U_INTERNAL_ASSERT_EQUALS(UDirWalk::isDirectory(), false)
+   U_ASSERT_EQUALS(UDirWalk::isDirectory(), false)
 
    ++nfiles;
 
@@ -1065,13 +1067,19 @@ void PEC_report::processFiles()
 
    UDirWalk::setFoundFile(_filename);
 
-   const char* ptr      = _filename.c_str();
-   const char* basename = u_basename(ptr);
+   const char* ptr = _filename.c_str();
+   uint32_t sz     = _filename.size();
+
+   const char* basename = u_basename(ptr, sz);
+
+   sz -= basename-ptr;
+
+   U_INTERNAL_DUMP("basename(%u) = %S", sz, sz, basename)
 
    // check for file name ends with...
 
    if (filter_ext &&
-       UStringExt::endsWith(_filename, *filter_ext) == false)
+       UStringExt::endsWith(basename, sz, *filter_ext) == false)
       {
       U_WARNING("file <%s> skipped...", ptr);
 
@@ -1214,7 +1222,7 @@ void PEC_report::loadFiles()
    if (bytes &&
        tfile->empty() == false) tfile->callForAllEntrySorted(PEC_report::processFile);
 
-   (void) UFile::chdir(0, true);
+   (void) UFile::chdir(U_NULLPTR, true);
 }
 
 void PEC_report::manageOptions()
@@ -1292,8 +1300,14 @@ void PEC_report::manageOptions()
 
       if (cfg_domain.empty())
          {
-         if (rejected) scan_form = new U_STRING_FROM_CONSTANT("%*[^-]-%4c");
-         else          U_ERROR("parameter domain is mandatory");
+         if (rejected)
+            {
+            U_NEW_STRING(scan_form, UString(U_CONSTANT_TO_PARAM("%*[^-]-%4c")))
+            }
+         else
+            {
+            U_ERROR("parameter domain is mandatory");
+            }
          }
 
       if (rejected == false)
@@ -1346,7 +1360,7 @@ void PEC_report::manageOptions()
    mittente         = new UString;
    identifier       = new UString;
 
-   tfile = new UHashMap<UString>(U_GET_NEXT_PRIME_NUMBER(1024));
+   tfile = new UHashMap<UString>(1024);
 
    if (rejected)
       {

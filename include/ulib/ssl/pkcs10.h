@@ -41,9 +41,9 @@ public:
     * Constructs this object takes <i>X509_REQ</i> as type.
     */ 
 
-   UPKCS10(X509_REQ* _request = 0) : request(_request)
+   UPKCS10(X509_REQ* _request = U_NULLPTR) : request(_request)
       {
-      U_TRACE_REGISTER_OBJECT(0, UPKCS10, "%p", _request)
+      U_TRACE_CTOR(0, UPKCS10, "%p", _request)
       }
 
    /**
@@ -54,11 +54,11 @@ public:
     * @param type the PKCS10's encoding type
     */
 
-   static X509_REQ* readPKCS10(const UString& x, const char* format = 0);
+   static X509_REQ* readPKCS10(const UString& x, const char* format = U_NULLPTR);
 
-   UPKCS10(const UString& x, const char* format = 0)
+   UPKCS10(const UString& x, const char* format = U_NULLPTR)
       {
-      U_TRACE_REGISTER_OBJECT(0, UPKCS10, "%V,%S", x.rep, format)
+      U_TRACE_CTOR(0, UPKCS10, "%V,%S", x.rep, format)
 
       request = readPKCS10(x, format);
       }
@@ -75,12 +75,12 @@ public:
 
       U_SYSCALL_VOID(X509_REQ_free, "%p", request);
 
-      request = 0;
+      request = U_NULLPTR;
       }
 
    ~UPKCS10()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UPKCS10)
+      U_TRACE_DTOR(0, UPKCS10)
 
       if (request) clear();
       }
@@ -89,7 +89,9 @@ public:
       {
       U_TRACE_NO_PARAM(0, "UPKCS10::isValid()")
 
-      U_RETURN(request != 0);
+      if (request != U_NULLPTR) U_RETURN(true);
+
+      U_RETURN(false);
       }
 
    /**

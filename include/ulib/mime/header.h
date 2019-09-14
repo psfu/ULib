@@ -90,12 +90,12 @@ public:
 
    UMimeHeader()
       {
-      U_TRACE_REGISTER_OBJECT(0, UMimeHeader, "", 0)
+      U_TRACE_CTOR(0, UMimeHeader, "")
       }
 
    ~UMimeHeader()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UMimeHeader)
+      U_TRACE_DTOR(0, UMimeHeader)
       }
 
    // Wrapper for table
@@ -127,7 +127,7 @@ public:
       U_TRACE(0, "UMimeHeader::setHeader(%V,%V)", key.rep, value.rep)
 
       if (containsHeader(key)) table.replaceAfterFind(value);
-      else                     table.insertAfterFind(key, value);
+      else                     table.insertAfterFind(value);
       }
 
    void setHeader(const char* key, uint32_t keylen, const UString& value)
@@ -135,12 +135,7 @@ public:
       U_TRACE(0, "UMimeHeader::setHeader(%.*S,%u,%V)", keylen, key, keylen, value.rep)
 
       if (containsHeader(key, keylen)) table.replaceAfterFind(value);
-      else
-         {
-         UString x(key, keylen);
-
-         table.insertAfterFind(x, value);
-         }
+      else                             table.insertAfterFind(value);
       }
 
    bool setHeaderIfAbsent(const char* key, uint32_t keylen, const UString& value)
@@ -149,9 +144,7 @@ public:
 
       if (containsHeader(key, keylen) == false)
          {
-         UString x(key, keylen);
-
-         table.insertAfterFind(x, value);
+         table.insertAfterFind(value);
 
          U_RETURN(true);
          }
@@ -185,9 +178,8 @@ public:
 
       U_ASSERT(empty() == false)
 
-      if (getHeader(U_CONSTANT_TO_PARAM("Connection")).equal(U_CONSTANT_TO_PARAM("close")))
+      if (getHeader(U_CONSTANT_TO_PARAM("Connection")).equal(U_CONSTANT_TO_PARAM("close"))) U_RETURN(true);
 
-      U_RETURN(true);
       U_RETURN(false);
       }
 
@@ -243,6 +235,19 @@ public:
       U_RETURN_STRING(location);
       }
 
+   // Range
+
+   UString getRange()
+      {
+      U_TRACE_NO_PARAM(0, "UMimeHeader::getRange()")
+
+      U_ASSERT(empty() == false)
+
+      UString range = getHeader(U_CONSTANT_TO_PARAM("Range"));
+
+      U_RETURN_STRING(range);
+      }
+
    // Refresh
 
    UString getRefresh()
@@ -283,8 +288,8 @@ public:
       }
 
    /**
-    * ===================================================================================================================
     * Content types:
+    *
     *   "text"        / [ "plain" (RFC-1521), "richtext" (RFC-1341), "enriched", "html", "xvcard", "vcal", "rtf", "xml" ],
     *   "audio"       / [ "basic" ],
     *   "video"       / [ "mpeg" ],
@@ -293,7 +298,6 @@ public:
     *   "multipart"   / [ "mixed", "alternative", "digest", "parallel", "signed", "encrypted", "report", "form-data" ],
     *   "application" / [ "postscript", "octet-stream", "pgp-signature", "pgp-encrypted", "pgp-clearsigned",
     *                     "pkcs7-signature", "pkcs7-mime", "ms-tnef", "x-www-form-urlencoded" ]
-    * ===================================================================================================================
     */
 
    UString getContentType()

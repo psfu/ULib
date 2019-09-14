@@ -10,12 +10,12 @@ public:
 
    USSLClientImage() : UClientImage<USSLSocket>()
       {
-      U_TRACE_REGISTER_OBJECT(5, USSLClientImage, "", 0)
+      U_TRACE_CTOR(5, USSLClientImage, "", 0)
       }
 
    ~USSLClientImage()
       {
-      U_TRACE_UNREGISTER_OBJECT(5, USSLClientImage)
+      U_TRACE_DTOR(5, USSLClientImage)
       }
 
    // DEBUG
@@ -34,7 +34,7 @@ protected:
 
       if (UClientImage_Base::manageRead() == U_NOTIFIER_DELETE) U_RETURN(U_NOTIFIER_DELETE);
 
-      if (U_ClientImage_state == U_PLUGIN_HANDLER_GO_ON)
+      if (U_ClientImage_state == U_PLUGIN_HANDLER_OK)
          {
          static bool binit;
 
@@ -49,7 +49,9 @@ protected:
                {
                x509 = ((USSLSocket*)socket)->getPeerCertificate();
 
+#           if OPENSSL_VERSION_NUMBER < 0x10100000L
                U_INTERNAL_ASSERT_DIFFERS(x509, 0)
+#           endif
                }
 
             if (x509) cerr << UCertificate(x509).print();
@@ -69,7 +71,7 @@ U_MACROSERVER(USSLServer, USSLClientImage, USSLSocket);
 static const char* getArg(const char* param) { return (param && *param ? param : 0); }
 
 int
-U_EXPORT main (int argc, char* argv[])
+U_EXPORT main (int argc, char* argv[], char* env[])
 {
    U_ULIB_INIT(argv);
 
@@ -85,7 +87,7 @@ U_EXPORT main (int argc, char* argv[])
 
       (void) fcg.open(x);
 
-      server.cfg = &fcg;
+      server.pcfg = &fcg;
       }
 
    UServer_Base::bssl = true;
@@ -94,7 +96,7 @@ U_EXPORT main (int argc, char* argv[])
 
    // Load our certificate
 
-   ((USSLSocket*)server.socket)->setContext(0, getArg(argv[1]), getArg(argv[2]), getArg(argv[3]), getArg(argv[4]), getArg(argv[5]), atoi(argv[6]));
+   ((USSLSocket*)server.socket)->setContext(0, getArg(argv[1]), getArg(argv[2]), getArg(argv[3]), getArg(argv[4]), getArg(argv[5]), u_atoi(argv[6]));
 
    server.port = 8080;
 

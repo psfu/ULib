@@ -63,7 +63,7 @@ void USimulationError::init()
 
             if (file_size)
                {
-               file_mem = (char*) mmap(0, file_size, PROT_READ, MAP_SHARED, fd, 0);
+               file_mem = (char*) mmap(U_NULLPTR, file_size, PROT_READ, MAP_SHARED, fd, 0);
 
                if (file_mem == MAP_FAILED) file_size = 0;
                }
@@ -75,11 +75,11 @@ void USimulationError::init()
 
    if (fd <= 0)
       {
-      U_MESSAGE("SIMERR<%Woff%W>%W", RED, YELLOW, RESET);
+      U_MESSAGE("SIMERR%W<%Woff%W>%W", YELLOW, RED, YELLOW, RESET);
       }
    else
       {
-      U_MESSAGE("SIMERR<%Won%W>: File<%W%s%W>%W", GREEN, YELLOW, CYAN, file, YELLOW, RESET);
+      U_MESSAGE("SIMERR%W<%Won%W>: File<%W%s%W>%W", YELLOW, GREEN, YELLOW, CYAN, file, YELLOW, RESET);
       }
 }
 
@@ -126,7 +126,7 @@ void* USimulationError::checkForMatch(const char* call_name)
 
                   uint32_t range = (uint32_t) strtol(file_ptr, &file_ptr, 10);
 
-                  if (range > 0) match = (u_get_num_random(range) == (range / 2));
+                  if (range > 0) match = (u_get_num_random_range1(range) == (range / 2));
 
                   break;
                   }
@@ -193,7 +193,7 @@ void* USimulationError::checkForMatch(const char* call_name)
                break;
                }
 
-            errno = atoi(file_ptr);
+            errno = u_atoi(file_ptr);
 
             U_INTERNAL_PRINT("errno = %d var_arg = %d", errno, var_arg.i);
 
@@ -202,5 +202,5 @@ void* USimulationError::checkForMatch(const char* call_name)
          }
       }
 
-   return 0;
+   return U_NULLPTR;
 }

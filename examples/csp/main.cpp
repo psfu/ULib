@@ -3,7 +3,7 @@
    X509* cert;
    X509_CRL* crl;
    bool ok, is_revoked;
-   UDialog x(0, 23, 50); // height of 23 characters and width of 50 characters
+   UDialog x(U_NULLPTR, 23, 50); // height of 23 characters and width of 50 characters
    UVector<UString> vec;
    STACK_OF(X509)* certs;
    unsigned j, num_revoked = 0;
@@ -15,7 +15,7 @@
 
    if (client->connect() == false) goto end;
 
-   if (method) op = atoi(method);
+   if (method) op = u_atoi(method);
    else
       {
    // if (UDialog::isXdialog() == false) U_ERROR("num_method not specified and I don't find Xdialog");
@@ -30,9 +30,9 @@
                                      "Emit crl",
                                      "Get crl",
                                      "Get CA certificate",
-                                     "Revoke certificate", 0 };
+                                     "Revoke certificate", U_NULLPTR };
 
-      static const char* tags[]  = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", 0 };
+      static const char* tags[]  = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", U_NULLPTR };
 
       op = x.menu("Choose the operation you want:", tags, items, 0, "MENU BOX");
 
@@ -74,26 +74,29 @@
       {
       case 1: // CA creation
          {
+         // --------------------------------------------------------------------------------
          // parameters: <CA name> <days> [openssl.cnf]
          // --------------------------------------------------------------------------------
          // int ns__CSP_CA(const char* dir, unsigned days, const char* cnf, char** response);
+         // --------------------------------------------------------------------------------
 
          if (method)
             {
-            if (argv[  optind])   ca = UString(argv[optind]);
-            if (argv[++optind]) days =    atoi(argv[optind]);
+            ca = UString(argv[optind]);
+
+            if (argv[++optind]) days =  u_atoi(argv[optind]);
             if (argv[++optind])  cnf = UString(argv[optind]);
             }
          else
             {
             x.setSize(10, 70); // height of 10 characters and width of 70 characters
 
-            static const char* labels[] = { "name CA:", "certificate validity period (number of days):", 0 };
+            static const char* labels[] = { "name CA:", "certificate validity period (number of days):", U_NULLPTR };
 
-            vec.push(ca);
-            vec.push(U_STRING_FROM_CONSTANT("365"));
+            vec.push_back(ca);
+            vec.push_back(U_STRING_FROM_CONSTANT("365"));
 
-            if (x.inputsbox2("CA creation", labels, vec, 0) == false) goto end;
+            if (x.inputsbox2("CA creation", labels, vec, U_NULLPTR) == false) goto end;
 
             ca   = vec[0];
             days = vec[1].strtol();
@@ -141,7 +144,8 @@
 
          if (method)
             {
-            if (argv[  optind])     ca = UString(argv[optind]);
+            ca = UString(argv[optind]);
+
             if (argv[++optind])   pkcs = UString(argv[optind]);
             if (argv[++optind]) policy = UString(argv[optind]);
             }
@@ -181,8 +185,9 @@
 
          if (method)
             {
-            if (argv[  optind])       ca = UString(argv[optind]);
-            if (argv[++optind]) compress =    atoi(argv[optind]);
+            ca = UString(argv[optind]);
+
+            if (argv[++optind]) compress = u_atoi(argv[optind]);
             }
          else
             {
@@ -208,7 +213,8 @@
 
          if (method)
             {
-            if (argv[  optind])    ca  = UString(argv[optind]);
+            ca = UString(argv[optind]);
+
             if (argv[++optind]) serial = UCertificate::checkForSerialNumber(argv[optind]);
             }
          else
@@ -252,9 +258,9 @@
                   {
                   subject = UCertificate::getSubject(cert);
 
-                  tmp.snprintf(U_CONSTANT_TO_PARAM("0x%04X %v"), lserial, subject.rep);
+                  tmp.snprintf(U_CONSTANT_TO_PARAM("%#04X %v"), lserial, subject.rep);
 
-                  vec.push(tmp.copy());
+                  vec.push_back(tmp.copy());
                   }
                }
 
@@ -291,10 +297,7 @@
          // --------------------------------------------------------------------------------
          // int ns__CSP_ZERO_CERTS(const char* ca, char** response);
 
-         if (method)
-            {
-            if (argv[optind]) ca = UString(argv[optind]);
-            }
+         if (method) ca = UString(argv[optind]);
 
          if (ca.empty()) U_ERROR("missing CA name");
 
@@ -309,10 +312,7 @@
          // parameter: <CA name>
          // --------------------------------------------------------------------------------
 
-         if (method)
-            {
-            if (argv[optind]) ca = UString(argv[optind]);
-            }
+         if (method) ca = UString(argv[optind]);
 
          if (ca.empty()) U_ERROR("missing CA name");
 
@@ -327,10 +327,7 @@
          // parameter: <CA name>
          // --------------------------------------------------------------------------------
 
-         if (method)
-            {
-            if (argv[optind]) ca = UString(argv[optind]);
-            }
+         if (method) ca = UString(argv[optind]);
 
          if (ca.empty()) U_ERROR("missing CA name");
 
@@ -345,10 +342,7 @@
          // parameter: <CA name>
          // --------------------------------------------------------------------------------
 
-         if (method)
-            {
-            if (argv[optind]) ca = UString(argv[optind]);
-            }
+         if (method) ca = UString(argv[optind]);
 
          if (ca.empty()) U_ERROR("missing CA name");
 

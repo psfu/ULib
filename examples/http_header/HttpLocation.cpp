@@ -4,7 +4,7 @@
 
 HttpLocation::HttpLocation(const char* name_, unsigned name_len, const char* value_, unsigned value_len)
 {
-   U_TRACE_REGISTER_OBJECT(5, HttpLocation, "%.*S,%u,%.*S,%u", name_len, name_, name_len, value_len, value_, value_len)
+   U_TRACE_CTOR(5, HttpLocation, "%.*S,%u,%.*S,%u", name_len, name_, name_len, value_len, value_, value_len)
 
    U_INTERNAL_ASSERT(memcmp(name_,  U_CONSTANT_TO_PARAM("Location")) == 0)
 
@@ -44,6 +44,6 @@ const char* HttpLocation::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

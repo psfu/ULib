@@ -12,7 +12,6 @@
 // ============================================================================
 
 #include <ulib/net/ipaddress.h>
-#include <ulib/container/vector.h>
 
 #ifdef HAVE_IFADDRS_H
 #  include <ifaddrs.h>
@@ -212,9 +211,17 @@ bool UIPAddress::setHostName(const UString& pcNewHostName, bool bIPv6)
 
    U_INTERNAL_ASSERT_EQUALS(u_isIPAddr(bIPv6, U_STRING_TO_PARAM(strHostName)), false)
 
-   if (strHostName.equal(pcNewHostName) &&
+   if (strHostName                      &&
+       strHostName.equal(pcNewHostName) &&
        U_ipaddress_HostNameUnresolved(this) == false)
       {
+      U_RETURN(true);
+      }
+
+   if (pcNewHostName.equal(U_CONSTANT_TO_PARAM("localhost")))
+      {
+      setLocalHost(bIPv6);
+
       U_RETURN(true);
       }
 
@@ -224,17 +231,22 @@ bool UIPAddress::setHostName(const UString& pcNewHostName, bool bIPv6)
 
    if (u_isIPAddr(bIPv6, name, pcNewHostName.size()))
       {
-      struct in_addr ia;
+#  ifndef _MSWINDOWS_ // TODO: implement inet_pton() for WINDOWS
+      union uupcAddress ia;
 
-      if (inet_aton(name, &ia) == 0) U_RETURN(false);
+      if (U_SYSCALL(inet_pton, "%d,%p,%p", (bIPv6 ? AF_INET6 : AF_INET), name, &ia) == 1)
+         {
+         strHostName.clear();
 
-      strHostName.clear();
+         setAddress(&(ia.i), false);
 
-      setAddress(&ia, false);
+         U_ipaddress_StrAddressUnresolved(this) = false;
 
-      U_ipaddress_StrAddressUnresolved(this) = false;
+         U_RETURN(true);
+         }
+#  endif
 
-      U_RETURN(true);
+      U_RETURN(false);
       }
 
    uint32_t len;
@@ -243,8 +255,9 @@ bool UIPAddress::setHostName(const UString& pcNewHostName, bool bIPv6)
 #ifdef HAVE_GETADDRINFO
    int gai_err;
    struct addrinfo hints;
-   struct addrinfo* result = 0;
+   struct addrinfo* result = U_NULLPTR;
 
+   // -----------------------------------------------------------------
    // setup hints structure
    // -----------------------------------------------------------------
    // struct addrinfo {
@@ -267,7 +280,7 @@ bool UIPAddress::setHostName(const UString& pcNewHostName, bool bIPv6)
 
    // get our address
 
-   gai_err = U_SYSCALL(getaddrinfo, "%S,%p,%p,%p", name, 0, &hints, &result);
+   gai_err = U_SYSCALL(getaddrinfo, "%S,%p,%p,%p", name, U_NULLPTR, &hints, &result);
 
    if (gai_err != 0)
       {
@@ -386,7 +399,7 @@ char* UIPAddress::resolveStrAddress(int iAddressType, const void* src, char* ip)
 {
    U_TRACE(1, "UIPAddress::resolveStrAddress(%d,%p,%p)", iAddressType, src, ip)
 
-   char* result = 0;
+   char* result = U_NULLPTR;
 
 #ifdef HAVE_INET_NTOP
    result = (char*) U_SYSCALL(inet_ntop, "%d,%p,%p,%u", iAddressType, (void*)src, ip, U_INET_ADDRSTRLEN);
@@ -397,17 +410,6 @@ char* UIPAddress::resolveStrAddress(int iAddressType, const void* src, char* ip)
 #endif
 
    return result;
-}
-
-void UIPAddress::resolveStrAddress()
-{
-   U_TRACE_NO_PARAM(0, "UIPAddress::resolveStrAddress()")
-
-   U_CHECK_MEMORY
-
-   U_INTERNAL_ASSERT(U_ipaddress_StrAddressUnresolved(this))
-
-   if (resolveStrAddress(iAddressType, pcAddress.p, pcStrAddress)) U_ipaddress_StrAddressUnresolved(this) = false;
 }
 
 /****************************************************************************/
@@ -439,7 +441,7 @@ void UIPAddress::resolveHostName()
 
       sockadd.setIPAddress(*this);
 
-      int gai_err = U_SYSCALL(getnameinfo, "%p,%d,%p,%d,%p,%d,%d", (const sockaddr*)sockadd, sockadd.sizeOf(), hbuf, sizeof(hbuf), 0, 0, 0);
+      int gai_err = U_SYSCALL(getnameinfo, "%p,%d,%p,%d,%p,%d,%d", (const sockaddr*)sockadd, sockadd.sizeOf(), hbuf, sizeof(hbuf), U_NULLPTR, 0, 0);
 
       if (gai_err)
          {
@@ -471,7 +473,7 @@ void UIPAddress::resolveHostName()
 
       IPADDR_TO_HOST(pheDetails, pcAddress.p, iAddressLength, iAddressType);
 
-      if (pheDetails == 0)
+      if (pheDetails == U_NULLPTR)
          {
          if (U_ipaddress_StrAddressUnresolved(this)) resolveStrAddress();
 
@@ -521,7 +523,7 @@ void UIPAddress::convertToAddressFamily(int iNewAddressFamily)
 
    if (iAddressType != iNewAddressFamily)
       {
-      if  (iNewAddressFamily == AF_INET:)
+      if (iNewAddressFamily == AF_INET)
          {
          if (IN6_IS_ADDR_V4MAPPED(&(pcAddress.s))) setAddress(pcAddress.p + 12, sizeof(in_addr));
          }
@@ -571,14 +573,12 @@ __pure bool UIPAddress::isPrivate()
 
       U_RETURN(false);
       }
-   else
 #endif
-      {
-      U_INTERNAL_ASSERT_EQUALS(iAddressType, AF_INET)
-      U_INTERNAL_ASSERT_EQUALS(iAddressLength, sizeof(in_addr))
 
-      if (isPrivate(htonl(pcAddress.i))) U_RETURN(true);
-      }
+   U_INTERNAL_ASSERT_EQUALS(iAddressType, AF_INET)
+   U_INTERNAL_ASSERT_EQUALS(iAddressLength, sizeof(in_addr))
+
+   if (isPrivate(htonl(pcAddress.i))) U_RETURN(true);
 
    U_RETURN(false);
 }
@@ -594,22 +594,41 @@ __pure bool UIPAddress::isWildCard()
       {
    // static const struct in6_addr in6addr_any = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 }; /* :: */
 
-      if (memcmp(pcAddress.p, in6addr_any, sizeof(in6_addr)) == 0) U_RETURN(true);
+      if (memcmp(pcAddress.p, (const void*)&in6addr_any, sizeof(in6_addr)) == 0) U_RETURN(true);
 
       U_RETURN(false);
       }
-   else
 #endif
+
+   U_INTERNAL_ASSERT_EQUALS(iAddressType, AF_INET)
+   U_INTERNAL_ASSERT_EQUALS(iAddressLength, sizeof(in_addr))
+
+   U_DUMP("htonl(pcAddress.i) = %#x %V", htonl(pcAddress.i), UIPAddress::toString(getInAddr()).rep)
+
+   if (pcAddress.i == 0x00000000) U_RETURN(true);
+
+   U_RETURN(false);
+}
+
+__pure bool UIPAddress::isLocalHost()
+{
+   U_TRACE_NO_PARAM(0, "UIPAddress::isLocalHost()")
+
+   U_CHECK_MEMORY
+
+#ifdef ENABLE_IPV6
+   if (iAddressType == AF_INET6)
       {
-      U_INTERNAL_ASSERT_EQUALS(iAddressType, AF_INET)
-      U_INTERNAL_ASSERT_EQUALS(iAddressLength, sizeof(in_addr))
-
-      U_DUMP("htonl(pcAddress.i) = 0x%X %S", htonl(pcAddress.i), UIPAddress::toString(getInAddr()).data())
-
-      if (htonl(pcAddress.i) == 0x00000000) U_RETURN(true);
+      // TODO: local address for IPv6
 
       U_RETURN(false);
       }
+#endif
+
+   U_INTERNAL_ASSERT_EQUALS(iAddressType, AF_INET)
+   U_INTERNAL_ASSERT_EQUALS(iAddressLength, sizeof(in_addr))
+
+   if (isLocalHost(pcAddress.i)) U_RETURN(true);
 
    U_RETURN(false);
 }
@@ -625,13 +644,14 @@ UString UIPAddress::toString(uint8_t* addr)
 
    union uuaddr u = { addr };
 
-   /* The inet_ntoa() function converts the Internet host address in, given in network byte order, to a string in IPv4 dotted-decimal notation.
+   /**
+    * The inet_ntoa() function converts the Internet host address in, given in network byte order, to a string in IPv4 dotted-decimal notation.
     * The string is returned in a statically allocated buffer, which subsequent calls will overwrite
     */
 
    char* result = inet_ntoa(*(u.paddr));
 
-   UString x((void*)result);
+   UString x((void*)result, u__strlen(result, __PRETTY_FUNCTION__));
 
    U_RETURN_STRING(x);
 }
@@ -639,56 +659,43 @@ UString UIPAddress::toString(uint8_t* addr)
 // Simple IP-based access-control system
 // Interpret a "HOST/BITS" IP mask specification. (Ex. 192.168.1.64/28)
 
-bool UIPAllow::parseMask(const UString& _spec)
+bool UIPAllow::parseMask(const UString& spec)
 {
-   U_TRACE(1, "UIPAllow::parseMask(%V)", _spec.rep)
+   U_TRACE(1, "UIPAllow::parseMask(%V)", spec.rep)
 
    // get bit before slash
 
-   struct in_addr ia;
    char addr_str[U_INET_ADDRSTRLEN];
-   uint32_t start, addr_len = _spec.find('/');
+   uint32_t len, addr_len = spec.find('/');
 
    // extract and parse addr part
 
-   if (_spec.c_char(0) == '!')
-      {
-      bnot  = true;
-      start = 1;
-      spec  = _spec.substr(1).copy();
-      }
-   else
-      {
-      bnot  = false;
-      start = 0;
-      spec  = _spec.copy();
-      }
+   bnot = (spec.c_char(0) == '!');
 
    if (addr_len == U_NOT_FOUND)
       {
       mask = 0xffffffff;
 
-      _spec.copy(addr_str, addr_len, start);
+      len = spec.copy(addr_str, addr_len, bnot);
       }
    else
       {
-      mask = network = 0;
+      mask    =
+      network = 0;
 
-      _spec.copy(addr_str, addr_len - start, start);
+      len = spec.copy(addr_str, addr_len-bnot, bnot);
       }
 
-   U_INTERNAL_DUMP("u_isIPv4Addr(%S) = %b", addr_str, u_isIPv4Addr(addr_str, u__strlen(addr_str, __PRETTY_FUNCTION__)))
+   U_INTERNAL_DUMP("u_isIPv4Addr(%.*S) = %b", len, addr_str, u_isIPv4Addr(addr_str, len))
 
-   if (u_isIPv4Addr(addr_str, u__strlen(addr_str, __PRETTY_FUNCTION__)) == false) U_RETURN(false);
+   if (u_isIPv4Addr(addr_str, len) == false) U_RETURN(false);
 
    // converts the internet address from the IPv4 numbers-and-dots notation into binary form
    // (in network byte order) and stores it in the structure that points to
 
-   int result = inet_aton(addr_str, &ia);
+   struct in_addr ia;
 
-   U_INTERNAL_DUMP("addr_str = %S result = %d", addr_str, result)
-
-   if (result == 0) U_RETURN(false);
+   if (U_SYSCALL(inet_aton, "%p,%p", addr_str, &ia) == 0) U_RETURN(false);
 
    addr = ia.s_addr;
 
@@ -700,7 +707,8 @@ bool UIPAllow::parseMask(const UString& _spec)
    // /24   256 255.255.255.0   0xffffff00
    // /30     4 255.255.255.252 0xfffffffc
    // ------------------------------------
-   int mask_bits = atoi(_spec.c_pointer(addr_len + 1));
+
+   int mask_bits = u_atoi(spec.c_pointer(addr_len+1));
 
    U_INTERNAL_DUMP("mask_bits = %d", mask_bits)
 
@@ -731,7 +739,6 @@ bool UIPAllow::parseMask(const UString& _spec)
 
 #  if __BYTE_ORDER == __LITTLE_ENDIAN
       // -------------------------------------------------------------------
-      //
       // -------------------------------------------------------------------
 #  else
       // -------------------------------------------------------------------
@@ -740,31 +747,36 @@ bool UIPAllow::parseMask(const UString& _spec)
 
       network = addr & mask;
 
-      U_DUMP("addr = %S mask = %S network = %S",
-               UIPAddress::toString(addr).data(),
-               UIPAddress::toString(mask).data(),
-               UIPAddress::toString(network).data())
+      U_DUMP("addr = %V mask = %V network = %V", UIPAddress::toString(addr).rep, UIPAddress::toString(mask).rep, UIPAddress::toString(network).rep)
       }
 
-   U_INTERNAL_DUMP("addr = 0x%08x %B mask = 0x%08x %B network = 0x%08x %B", addr, addr, mask, mask, network, network)
+   U_INTERNAL_DUMP("addr = %#08x %B mask = %#08x %B network = %#08x %B", addr, addr, mask, mask, network, network)
 
    U_RETURN(true);
 }
 
-uint32_t UIPAllow::parseMask(const UString& vspec, UVector<UIPAllow*>& vipallow)
+uint32_t UIPAllow::parseMask(const UString& vspec, UVector<UIPAllow*>& vipallow, UVector<UString>* pvspec)
 {
-   U_TRACE(0, "UIPAllow::parseMask(%V,%p)", vspec.rep, &vipallow)
+   U_TRACE(0, "UIPAllow::parseMask(%V,%p,%p)", vspec.rep, &vipallow, pvspec)
 
+   UString spec;
    UIPAllow* elem;
    UVector<UString> vec(vspec, ", \t");
    uint32_t result, n = vipallow.size();
 
    for (uint32_t i = 0, vlen = vec.size(); i < vlen; ++i)
       {
+      spec = vec[i];
+
       U_NEW(UIPAllow, elem, UIPAllow);
 
-      if (elem->parseMask(vec[i])) vipallow.push_back(elem);
-      else                         delete elem;
+      if (elem->parseMask(spec) == false) U_DELETE(elem)
+      else
+         {
+         vipallow.push_back(elem);
+
+         if (pvspec) pvspec->push_back(spec.c_char(0) == '!' ? spec.substr(1).copy() : spec.copy());
+         }
       }
 
    result = (vipallow.size() - n);
@@ -776,106 +788,84 @@ __pure bool UIPAllow::isAllowed(in_addr_t client)
 {
    U_TRACE(0, "UIPAllow::isAllowed(%u)", client)
 
-   U_DUMP("addr   = %S mask = %S network = %S",
-            UIPAddress::toString(addr).data(),
-            UIPAddress::toString(mask).data(),
-            UIPAddress::toString(network).data())
+   U_DUMP("addr   = %V mask = %V network = %V", UIPAddress::toString(addr).rep,   UIPAddress::toString(mask).rep, UIPAddress::toString(network).rep)
+   U_DUMP("client = %V mask = %V network = %V", UIPAddress::toString(client).rep, UIPAddress::toString(mask).rep, UIPAddress::toString(client & mask).rep)
 
    U_INTERNAL_ASSERT_EQUALS(network, addr & mask)
 
    bool result = ((client & mask) == network);
-
-   U_DUMP("client = %S mask = %S network = %S",
-            UIPAddress::toString(client).data(),
-            UIPAddress::toString(mask).data(),
-            UIPAddress::toString(client & mask).data())
 
    if (bnot) U_RETURN(!result);
 
    U_RETURN(result);
 }
 
-__pure bool UIPAllow::isAllowed(in_addr_t ifa_addr, in_addr_t ifa_netmask)
+bool UIPAddress::setBroadcastAddress(uusockaddr& addr, const UString& ifname)
 {
-   U_TRACE(0, "UIPAllow::isAllowed(%u,%u)", ifa_addr, ifa_netmask)
+   U_TRACE(0, "UIPAddress::setBroadcastAddress(%p,%V)", &addr, ifname.rep)
 
-   U_DUMP("addr     = %S mask        = %S network = %S",
-            UIPAddress::toString(addr).data(),
-            UIPAddress::toString(mask).data(),
-            UIPAddress::toString(network).data())
+   U_INTERNAL_ASSERT(ifname)
 
-   U_INTERNAL_ASSERT_EQUALS(network, addr & mask)
+   bool result = false;
 
-   bool result = ((ifa_addr & ifa_netmask) == network);
+#ifdef HAVE_IFADDRS_H
+   struct ifaddrs* ifaddr;
 
-   U_DUMP("ifa_addr = %S ifa_netmask = %S network = %S",
-            UIPAddress::toString(ifa_addr).data(),
-            UIPAddress::toString(ifa_netmask).data(),
-            UIPAddress::toString(ifa_addr & ifa_netmask).data())
+   if (U_SYSCALL(getifaddrs, "%p", &ifaddr) == 0)
+      {
+      for (struct ifaddrs* ifa = ifaddr; ifa; ifa = ifa->ifa_next)
+         {
+         if (ifa->ifa_addr == U_NULLPTR) continue;
+
+         int family = ifa->ifa_addr->sa_family;
+
+#     ifdef U_LINUX
+         U_INTERNAL_DUMP("%s => family: %d%s", ifa->ifa_name, family,
+                               (family == AF_PACKET) ? " (AF_PACKET)" :
+                               (family == AF_INET)   ? " (AF_INET)"   :
+                               (family == AF_INET6)  ? " (AF_INET6)"  : "")
+#     endif
+
+         if (family == AF_INET                                                    &&
+             u_get_unalignedp16(ifa->ifa_name) != U_MULTICHAR_CONSTANT16('l','o') &&
+             ifname.equal(ifa->ifa_name)) // Name of interface
+            {
+            result = true;
+
+            addr.psaIP4Addr.sin_addr.s_addr = ((struct sockaddr_in*)ifa->ifa_broadaddr)->sin_addr.s_addr; // 0x0AFFFFFF send message to 10.255.255.255
+
+#        if defined(DEBUG) && defined(HAVE_GETNAMEINFO)
+            char host[NI_MAXHOST];
+            int gai_err = U_SYSCALL(getnameinfo, "%p,%d,%p,%d,%p,%d,%d", ifa->ifa_addr, sizeof(struct sockaddr_in), host, NI_MAXHOST, U_NULLPTR, 0, NI_NUMERICHOST);
+
+            if (gai_err)
+               {
+               U_WARNING("getnameinfo() error: %s", gai_strerror(gai_err));
+               }
+            else
+               {
+               U_INTERNAL_DUMP("%s => address: <%s>", ifa->ifa_name, host)
+
+               U_DUMP("ifa_addr = %V ifa_netmask = %V ifa_network = %V ifa_broadaddr = %V",
+                     UIPAddress::toString(((struct sockaddr_in*)ifa->ifa_addr)->sin_addr.s_addr).rep,
+                     UIPAddress::toString(((struct sockaddr_in*)ifa->ifa_netmask)->sin_addr.s_addr).rep,
+                     UIPAddress::toString(((struct sockaddr_in*)ifa->ifa_addr)->sin_addr.s_addr & ((struct sockaddr_in*)ifa->ifa_netmask)->sin_addr.s_addr).rep,
+                     UIPAddress::toString(((struct sockaddr_in*)ifa->ifa_broadaddr)->sin_addr.s_addr).rep)
+
+               U_INTERNAL_ASSERT_EQUALS(ifa->ifa_addr->sa_family,    AF_INET)
+               U_INTERNAL_ASSERT_EQUALS(ifa->ifa_netmask->sa_family, AF_INET)
+               }
+#        endif
+
+            break;
+            }
+         }
+
+      U_SYSCALL_VOID(freeifaddrs, "%p", ifaddr);
+      }
+#endif
 
    U_RETURN(result);
-}
-
-bool UIPAllow::isAllowed(const char* ip_client)
-{
-   U_TRACE(0, "UIPAllow::isAllowed(%S)", ip_client)
-
-   U_INTERNAL_ASSERT(u_isIPv4Addr(ip_client, u__strlen(ip_client, __PRETTY_FUNCTION__)))
-
-   struct in_addr ia;
-
-   bool result = (inet_aton(ip_client, &ia) && isAllowed(ia.s_addr));
-
-   U_RETURN(result);
-}
-
-bool UIPAllow::isAllowed(const UString& ip_client)
-{
-   U_TRACE(0, "UIPAllow::isAllowed(%V)", ip_client.rep)
-
-   U_INTERNAL_ASSERT(u_isIPv4Addr(U_STRING_TO_PARAM(ip_client)))
-
-   struct in_addr ia;
-
-   bool result = (inet_aton(ip_client.c_str(), &ia) && isAllowed(ia.s_addr));
-
-   U_RETURN(result);
-}
-
-__pure uint32_t UIPAllow::find(in_addr_t client, UVector<UIPAllow*>& vipallow)
-{
-   U_TRACE(0, "UIPAllow::find(%u,%p)", client, &vipallow)
-
-   for (uint32_t i = 0, vlen = vipallow.size(); i < vlen; ++i)
-      {
-      if (vipallow[i]->isAllowed(client)) U_RETURN(i);
-      }
-
-   U_RETURN(U_NOT_FOUND);
-}
-
-__pure uint32_t UIPAllow::find(const char* ip_client, UVector<UIPAllow*>& vipallow)
-{
-   U_TRACE(0, "UIPAllow::find(%S,%p)", ip_client, &vipallow)
-
-   for (uint32_t i = 0, vlen = vipallow.size(); i < vlen; ++i)
-      {
-      if (vipallow[i]->isAllowed(ip_client)) U_RETURN(i);
-      }
-
-   U_RETURN(U_NOT_FOUND);
-}
-
-__pure uint32_t UIPAllow::find(const UString& ip_client, UVector<UIPAllow*>& vipallow)
-{
-   U_TRACE(0, "UIPAllow::find(%V,%p)", ip_client.rep, &vipallow)
-
-   for (uint32_t i = 0, vlen = vipallow.size(); i < vlen; ++i)
-      {
-      if (vipallow[i]->isAllowed(ip_client)) U_RETURN(i);
-      }
-
-   U_RETURN(U_NOT_FOUND);
 }
 
 bool UIPAllow::getNetworkInterface(UVector<UIPAllow*>& vipallow)
@@ -890,28 +880,26 @@ bool UIPAllow::getNetworkInterface(UVector<UIPAllow*>& vipallow)
    if (U_SYSCALL(getifaddrs, "%p", &ifaddr) == 0)
       {
       UIPAllow* pallow;
-      int family, gai_err;
-      char host[NI_MAXHOST];
-      uusockaddr ifa_addr, ifa_netmask;
       uint32_t i, vlen = vipallow.size();
 
       for (struct ifaddrs* ifa = ifaddr; ifa; ifa = ifa->ifa_next)
          {
-         if (ifa->ifa_addr == 0) continue;
+         if (ifa->ifa_addr == U_NULLPTR) continue;
 
-         family = ifa->ifa_addr->sa_family;
+         int family = ifa->ifa_addr->sa_family;
 
 #     ifdef U_LINUX
          U_INTERNAL_DUMP("%s => family: %d%s", ifa->ifa_name, family,
-                                 (family == AF_PACKET) ? " (AF_PACKET)" :
-                                 (family == AF_INET)   ? " (AF_INET)"   :
-                                 (family == AF_INET6)  ? " (AF_INET6)"  : "")
+                               (family == AF_PACKET) ? " (AF_PACKET)" :
+                               (family == AF_INET)   ? " (AF_INET)"   :
+                               (family == AF_INET6)  ? " (AF_INET6)"  : "")
 #     endif
 
          if (family == AF_INET &&
              u_get_unalignedp16(ifa->ifa_name) != U_MULTICHAR_CONSTANT16('l','o')) // Name of interface
             {
-            gai_err = U_SYSCALL(getnameinfo, "%p,%d,%p,%d,%p,%d,%d", ifa->ifa_addr, sizeof(struct sockaddr_in), host, NI_MAXHOST, 0, 0, NI_NUMERICHOST);
+            char host[NI_MAXHOST];
+            int gai_err = U_SYSCALL(getnameinfo, "%p,%d,%p,%d,%p,%d,%d", ifa->ifa_addr, sizeof(struct sockaddr_in), host, NI_MAXHOST, U_NULLPTR, 0, NI_NUMERICHOST);
 
             if (gai_err)
                {
@@ -921,30 +909,29 @@ bool UIPAllow::getNetworkInterface(UVector<UIPAllow*>& vipallow)
                {
                U_INTERNAL_DUMP("%s => address: <%s>", ifa->ifa_name, host)
 
-               U_MEMCPY(&ifa_addr,     ifa->ifa_addr,    sizeof(struct sockaddr)); // Address of interface
-               U_MEMCPY(&ifa_netmask, ifa->ifa_netmask, sizeof(struct sockaddr)); // Netmask of interface
+               U_DUMP("ifa_addr = %V ifa_netmask = %V ifa_network = %V ifa_broadaddr = %V",
+                     UIPAddress::toString(((struct sockaddr_in*)ifa->ifa_addr)->sin_addr.s_addr).rep,
+                     UIPAddress::toString(((struct sockaddr_in*)ifa->ifa_netmask)->sin_addr.s_addr).rep,
+                     UIPAddress::toString(((struct sockaddr_in*)ifa->ifa_addr)->sin_addr.s_addr & ((struct sockaddr_in*)ifa->ifa_netmask)->sin_addr.s_addr).rep,
+                     UIPAddress::toString(((struct sockaddr_in*)ifa->ifa_broadaddr)->sin_addr.s_addr).rep)
 
-               U_DUMP("ifa_addr = %S ifa_netmask = %S ifa_network = %S",
-                     UIPAddress::toString(ifa_addr.psaIP4Addr.sin_addr.s_addr).data(),
-                     UIPAddress::toString(ifa_netmask.psaIP4Addr.sin_addr.s_addr).data(),
-                     UIPAddress::toString(ifa_addr.psaIP4Addr.sin_addr.s_addr & ifa_netmask.psaIP4Addr.sin_addr.s_addr).data())
+               U_INTERNAL_ASSERT_EQUALS(ifa->ifa_addr->sa_family,    AF_INET)
+               U_INTERNAL_ASSERT_EQUALS(ifa->ifa_netmask->sa_family, AF_INET)
+               }
 
-               U_INTERNAL_ASSERT_EQUALS(ifa_addr.psaIP4Addr.sin_family,    AF_INET)
-               U_INTERNAL_ASSERT_EQUALS(ifa_netmask.psaIP4Addr.sin_family, AF_INET)
+            for (i = 0; i < vlen; ++i)
+               {
+               pallow = vipallow[i];
 
-               for (i = 0; i < vlen; ++i)
+               if (pallow->isAllowed(((struct sockaddr_in*)ifa->ifa_addr)->sin_addr.s_addr,     // Address of interface
+                                     ((struct sockaddr_in*)ifa->ifa_netmask)->sin_addr.s_addr)) // Netmask of interface
                   {
-                  pallow = vipallow[i];
+                  result = true;
 
-                  if (pallow->isAllowed(ifa_addr.psaIP4Addr.sin_addr.s_addr, ifa_netmask.psaIP4Addr.sin_addr.s_addr))
-                     {
-                     result = true;
+                  (void) pallow->host.replace(host);
+                  (void) pallow->device.replace(ifa->ifa_name);
 
-                     (void) pallow->device.replace(ifa->ifa_name);
-                     (void) pallow->host.replace(host);
-
-                     break;
-                     }
+                  break;
                   }
                }
             }
@@ -976,7 +963,7 @@ const char* UIPAllow::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* UIPAddress::dump(bool reset) const
@@ -986,7 +973,7 @@ const char* UIPAddress::dump(bool reset) const
 
    char buffer[128];
 
-   UObjectIO::os->write(buffer, u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("%S"), pcStrAddress));
+   UObjectIO::os->write(buffer, u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM("%S"), pcStrAddress));
 
    *UObjectIO::os << '\n'
                   << "iAddressType         " << iAddressType
@@ -1002,6 +989,6 @@ const char* UIPAddress::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

@@ -33,7 +33,7 @@
 #  if defined(__NetBSD__) || defined(__UNIKERNEL__)
 #     include <lwp.h>
 #  endif
-#  ifdef HAVE_SYS_SYSCALL_H
+#  if !defined(HAVE_GETTID) && defined(HAVE_SYS_SYSCALL_H)
 #     include <sys/syscall.h>
 #  endif
 #endif
@@ -55,108 +55,183 @@
 #  endif
 #endif
 
-/* Match */
-int        u_pfn_flags;
-bPFpcupcud u_pfn_match;
-
-/* Services */
-int u_num_cpu = -1;
-const char* u_short_units[] = { "B", "KB", "MB", "GB", "TB", 0 };
-
-/**
- * Random number generator
- *
- * these values are not magical, just the default values Marsaglia used. Any pair of unsigned integers should be fine
- */ 
-uint32_t u_m_w = 521288629,
-         u_m_z = 362436069;
-
-__pure long u_strtol(const char* restrict s, const char* restrict e)
+__pure unsigned long u_hex2int(const char* restrict s, uint32_t len) /* handle up to 16 digits */
 {
-   long val;
-   bool neg = false;
+   unsigned long val = 0UL;
 
-   U_INTERNAL_TRACE("u_strtol(%p,%p)", s, e)
+   U_INTERNAL_TRACE("u_hex2int(%p,%u)", s, len)
 
    U_INTERNAL_ASSERT_POINTER(s)
-   U_INTERNAL_ASSERT_POINTER(e)
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
 
-// while (u__isspace(*s)) ++s;
-
-   if (*s == '-')
+#ifndef U_COVERITY_FALSE_POSITIVE /* Control flow issues (MISSING_BREAK) */
+   switch (len)
       {
-      ++s;
-
-      neg = true;
+      case 16: val = (val << 4) | u__hexc2int(s[len-16]); /* FALL THRU */
+      case 15: val = (val << 4) | u__hexc2int(s[len-15]); /* FALL THRU */
+      case 14: val = (val << 4) | u__hexc2int(s[len-14]); /* FALL THRU */
+      case 13: val = (val << 4) | u__hexc2int(s[len-13]); /* FALL THRU */
+      case 12: val = (val << 4) | u__hexc2int(s[len-12]); /* FALL THRU */
+      case 11: val = (val << 4) | u__hexc2int(s[len-11]); /* FALL THRU */
+      case 10: val = (val << 4) | u__hexc2int(s[len-10]); /* FALL THRU */
+      case  9: val = (val << 4) | u__hexc2int(s[len- 9]); /* FALL THRU */
+      case  8: val = (val << 4) | u__hexc2int(s[len- 8]); /* FALL THRU */
+      case  7: val = (val << 4) | u__hexc2int(s[len- 7]); /* FALL THRU */
+      case  6: val = (val << 4) | u__hexc2int(s[len- 6]); /* FALL THRU */
+      case  5: val = (val << 4) | u__hexc2int(s[len- 5]); /* FALL THRU */
+      case  4: val = (val << 4) | u__hexc2int(s[len- 4]); /* FALL THRU */
+      case  3: val = (val << 4) | u__hexc2int(s[len- 3]); /* FALL THRU */
+      case  2: val = (val << 4) | u__hexc2int(s[len- 2]); /* FALL THRU */
+      case  1: val = (val << 4) | u__hexc2int(s[len- 1]); /* FALL THRU */
       }
-   else
-      {
-      if (*s == '+' ||
-          *s == '0')
-         {
-         ++s;
-         }
-      }
+#endif
 
-   val = u_strtoul(s, e);
+   U_INTERNAL_PRINT("val = %lu", val)
 
-   return (neg ? -val : val);
+   return val;
 }
 
-__pure int64_t u_strtoll(const char* restrict s, const char* restrict e)
+__pure unsigned long u__strtoul(const char* restrict s, uint32_t len) /* handle up to 10 digits */
 {
-   int64_t val;
-   bool neg = false;
+   unsigned long val = 0UL;
 
-   U_INTERNAL_TRACE("u_strtoll(%p,%p)", s, e)
+   U_INTERNAL_TRACE("u__strtoul(%p,%u)", s, len)
 
    U_INTERNAL_ASSERT_POINTER(s)
-   U_INTERNAL_ASSERT_POINTER(e)
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
 
-// while (u__isspace(*s)) ++s;
-
-   if (*s == '-')
+#ifndef U_COVERITY_FALSE_POSITIVE /* Control flow issues (MISSING_BREAK) */
+   switch (len)
       {
-      ++s;
-
-      neg = true;
+      case 10: val += (s[len-10] - '0') * 1000000000UL; /* FALL THRU */
+      case  9: val += (s[len- 9] - '0') * 100000000UL; /* FALL THRU */
+      case  8: val += (s[len- 8] - '0') * 10000000UL; /* FALL THRU */
+      case  7: val += (s[len- 7] - '0') * 1000000UL; /* FALL THRU */
+      case  6: val += (s[len- 6] - '0') * 100000UL; /* FALL THRU */
+      case  5: val += (s[len- 5] - '0') * 10000UL; /* FALL THRU */
+      case  4: val += (s[len- 4] - '0') * 1000UL; /* FALL THRU */
+      case  3: val += (s[len- 3] - '0') * 100UL; /* FALL THRU */
+      case  2: val += (s[len- 2] - '0') * 10UL; /* FALL THRU */
+      case  1: val += (s[len- 1] - '0');
       }
-   else
-      {
-      if (*s == '+' ||
-          *s == '0')
-         {
-         ++s;
-         }
-      }
+   #endif
 
-   val = u_strtoull(s, e);
+   U_INTERNAL_PRINT("val = %lu", val)
 
-   return (neg ? -val : val);
+   return val;
 }
 
-__pure double u_strtod(const char* restrict s, const char* restrict e, int point_pos)
+__pure uint64_t u__strtoull(const char* restrict s, uint32_t len)
 {
-   static const double pow10[] = {
-      1e+0,
-      1e+1, 1e+2, 1e+3, 1e+4, 1e+5, 1e+6, 1e+7, 1e+8, 1e+9, 1e+10, 1e+11, 1e+12, 1e+13, 1e+14, 1e+15, 1e+16, 1e+17
-   };
+   uint64_t val = 0UL;
 
+   U_INTERNAL_TRACE("u__strtoull(%p,%u)", s, len)
+
+   U_INTERNAL_ASSERT_POINTER(s)
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
+
+#ifndef U_COVERITY_FALSE_POSITIVE /* Control flow issues (MISSING_BREAK) */
+   switch (len)
+      {
+      case 20: val += (s[len-20] - '0') * 10000000000000000000ULL; /* FALL THRU */
+      case 19: val += (s[len-19] - '0') * 1000000000000000000ULL; /* FALL THRU */
+      case 18: val += (s[len-18] - '0') * 100000000000000000ULL; /* FALL THRU */
+      case 17: val += (s[len-17] - '0') * 10000000000000000ULL; /* FALL THRU */
+      case 16: val += (s[len-16] - '0') * 1000000000000000ULL; /* FALL THRU */
+      case 15: val += (s[len-15] - '0') * 100000000000000ULL; /* FALL THRU */
+      case 14: val += (s[len-14] - '0') * 10000000000000ULL; /* FALL THRU */
+      case 13: val += (s[len-13] - '0') * 1000000000000ULL; /* FALL THRU */
+      case 12: val += (s[len-12] - '0') * 100000000000ULL; /* FALL THRU */
+      case 11: val += (s[len-11] - '0') * 10000000000ULL; /* FALL THRU */
+      case 10: val += (s[len-10] - '0') * 1000000000ULL; /* FALL THRU */
+      case  9: val += (s[len- 9] - '0') * 100000000ULL; /* FALL THRU */
+      case  8: val += (s[len- 8] - '0') * 10000000ULL; /* FALL THRU */
+      case  7: val += (s[len- 7] - '0') * 1000000ULL; /* FALL THRU */
+      case  6: val += (s[len- 6] - '0') * 100000ULL; /* FALL THRU */
+      case  5: val += (s[len- 5] - '0') * 10000ULL; /* FALL THRU */
+      case  4: val += (s[len- 4] - '0') * 1000ULL; /* FALL THRU */
+      case  3: val += (s[len- 3] - '0') * 100ULL; /* FALL THRU */
+      case  2: val += (s[len- 2] - '0') * 10ULL; /* FALL THRU */
+      case  1: val += (s[len- 1] - '0');        /* FALL THRU */
+      }
+#endif
+
+   U_INTERNAL_PRINT("val = %llu", val)
+
+   return val;
+}
+
+unsigned long u_strtoulp(const char** restrict s)
+{
+   const char* restrict ptr;
+   const char* restrict p = *s;
+
+   U_INTERNAL_TRACE("u_strtolp(%p)", s)
+
+   U_INTERNAL_ASSERT_POINTER(s)
+
+   if (u__isdigitw0(*p) == false &&
+       u__isspace(*++p))
+      {
+      /* NB: we have something as '0 12 ..' */
+
+      *s = p+1;
+
+      return 0UL;
+      }
+
+   ptr = p;
+
+   while (u__isdigit(*p)) ++p; 
+
+   *s = p+1;
+
+   return u_strtoul(ptr, p);
+}
+
+uint64_t u_strtoullp(const char** restrict s)
+{
+   const char* restrict ptr;
+   const char* restrict p = *s;
+
+   U_INTERNAL_TRACE("u_strtollp(%p)", s)
+
+   U_INTERNAL_ASSERT_POINTER(s)
+
+   if (u__isdigitw0(*p) == false &&
+       u__isspace(*++p))
+      {
+      /* NB: we have something as '0 12 ..' */
+
+      *s = p+1;
+
+      return 0ULL;
+      }
+
+   ptr = p;
+
+   while (u__isdigit(*p)) ++p; 
+
+   *s = p+1;
+
+   return u_strtoull(ptr, p);
+}
+
+__pure long u__strtol(const char* restrict s, uint32_t len)
+{
    int sign = 1;
-   const char* restrict p; 
-   uint64_t integerPart, fractionPart;
 
-   U_INTERNAL_TRACE("u_strtod(%p,%p,%d)", s, e, -point_pos)
+   U_INTERNAL_TRACE("u__strtol(%p,%u)", s, len)
 
    U_INTERNAL_ASSERT_POINTER(s)
-   U_INTERNAL_ASSERT_POINTER(e)
-   U_INTERNAL_ASSERT_MINOR(point_pos, 0)
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
 
-// while (u__isspace(*s)) ++s;
+// while (u__isdigit(*s) == false) ++s;
 
    if (*s == '-')
       {
       ++s;
+      --len;
 
       sign = -1;
       }
@@ -166,26 +241,93 @@ __pure double u_strtod(const char* restrict s, const char* restrict e, int point
           *s == '0')
          {
          ++s;
+         --len;
          }
       }
 
-   p = s;
+   return (len ? sign * u__strtoul(s, len) : 0L);
+}
 
-   if (point_pos == INT_MIN+1) integerPart = 0;
+__pure int64_t u__strtoll(const char* restrict s, uint32_t len)
+{
+   int sign = 1;
+
+   U_INTERNAL_TRACE("u__strtoll(%p,%u)", s, len)
+
+   U_INTERNAL_ASSERT_POINTER(s)
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
+
+// while (u__isdigit(*s) == false) ++s;
+
+   if (*s == '-')
+      {
+      ++s;
+      --len;
+
+      sign = -1;
+      }
    else
       {
-      s += -point_pos;
-
-      integerPart = u_strtoul(p, s);
+      if (*s == '+' ||
+          *s == '0')
+         {
+         ++s;
+         --len;
+         }
       }
 
-   U_INTERNAL_ASSERT_EQUALS(*s, '.')
+   return (len ? sign * u__strtoull(s, len) : 0LL);
+}
 
-   fractionPart = u_strtoul(++s, e);
+__pure unsigned long u__atoi(const char* restrict s)
+{
+   char c;
+   const char* restrict ptr;
 
-   U_INTERNAL_PRINT("integerPart = %llu fractionPart = %llu pow10[%u] = %g", integerPart, fractionPart, e-s, pow10[e-s])
+   U_INTERNAL_TRACE("u__atoi(%12s)", s)
 
-   return sign * ((double)integerPart + ((double)fractionPart / pow10[e-s]));
+   U_INTERNAL_ASSERT_POINTER(s)
+
+   c = *s;
+
+   if (u__isalpha(c) ||
+       (c == '0'     &&
+        u__isdigit(*++s) == false))
+      {
+      return 0UL;
+      }
+
+   while (u__isdigitw0(*s) == false) ++s;
+
+   ptr = s;
+
+   while (u__isdigit(*s)) ++s;
+
+   return u__strtoul(ptr, s-ptr);
+}
+
+__pure int8_t u_log2(uint64_t value)
+{
+   static int8_t table[64] = {
+      63,  0, 58,  1, 59, 47, 53,  2,
+      60, 39, 48, 27, 54, 33, 42,  3,
+      61, 51, 37, 40, 49, 18, 28, 20,
+      55, 30, 34, 11, 43, 14, 22,  4,
+      62, 57, 46, 52, 38, 26, 32, 41,
+      50, 36, 17, 19, 29, 10, 13, 21,
+      56, 45, 25, 31, 35, 16,  9, 12,
+      44, 24, 15,  8, 23,  7,  6,  5 };
+
+   U_INTERNAL_TRACE("u_log2(%llu)", value)
+
+   value |= value >> 1;
+   value |= value >> 2;
+   value |= value >> 4;
+   value |= value >> 8;
+   value |= value >> 16;
+   value |= value >> 32;
+
+   return table[((value - (value >> 1)) * 0x07EDD5E59A4E28C2) >> 58];
 }
 
 /* To avoid libc locale overhead */
@@ -226,8 +368,10 @@ __pure int u__strncasecmp(const char* restrict s1, const char* restrict s2, size
 uint32_t u_gettid(void)
 {
 #ifndef ENABLE_THREAD
-   return U_NOT_FOUND;
-#else
+   return u_pid;
+#elif defined(HAVE_GETTID)
+   return gettid();
+#else 
    uint32_t tid =
 # ifdef _MSWINDOWS_
    GetCurrentThreadId();
@@ -415,15 +559,15 @@ cap_list[] = {
    };
 */
 
-# ifdef DEBUG
-   cap_value_t minimal_cap_values[] = { CAP_SETUID, CAP_SETGID, CAP_SETPCAP, CAP_SYS_PTRACE };
-# else
+# ifndef DEBUG
    cap_value_t minimal_cap_values[] = { CAP_SETUID, CAP_SETGID, CAP_SETPCAP };
+# else
+   cap_value_t minimal_cap_values[] = { CAP_SETUID, CAP_SETGID, CAP_SETPCAP, CAP_SYS_PTRACE };
 # endif
 
    cap_t caps = cap_init();
 
-   if (caps == 0) U_ERROR("cap_init() failed");
+   if (caps == 0) U_ERROR_SYSCALL("cap_init() failed");
 
    (void) cap_clear(caps);
 
@@ -431,16 +575,16 @@ cap_list[] = {
    (void) cap_set_flag(caps, CAP_PERMITTED,   3, minimal_cap_values, CAP_SET);
    (void) cap_set_flag(caps, CAP_INHERITABLE, 3, minimal_cap_values, CAP_SET);
 
-   if (cap_set_proc(caps) < 0) U_ERROR("cap_set_proc() failed");
+   if (cap_set_proc(caps) < 0) U_ERROR_SYSCALL("cap_set_proc() failed");
 
    (void) cap_free(caps);
 
-   if (prctl(U_PR_SET_KEEPCAPS, 1, 0, 0, 0) < 0) U_ERROR("prctl() failed");
+   if (prctl(U_PR_SET_KEEPCAPS, 1, 0, 0, 0) < 0) U_ERROR_SYSCALL("prctl() failed");
 # endif
 
    U_INTERNAL_TRACE("u_never_need_root()")
 
-   U_INTERNAL_PRINT("(_euid_=%d, uid=%d)", effective_uid, real_uid)
+   U_INTERNAL_PRINT("_euid_ = %d, uid = %d", effective_uid, real_uid)
 
    if (real_uid == (uid_t)(-1)) U_ERROR("u_init_security() not called");
 
@@ -449,7 +593,7 @@ cap_list[] = {
    if (geteuid() != real_uid ||
        getuid()  != real_uid)
       {
-      U_ERROR("Did not drop root privilege");
+      U_ERROR_SYSCALL("Did not drop root privilege");
       }
 
    effective_uid = real_uid;
@@ -485,7 +629,7 @@ void u_dont_need_group(void)
    U_INTERNAL_TRACE("u_dont_need_group()")
 
 #ifndef _MSWINDOWS_
-   U_INTERNAL_PRINT("(egid_=%d, gid=%d)", effective_gid, real_gid)
+   U_INTERNAL_PRINT("egid_ = %d, gid = %d", effective_gid, real_gid)
 
    if (real_gid == (gid_t)(-1)) U_ERROR("u_init_security() not called");
 
@@ -494,7 +638,7 @@ void u_dont_need_group(void)
     if (setegid(real_gid) == -1 ||
         getegid() != real_gid)
       {
-      U_ERROR("Did not drop group privilege");
+      U_ERROR_SYSCALL("Did not drop group privilege");
       }
 #endif
 }
@@ -506,7 +650,7 @@ void u_never_need_group(void)
    U_INTERNAL_TRACE("u_never_need_group()")
 
 #ifndef _MSWINDOWS_
-   U_INTERNAL_PRINT("(egid_=%d, gid=%d)", effective_gid, real_gid)
+   U_INTERNAL_PRINT("egid_ = %d, gid = %d", effective_gid, real_gid)
 
    if (real_gid == (gid_t)(-1)) U_ERROR("u_init_security() not called");
 
@@ -515,7 +659,7 @@ void u_never_need_group(void)
    if (getegid() != real_gid ||
        getgid()  != real_gid)
       {
-      U_ERROR("Did not drop group privilege");
+      U_ERROR_SYSCALL("Did not drop group privilege");
       }
 
     effective_gid = real_gid;
@@ -542,7 +686,7 @@ bool u_runAsUser(const char* restrict user, bool change_dir)
       return false;
       }
 
-   (void) u__strncpy(u_user_name, user, (u_user_name_len = u__strlen(user, __PRETTY_FUNCTION__))); /* change user name */
+   (void) memcpy(u_user_name, user, (u_user_name_len = u__strlen(user, __PRETTY_FUNCTION__))+1); /* change user name */
 
    if (change_dir &&
        pw->pw_dir &&
@@ -679,6 +823,68 @@ __pure uint32_t u_findEndHeader(const char* restrict str, uint32_t n)
    return endHeader;
 }
 
+/**
+ * CRC16 implementation according to CCITT standards
+ *
+ * Note by @antirez: this is actually the XMODEM CRC 16 algorithm, using the following parameters:
+ *
+ * Name                       : "XMODEM", also known as "ZMODEM", "CRC-16/ACORN"
+ * Width                      : 16 bit
+ * Poly                       : 1021 (That is actually x^16 + x^12 + x^5 + 1)
+ * Initialization             : 0000
+ * Reflect Input byte         : False
+ * Reflect Output CRC         : False
+ * Xor constant to output CRC : 0000
+ * Output for "123456789"     : 31C3
+ */
+
+__pure uint16_t u_crc16(const char* buf, uint32_t len)
+{
+   static uint16_t crc16tab[256]= {
+      0x0000,0x1021,0x2042,0x3063,0x4084,0x50a5,0x60c6,0x70e7,
+      0x8108,0x9129,0xa14a,0xb16b,0xc18c,0xd1ad,0xe1ce,0xf1ef,
+      0x1231,0x0210,0x3273,0x2252,0x52b5,0x4294,0x72f7,0x62d6,
+      0x9339,0x8318,0xb37b,0xa35a,0xd3bd,0xc39c,0xf3ff,0xe3de,
+      0x2462,0x3443,0x0420,0x1401,0x64e6,0x74c7,0x44a4,0x5485,
+      0xa56a,0xb54b,0x8528,0x9509,0xe5ee,0xf5cf,0xc5ac,0xd58d,
+      0x3653,0x2672,0x1611,0x0630,0x76d7,0x66f6,0x5695,0x46b4,
+      0xb75b,0xa77a,0x9719,0x8738,0xf7df,0xe7fe,0xd79d,0xc7bc,
+      0x48c4,0x58e5,0x6886,0x78a7,0x0840,0x1861,0x2802,0x3823,
+      0xc9cc,0xd9ed,0xe98e,0xf9af,0x8948,0x9969,0xa90a,0xb92b,
+      0x5af5,0x4ad4,0x7ab7,0x6a96,0x1a71,0x0a50,0x3a33,0x2a12,
+      0xdbfd,0xcbdc,0xfbbf,0xeb9e,0x9b79,0x8b58,0xbb3b,0xab1a,
+      0x6ca6,0x7c87,0x4ce4,0x5cc5,0x2c22,0x3c03,0x0c60,0x1c41,
+      0xedae,0xfd8f,0xcdec,0xddcd,0xad2a,0xbd0b,0x8d68,0x9d49,
+      0x7e97,0x6eb6,0x5ed5,0x4ef4,0x3e13,0x2e32,0x1e51,0x0e70,
+      0xff9f,0xefbe,0xdfdd,0xcffc,0xbf1b,0xaf3a,0x9f59,0x8f78,
+      0x9188,0x81a9,0xb1ca,0xa1eb,0xd10c,0xc12d,0xf14e,0xe16f,
+      0x1080,0x00a1,0x30c2,0x20e3,0x5004,0x4025,0x7046,0x6067,
+      0x83b9,0x9398,0xa3fb,0xb3da,0xc33d,0xd31c,0xe37f,0xf35e,
+      0x02b1,0x1290,0x22f3,0x32d2,0x4235,0x5214,0x6277,0x7256,
+      0xb5ea,0xa5cb,0x95a8,0x8589,0xf56e,0xe54f,0xd52c,0xc50d,
+      0x34e2,0x24c3,0x14a0,0x0481,0x7466,0x6447,0x5424,0x4405,
+      0xa7db,0xb7fa,0x8799,0x97b8,0xe75f,0xf77e,0xc71d,0xd73c,
+      0x26d3,0x36f2,0x0691,0x16b0,0x6657,0x7676,0x4615,0x5634,
+      0xd94c,0xc96d,0xf90e,0xe92f,0x99c8,0x89e9,0xb98a,0xa9ab,
+      0x5844,0x4865,0x7806,0x6827,0x18c0,0x08e1,0x3882,0x28a3,
+      0xcb7d,0xdb5c,0xeb3f,0xfb1e,0x8bf9,0x9bd8,0xabbb,0xbb9a,
+      0x4a75,0x5a54,0x6a37,0x7a16,0x0af1,0x1ad0,0x2ab3,0x3a92,
+      0xfd2e,0xed0f,0xdd6c,0xcd4d,0xbdaa,0xad8b,0x9de8,0x8dc9,
+      0x7c26,0x6c07,0x5c64,0x4c45,0x3ca2,0x2c83,0x1ce0,0x0cc1,
+      0xef1f,0xff3e,0xcf5d,0xdf7c,0xaf9b,0xbfba,0x8fd9,0x9ff8,
+      0x6e17,0x7e36,0x4e55,0x5e74,0x2e93,0x3eb2,0x0ed1,0x1ef0
+   };
+
+   uint16_t crc = 0;
+   uint32_t counter;
+
+   U_INTERNAL_TRACE("u_crc16(%.*s,%u)", U_min(len,128), buf, len)
+
+   for (counter = 0; counter < len; ++counter) crc = (crc<<8) ^ crc16tab[((crc>>8) ^ *buf++) & 0x00FF];
+
+   return crc;
+}
+
 /* Determine the width of the terminal we're running on */
 
 __pure int u_getScreenWidth(void)
@@ -705,8 +911,8 @@ __pure int u_getScreenWidth(void)
 
 /**
  * Calculate the download rate and trim it as appropriate for the speed. Appropriate means that
- * if rate is greater than 1K/s, kilobytes are used, and if rate is greater than 1MB/s, megabytes are used.
- * UNITS is zero for B/s, one for KB/s, two for MB/s, and three for GB/s
+ * if rate is greater than 1K/s, kilobytes are used, and if rate is greater than 1MB/s, megabytes
+ * are used. UNITS is zero for B/s, one for KB/s, two for MB/s, and three for GB/s
  */
 
 double u_calcRate(uint64_t bytes, uint32_t msecs, int* restrict units)
@@ -808,8 +1014,8 @@ iteration:
             {
             c = *cp++;
 
-            u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16(u_hex_lower[((c >> 4) & 0x0F)],
-                                                          u_hex_lower[( c       & 0x0F)]));
+            u_put_unalignedp16(bp, U_MULTICHAR_CONSTANT16("0123456789abcdef"[((c >> 4) & 0x0F)],
+                                                          "0123456789abcdef"[( c       & 0x0F)]));
 
             bp += 2;
 
@@ -827,9 +1033,11 @@ iteration:
          *bp++ = (j == 7 ? ':' : ' ');
          }
 
-                               *bp++ = '|';
+      *bp++ = '|';
+
       for (j = 0; j < 16; ++j) *bp++ = text[j];
-                               *bp++ = '\n';
+
+      *bp++ = '\n';
       }
 
    if (remain &&
@@ -907,7 +1115,7 @@ int u_get_num_cpu(void)
       u_num_cpu = sysconf(_SC_NPROCESSORS_ONLN);
 #  elif defined(_SC_NPROCESSORS_CONF)
       u_num_cpu = sysconf(_SC_NPROCESSORS_CONF);
-#  else
+#  elif defined(U_LINUX)
       FILE* fp = fopen("/sys/devices/system/cpu/present", "r");
 
       if (fp)
@@ -930,7 +1138,7 @@ int u_get_num_cpu(void)
 
             /**
              * Parses a comma-separated list of numbers and ranges
-             * of numbers,with optional ':%u' strides modifying ranges.
+             * of numbers, with optional ':%u' strides modifying ranges.
              *
              * Some examples of input lists and their equivalent simple list:
              *
@@ -983,7 +1191,7 @@ int u_get_num_cpu(void)
 
          (void) fclose(fp);
          }
-#endif
+#  endif
       }
 
    return u_num_cpu;
@@ -1003,7 +1211,7 @@ void u_bind2cpu(cpu_set_t* cpuset, int n)
     * mask = 13 (1101b): cpu0, 2, 3
     */
 
-#if !defined(U_SERVER_CAPTIVE_PORTAL) && defined(HAVE_SCHED_GETAFFINITY)
+#ifdef HAVE_SCHED_GETAFFINITY
    CPU_SET(n, cpuset);
 
    (void) sched_setaffinity(u_pid, sizeof(cpu_set_t), cpuset);
@@ -1018,7 +1226,8 @@ void u_bind2cpu(cpu_set_t* cpuset, int n)
 
 void u_switch_to_realtime_priority(void)
 {
-#if !defined(U_SERVER_CAPTIVE_PORTAL) && defined(_POSIX_PRIORITY_SCHEDULING) && (_POSIX_PRIORITY_SCHEDULING > 0) && (defined(HAVE_SCHED_H) || defined(HAVE_SYS_SCHED_H))
+#if defined(_POSIX_PRIORITY_SCHEDULING) && \
+    (_POSIX_PRIORITY_SCHEDULING > 0) && (defined(HAVE_SCHED_H) || defined(HAVE_SYS_SCHED_H))
    struct sched_param sp;
 
    U_INTERNAL_TRACE("u_switch_to_realtime_priority()")
@@ -1049,15 +1258,29 @@ void u_switch_to_realtime_priority(void)
 
 void u_get_memusage(unsigned long* vsz, unsigned long* rss)
 {
-   FILE* fp = fopen("/proc/self/stat", "r");
+#if defined(U_LINUX) && !defined(U_COVERITY_FALSE_POSITIVE)
+   static int fd_stat;
+
+   char* p;
+   char* field[256];
+   char buffer[4096];
+   ssize_t bytes_read;
 
    U_INTERNAL_TRACE("u_get_memusage(%p,%p)", vsz, rss)
 
-   if (fp)
+   if (fd_stat == 0) fd_stat = open("/proc/self/stat", O_RDONLY);
+
+   U_INTERNAL_ASSERT_DIFFERS(fd_stat, -1)
+
+   bytes_read = pread(fd_stat, buffer, sizeof(buffer), 0);
+
+   if (bytes_read > 0)
       {
+      U_INTERNAL_ASSERT_RANGE(1,bytes_read,(int)sizeof(buffer))
+
       /**
        * The fields, in order, with their proper scanf(3) format specifiers, are:
-       * -----------------------------------------------------------------------------------------------------------------------------
+       *
        * pid %d          The process ID.
        * comm %s         The filename of the executable, in parentheses.  This is visible whether or not the executable is swapped out.
        * state %c        R is running, S is sleeping, D is waiting, Z is zombie, T is traced or stopped (on a signal), and W is paging.
@@ -1080,67 +1303,106 @@ void u_get_memusage(unsigned long* vsz, unsigned long* rss)
        * num_threads %ld Number of threads in this process.
        * itrealvalue %ld The time in jiffies before the next SIGALRM is sent to the process due to an interval timer.
        * starttime %llu  The time in jiffies the process started after system boot.
-       * -----------------------------------------------------------------------------------------------------------------------------
-       * vsize %lu Virtual memory size in bytes.
-       * rss %ld   Resident Set Size: number of pages the process has in real memory.
-       *           This is just the pages which count toward text, data, or stack space.
-       *           This does not include pages which have not been demand-loaded in, or which are swapped out
-       * -----------------------------------------------------------------------------------------------------------------------------
+       *
+       * (22) vsize %lu Virtual memory size in bytes.
+       * (23)   rss %ld Resident Set Size: number of pages the process has in real memory.
+       *                This is just the pages which count toward text, data, or stack space.
+       *                This does not include pages which have not been demand-loaded in, or which are swapped out
+       * Ex:
+       * 1890 (cat) R 1052 1890 1052 34819 1890 4194304 79  0  0  0  0  0  0  0 20  0  1  0 731066 4530176 187
+       *    0     1 2    3    4    5     6    7       8  9 10 11 12 13 14 15 16 17 18 19 20     21      22  23
+       * 18446744073709551615 94751693697024 94751693749876 140733378884480 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0
+       * 94751695849896 94751695851712 94751700852736 140733378890964 140733378890984 140733378890984 140733378895855 0
        */
 
-      (void) fscanf(fp, "%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %lu %lu", vsz, rss);
+      (void) u_split(buffer, bytes_read, field, 0);
 
-      (void) fclose(fp);
+         p = field[22];
+      *vsz = u__strtoul(p, u__strlen(p,__PRETTY_FUNCTION__));
 
-      *rss *= PAGESIZE;
+         p = field[23];
+      *rss = u__strtoul(p, u__strlen(p,__PRETTY_FUNCTION__)) * PAGESIZE;
       }
+#endif
 }
 
-uint32_t u_get_uptime(void)
+uint8_t u_get_loadavg(void)
 {
-   FILE* fp = fopen("/proc/uptime", "r");
+   /**
+    * /proc/loadavg (ex: 0.19 1.37 0.97 1/263 26041)
+    *
+    * The first three fields in this file are load average figures giving the number of jobs in the run queue (state R) or waiting for disk I/O (state D)
+    * averaged over 1, 5, and 15 minutes. They are the same as the load average numbers given by uptime(1) and other programs. The fourth field consists
+    * of two numbers separated by a slash (/). The first of these is the number of currently runnable kernel scheduling entities (processes, threads).
+    * The value after the slash is the number of kernel scheduling entities that currently exist on the system. The fifth field is the PID of the process
+    * that was most recently created on the system
+    */
+
+#if defined(U_LINUX) && !defined(U_COVERITY_FALSE_POSITIVE)
+   static int fd_loadavg;
+
+   char buffer[8];
+   ssize_t bytes_read;
+
+   U_INTERNAL_TRACE("u_get_loadavg()")
+
+   if (fd_loadavg == 0) fd_loadavg = open("/proc/loadavg", O_RDONLY);
+
+   U_INTERNAL_ASSERT_DIFFERS(fd_loadavg, -1)
+
+   bytes_read = pread(fd_loadavg, buffer, sizeof(buffer), 0);
+
+   if (bytes_read > 0)
+      {
+      U_INTERNAL_ASSERT_RANGE(1,bytes_read,(int)sizeof(buffer))
+
+      if (buffer[1] == '.') return u_loadavg(buffer); // 0.19 => 2, 4.56 => 46, ...
+      }
+#endif
+
+   return 255;
+}
+
+uint32_t u_set_uptime(char* buffer)
+{
+   /**
+    * /proc/uptime (ex: 1753.44 6478.08)
+    *
+    * This file contains two numbers: how long the system has been running (seconds), and the amount of time spent in idle process (seconds)
+    */
+
+#if defined(U_LINUX) && !defined(U_COVERITY_FALSE_POSITIVE)
+   static int fd_uptime;
+
+   uint8_t i;
+   ssize_t bytes_read;
 
    U_INTERNAL_TRACE("u_get_uptime()")
 
-   if (fp)
+   if (fd_uptime == 0) fd_uptime = open("/proc/uptime", O_RDONLY);
+
+   U_INTERNAL_ASSERT_DIFFERS(fd_uptime, -1)
+
+   bytes_read = pread(fd_uptime, buffer, 12, 0);
+
+   if (bytes_read > 0)
       {
-      uint32_t sec;
+      U_INTERNAL_ASSERT_RANGE(1,bytes_read,12)
 
-      (void) fscanf(fp, "%u", &sec);
+      U_INTERNAL_PRINT("result = %u", u_atoi(buffer))
 
-      (void) fclose(fp);
+      U_INTERNAL_ASSERT_MINOR(u_atoi(buffer), 12 * U_ONE_YEAR_IN_SECOND)
 
-      return sec;
+      for (i = 0; i < 12; ++i)
+         {
+         if (buffer[i] == '.') break;
+         }
+
+      return i;
       }
+#endif
 
    return 0;
-}
-
-__pure bool u_rmatch(const char* restrict haystack, uint32_t haystack_len, const char* restrict needle, uint32_t needle_len)
-{
-   U_INTERNAL_TRACE("u_rmatch(%.*s,%u,%.*s,%u)", U_min(haystack_len,128), haystack, haystack_len,
-                                                 U_min(  needle_len,128),   needle,   needle_len)
-
-   U_INTERNAL_ASSERT_POINTER(needle)
-   U_INTERNAL_ASSERT_POINTER(haystack)
-   U_INTERNAL_ASSERT_MAJOR(haystack_len,0)
-
-   if (haystack_len >= needle_len)
-      {
-      /* see if substring characters match at end */
-
-      const char* restrict nn = needle   + needle_len   - 1;
-      const char* restrict hh = haystack + haystack_len - 1;
-
-      while (*nn-- == *hh--)
-         {
-         if (nn >= needle) continue;
-
-         return true; /* we got all the way to the start of the substring so we must've won */
-         }
-      }
-
-   return false;
 }
 
 /**
@@ -1174,8 +1436,7 @@ __pure const char* u__strpbrk(const char* restrict s, uint32_t slen, const char*
 
 /* Search a string for a terminator of a group of delimitator {} [] () <%%>...*/
 
-__pure const char* u_strpend(const char* restrict s, uint32_t slen,
-                             const char* restrict group_delimitor, uint32_t group_delimitor_len, char skip_line_comment)
+__pure const char* u_strpend(const char* restrict s, uint32_t slen, const char* restrict group_delimitor, uint32_t group_delimitor_len, char skip_line_comment)
 {
    char c;
    int level = 1;
@@ -1239,40 +1500,6 @@ loop: c = *++s;
    return 0;
 }
 
-/* check if string a start with string b */
-
-__pure bool u_startsWith(const char* restrict a, uint32_t n1, const char* restrict b, uint32_t n2)
-{
-   int32_t diff = n1 - n2;
-
-   U_INTERNAL_TRACE("u_startsWith(%.*s,%u,%.*s,%u)", U_min(n1,128), a, n1, U_min(n2,128), b, n2)
-
-   if (diff >= 0 &&
-       (memcmp(a, b, n2) == 0))
-      {
-      return true;
-      }
-
-   return false;
-}
-
-/* check if string a terminate with string b */
-
-__pure bool u_endsWith(const char* restrict a, uint32_t n1, const char* restrict b, uint32_t n2)
-{
-   int32_t diff = n1 - n2;
-
-   U_INTERNAL_TRACE("u_endsWith(%.*s,%u,%.*s,%u)", U_min(n1,128), a, n1, U_min(n2,128), b, n2)
-
-   if (diff >= 0 &&
-       (memcmp(a+diff, b, n2) == 0))
-      {
-      return true;
-      }
-
-   return false;
-}
-
 __pure bool u_isNumber(const char* restrict s, uint32_t n)
 {
    int vdigit[]             = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0 };
@@ -1293,44 +1520,12 @@ __pure bool u_isNumber(const char* restrict s, uint32_t n)
           ((*(const unsigned char* restrict)s) >> 4) == 0x03 &&
           vdigit[(*(const unsigned char* restrict)s)  & 0x0f])
       {
-      U_INTERNAL_PRINT("*s = %c, *s >> 4 = %c ", *s, (*(char* restrict)s) >> 4)
+      U_INTERNAL_PRINT("*s = %c, *s >> 4 = %c", *s, (*(char* restrict)s) >> 4)
 
       ++s;
       }
 
    return (s == end);
-}
-
-/* find first char not quoted */
-
-__pure const char* u_find_char(const char* restrict s, const char* restrict end, char c)
-{
-   U_INTERNAL_TRACE("u_find_char(%.*s,%p,%d)", U_min(end-s,128), s, end, c)
-
-   U_INTERNAL_ASSERT_POINTER(s)
-   U_INTERNAL_ASSERT_POINTER(end)
-   U_INTERNAL_ASSERT_EQUALS(s[-1],c)
-
-   while (true)
-      {
-      s = (const char* restrict) memchr(s, c, end - s);
-
-      if (s == 0) s = end;
-      else
-         {
-         if (*(s-1) == '\\' &&
-             *(s-2) != '\\')
-            {
-            ++s;
-
-            continue;
-            }
-         }
-
-      break;
-      }
-
-   return s;
 }
 
 /* skip string delimiter or white space and line comment */
@@ -1459,13 +1654,13 @@ end:
 uint32_t u_split(char* restrict s, uint32_t n, char** restrict argv, const char* restrict delim)
 {
    const char* restrict p;
-   char* restrict end  = s + n;
+   char* restrict end = s + n;
    char** restrict ptr = argv;
 
    U_INTERNAL_TRACE("u_split(%.*s,%u,%p,%s)", U_min(n,128), s, n, argv, delim)
 
    U_INTERNAL_ASSERT_POINTER(s)
-   U_INTERNAL_ASSERT_MAJOR(n,0)
+   U_INTERNAL_ASSERT_MAJOR(n, 0)
    U_INTERNAL_ASSERT_POINTER(argv)
    U_INTERNAL_ASSERT_EQUALS(u_isBinary((const unsigned char*)s,n),false)
 
@@ -1481,7 +1676,7 @@ uint32_t u_split(char* restrict s, uint32_t n, char** restrict argv, const char*
 
          *s++ = '\0';
 
-         U_INTERNAL_PRINT("u_split() = %s", p)
+         U_INTERNAL_PRINT("u_split(%u) = %s", argv-ptr-1, p)
          }
       }
 
@@ -1501,7 +1696,6 @@ uint32_t u_split(char* restrict s, uint32_t n, char** restrict argv, const char*
 
 __pure bool u_dosmatch(const char* restrict s, uint32_t n1, const char* restrict mask, uint32_t n2, int flags)
 {
-   bool result;
    const char* restrict cp = 0;
    const char* restrict mp = 0;
    unsigned char c1 = 0, c2 = 0;
@@ -1516,7 +1710,7 @@ __pure bool u_dosmatch(const char* restrict s, uint32_t n1, const char* restrict
    U_INTERNAL_ASSERT_MAJOR(n2, 0)
    U_INTERNAL_ASSERT_POINTER(mask)
 
-   if (flags & FNM_IGNORECASE)
+   if ((flags & FNM_IGNORECASE) != 0)
       {
       while (s < end_s)
          {
@@ -1529,7 +1723,7 @@ __pure bool u_dosmatch(const char* restrict s, uint32_t n1, const char* restrict
          if (c2 != c1 &&
              c2 != '?')
             {
-            return ((flags & FNM_INVERT) != 0);
+            return ((flags & FNM_INVERT) != 0); /* no match */
             }
 
          ++s;
@@ -1542,20 +1736,27 @@ __pure bool u_dosmatch(const char* restrict s, uint32_t n1, const char* restrict
          {
          if (s >= end_s)
             {
-            if (mask == 0) return false;
+            if (mask == 0) return ((flags & FNM_INVERT) != 0); /* no match */
 
             while (*mask == '*') ++mask;
 
-            result = (mask >= end_mask);
+            if ((flags & FNM_INVERT) == 0)
+               {
+               if (mask >= end_mask) return true; /* match */
 
-            return ((flags & FNM_INVERT) != 0 ? (result == false) : result);
+               return false; /* no match */
+               }
+
+            if (mask >= end_mask) return false; /* match */
+
+            return true; /* no match */
             }
 
          c2 = (mask ? u__tolower(*mask) : 0);
 
          if (c2 == '*')
             {
-            if (++mask >= end_mask) return ((flags & FNM_INVERT) == 0);
+            if (++mask >= end_mask) return ((flags & FNM_INVERT) == 0); /* match */
 
             cp = s+1;
             mp = mask;
@@ -1593,7 +1794,7 @@ __pure bool u_dosmatch(const char* restrict s, uint32_t n1, const char* restrict
          if (c2 != c1 &&
              c2 != '?')
             {
-            return ((flags & FNM_INVERT) != 0);
+            return ((flags & FNM_INVERT) != 0); /* no match */
             }
 
          ++s;
@@ -1606,18 +1807,27 @@ __pure bool u_dosmatch(const char* restrict s, uint32_t n1, const char* restrict
          {
          if (s >= end_s)
             {
+            if (mask == 0) return ((flags & FNM_INVERT) != 0); /* no match */
+
             while (*mask == '*') ++mask;
 
-            result = (mask >= end_mask);
+            if ((flags & FNM_INVERT) == 0)
+               {
+               if (mask >= end_mask) return true; /* match */
 
-            return ((flags & FNM_INVERT) != 0 ? (result == false) : result);
+               return false; /* no match */
+               }
+
+            if (mask >= end_mask) return false; /* match */
+
+            return true; /* no match */
             }
 
          c2 = *mask;
 
          if (c2 == '*')
             {
-            if (++mask >= end_mask) return ((flags & FNM_INVERT) == 0);
+            if (++mask >= end_mask) return ((flags & FNM_INVERT) == 0); /* match */
 
             cp = s + 1;
             mp = mask;
@@ -1657,7 +1867,7 @@ __pure bool u_dosmatch_ext(const char* restrict s, uint32_t n1, const char* rest
       {
       U_INTERNAL_PRINT("switch: s[0] = %c n1 = %u mask[0] = %c n2 = %u", s[0], n1, mask[0], n2)
 
-      switch (mask[0])
+      switch (*mask)
          {
          case '*':
             {
@@ -1697,34 +1907,33 @@ __pure bool u_dosmatch_ext(const char* restrict s, uint32_t n1, const char* rest
 
             if (bnot)
                {
-               mask += 2;
                  n2 -= 2;
+               mask += 2;
                }
             else
                {
-               ++mask;
                --n2;
+               ++mask;
                }
 
             U_INTERNAL_PRINT("s[0] = %c n1 = %u mask[0] = %c n2 = %u", s[0], n1, mask[0], n2)
 
             while (true)
                {
-               if (mask[0] == '\\')
+               if (*mask == '\\')
                   {
-                  ++mask;
-                  --n2;
+                  if (*++mask == s[0]) match = true;
 
-                  if (mask[0] == s[0]) match = true;
+                  --n2;
                   }
                else
                   {
-                  if (mask[0] == ']') break;
+                  if (*mask == ']') break;
 
                   if (n2 == 0)
                      {
-                     --mask;
                      ++n2;
+                     --mask;
 
                      break;
                      }
@@ -1743,7 +1952,7 @@ __pure bool u_dosmatch_ext(const char* restrict s, uint32_t n1, const char* rest
                           end = t;
                         }
 
-                     if (flags & FNM_IGNORECASE)
+                     if ((flags & FNM_IGNORECASE) != 0)
                         {
                         start = u__tolower((unsigned char)start);
                           end = u__tolower((unsigned char)end);
@@ -1791,12 +2000,12 @@ __pure bool u_dosmatch_ext(const char* restrict s, uint32_t n1, const char* rest
             {
             if (n2 >= 2)
                {
-               ++mask;
                --n2;
+               ++mask;
                }
             }
 
-         /* fall through */
+         /* FALL THRU */
 
          default:
             {
@@ -1817,8 +2026,8 @@ __pure bool u_dosmatch_ext(const char* restrict s, uint32_t n1, const char* rest
          break;
          }
 
-      ++mask;
       --n2;
+      ++mask;
 
       if (n1 == 0)
          {
@@ -1837,39 +2046,45 @@ __pure bool u_dosmatch_ext(const char* restrict s, uint32_t n1, const char* rest
    if (n2 == 0 &&
        n1 == 0)
       {
-      return ((flags & FNM_INVERT) == 0);
+      return ((flags & FNM_INVERT) == 0); /* match */
       }
 
-   return ((flags & FNM_INVERT) != 0);
+   return ((flags & FNM_INVERT) != 0); /* no match */
 }
 
-/**
- * Match STRING against the pattern MASK and multiple patterns separated by '|', returning true if it matches, false if not, inversion if flags contain FNM_INVERT
- */
+const char* restrict u_pOR;
 
-bool u_match_with_OR(const char* restrict s, uint32_t n1, const char* restrict mask, uint32_t n2, int flags)
+uint32_t u_match_with_OR(bPFpcupcud pfn_match, const char* restrict s, uint32_t n1, const char* restrict pattern, uint32_t n2, int flags)
 {
-   const char* restrict p_or;
-   const char* restrict end = mask + n2;
+   uint32_t n0;
+   const char* restrict end = pattern + n2;
 
-   U_INTERNAL_TRACE("u_match_with_OR(%.*s,%u,%.*s,%u,%d)", U_min(n1,128), s, n1, n2, mask, n2, flags)
+   U_INTERNAL_TRACE("u_match_with_OR(%p,%.*s,%u,%.*s,%u,%d)", pfn_match, U_min(n1,128), s, n1, n2, pattern, n2, flags)
 
    U_INTERNAL_ASSERT_POINTER(s)
    U_INTERNAL_ASSERT_MAJOR(n1, 0)
    U_INTERNAL_ASSERT_MAJOR(n2, 0)
-   U_INTERNAL_ASSERT_POINTER(mask)
+   U_INTERNAL_ASSERT_POINTER(pattern)
 
-   while (true)
+loop:
+   u_pOR = (const char* restrict) memchr(pattern, '|', n2);
+
+   U_INTERNAL_PRINT("u_pOR = %p pattern(%u) = %.*s", u_pOR, n2, n2, pattern)
+
+   if (u_pOR == U_NULLPTR) return (pfn_match(s, n1, (u_pOR = pattern), n2, flags) ? n2 : 0);
+
+   n0 = (u_pOR - pattern);
+
+   if (pfn_match(s, n1, pattern, n0, (flags & ~FNM_INVERT)))
       {
-      p_or = (const char* restrict) memchr(mask, '|', n2);
+      u_pOR = pattern;
 
-      if (p_or == 0) return u_pfn_match(s, n1, mask, n2, flags);
-
-      if (u_pfn_match(s, n1, mask, (p_or - mask), (flags & ~FNM_INVERT))) return ((flags & FNM_INVERT) == 0);
-
-      mask = p_or + 1;
-      n2   = end - mask;
+      return ((flags & FNM_INVERT) == 0 ? n0 : 0);
       }
+
+   n2 = end - (pattern = (u_pOR + 1));
+
+   goto loop;
 }
 
 /**
@@ -1898,7 +2113,7 @@ __pure bool u_validate_email_address(const char* restrict address, uint32_t addr
       U_INTERNAL_PRINT("c = %c", *c)
 
       if (*c == '\"' &&
-          (c == address || *(c - 1) == '.' || *(c - 1) == '\"'))
+          (c == address || *(c-1) == '.' || *(c-1) == '\"'))
          {
          while (++c < end)
             {
@@ -1925,12 +2140,15 @@ __pure bool u_validate_email_address(const char* restrict address, uint32_t addr
       if (*c == '@') break;
 
       if (*c <= ' ' ||
-          *c >= 127) return false;
+          *c >= 127)
+         {
+         return false;
+         }
 
       if (strchr(RFC822_SPECIALS, *c)) return false;
       }
 
-   if (c == address || *(c - 1) == '.') return false;
+   if (c == address || *(c-1) == '.') return false;
 
    /* next we validate the domain portion (name@domain) */
 
@@ -1943,13 +2161,16 @@ __pure bool u_validate_email_address(const char* restrict address, uint32_t addr
 
       if (*c == '.')
          {
-         if (c == domain || *(c - 1) == '.') return false;
+         if (c == domain || *(c-1) == '.') return false;
 
          ++count;
          }
 
       if (*c <= ' ' ||
-          *c >= 127) return false;
+          *c >= 127)
+         {
+         return false;
+         }
 
       if (strchr(RFC822_SPECIALS, *c)) return false;
       }
@@ -2115,7 +2336,7 @@ static inline void make_absolute(char* restrict result, const char* restrict dot
 
       result_len = u__strlen(result, __PRETTY_FUNCTION__);
 
-      if (result[result_len - 1] != PATH_SEPARATOR)
+      if (result[result_len-1] != PATH_SEPARATOR)
          {
          result[result_len++] = PATH_SEPARATOR;
          result[result_len]   = '\0';
@@ -2130,7 +2351,7 @@ static inline void make_absolute(char* restrict result, const char* restrict dot
       result_len = 2;
       }
 
-   u__strcpy(result + result_len, string);
+   u__strcpy(result+result_len, string);
 }
 
 /**
@@ -2171,7 +2392,7 @@ static const char* u_check_for_suffix_exe(const char* restrict program)
 bool u_pathfind(char* restrict result, const char* restrict path, uint32_t path_len, const char* restrict filename, int mode)
 {
    uint32_t p_index = 0;
-   char zPath[PATH_MAX + 1];
+   char zPath[U_PATH_MAX+1];
 
    U_INTERNAL_TRACE("u_pathfind(%p,%.*s,%u,%s,%d)", result, path_len, path, path_len, filename, mode)
 
@@ -2182,7 +2403,7 @@ bool u_pathfind(char* restrict result, const char* restrict path, uint32_t path_
       if (path) path_len = u__strlen(path, __PRETTY_FUNCTION__);
       else
          {
-         path     = U_PATH_DEFAULT;
+         path     =                 U_PATH_DEFAULT;
          path_len = U_CONSTANT_SIZE(U_PATH_DEFAULT);
          }
 
@@ -2213,7 +2434,7 @@ bool u_pathfind(char* restrict result, const char* restrict path, uint32_t path_
          {
          /* We can, so normalize the name and return it below */
 
-         (void) u_canonicalize_pathname(result);
+         (void) u_canonicalize_pathname(result, strlen(result));
 
          return true;
          }
@@ -2223,7 +2444,7 @@ bool u_pathfind(char* restrict result, const char* restrict path, uint32_t path_
 }
 
 /**
- * Canonicalize path, and build a new path. The new path differs from original in that:
+ * Canonicalize path by building a new path. The new path differs from original in that:
  *
  * Multiple    '/'                     are collapsed to a single '/'
  * Trailing    '/'                     are removed
@@ -2231,127 +2452,150 @@ bool u_pathfind(char* restrict result, const char* restrict path, uint32_t path_
  * Non-leading '../' and trailing '..' are handled by removing portions of the path
  */
 
-bool u_canonicalize_pathname(char* restrict path)
+uint32_t u_canonicalize_pathname(char* restrict path, uint32_t sz)
 {
-   int len;
+   char c;
+   bool bflag;
+   uint32_t len;
    char* restrict p;
    char* restrict s;
    char* restrict src;
    char* restrict dst;
-   bool is_modified = false;
-   char* restrict lpath = path;
+   char* restrict end = path+sz;
 
-   U_INTERNAL_TRACE("u_canonicalize_pathname(%s)", path)
+   U_INTERNAL_TRACE("u_canonicalize_pathname(%.*s,%u)", U_min(sz,128), path, sz)
 
-#ifdef _MSWINDOWS_
-   if (u__isalpha(path[0]) &&
-                  path[1] == ':')
-      {
-      lpath += 2; /* Skip over the disk name in MSDOS pathnames */
-      }
-#endif
-
-   /* Collapse multiple slashes */
-
-   for (p = lpath; *p; ++p)
-      {
-      if (u_get_unalignedp16(p) == U_MULTICHAR_CONSTANT16('/','/'))
-         {
-         s = p+1;
-
-         while (*(++s) == '/') {}
-
-         is_modified = true;
-
-         for (src = s, dst = p+1; (*dst = *src); ++src, ++dst) {} /* u__strcpy(p + 1, s); */
-
-         U_INTERNAL_PRINT("path = %s", path)
-         }
-      }
-
-   /* Collapse "/./" -> "/" */
-
-   p = lpath;
-
-   while (*p)
-      {
-      if (p[0] == '/' &&
-          u_get_unalignedp16(p+1) == U_MULTICHAR_CONSTANT16('.','/'))
-         {
-         is_modified = true;
-
-         for (src = p+2, dst = p; (*dst = *src); ++src, ++dst) {} /* u__strcpy(p, p + 2); */
-
-         U_INTERNAL_PRINT("path = %s", path)
-         }
-      else
-         {
-         ++p;
-         }
-      }
-
-   /* Remove trailing slashes */
-
-   p = lpath + u__strlen(lpath, __PRETTY_FUNCTION__) - 1;
-
-   if ( p > lpath &&
-       *p == '/')
-      {
-      is_modified = true;
-
-      do { *p-- = '\0'; } while (p > lpath && *p == '/');
-      }
+   U_INTERNAL_ASSERT_MAJOR(sz, 1)
+   U_INTERNAL_ASSERT_EQUALS(*end, '\0')
 
    /* Remove leading "./" */
 
-   if (u_get_unalignedp16(lpath) == U_MULTICHAR_CONSTANT16('.','/'))
+   if (u_get_unalignedp16(path) == U_MULTICHAR_CONSTANT16('.','/'))
       {
-      if (lpath[2] == 0)
+      for (p = path+2; p < end; p += 2)
          {
-         lpath[1] = 0;
-
-         return true;
+         if (u_get_unalignedp16(p) != U_MULTICHAR_CONSTANT16('.','/')) break;
          }
 
-      is_modified = true;
+       len = p-path;
+       sz -= len;
+      end -= len;
 
-      for (src = lpath+2, dst = lpath; (*dst = *src); ++src, ++dst) {} /* u__strcpy(lpath, lpath + 2); */
-
-      U_INTERNAL_PRINT("path = %s", path)
-      }
-
-   /* Remove trailing "/" or "/." */
-
-   len = u__strlen(lpath, __PRETTY_FUNCTION__);
-
-   if (len < 2) goto end;
-
-   if (lpath[len-1] == '/')
-      {
-      lpath[len-1] = 0;
-
-      is_modified = true;
-      }
-   else
-      {
-      if (u_get_unalignedp16(lpath+len-2) == U_MULTICHAR_CONSTANT16('/','.'))
+      if (sz <= 2)
          {
-         if (len == 2)
-            {
-            lpath[1] = 0;
+end:     path[1] = '\0';
 
-            return true;
+         return 1;
+         }
+
+      for (dst = path, src = p; (*dst = *src); ++src, ++dst) {}
+
+      U_INTERNAL_PRINT("Remove leading \"./\": sz = %u path(%u) = %s", sz, strlen(path), path)
+
+      U_INTERNAL_ASSERT_EQUALS(*end, '\0')
+      }
+
+   /* Remove trailing "/." */
+
+   if (u_get_unalignedp16(end-2) == U_MULTICHAR_CONSTANT16('/','.'))
+      {
+      for (p = end-2; p > path; p -= 2)
+         {
+         if (u_get_unalignedp16(p) != U_MULTICHAR_CONSTANT16('/','.')) break;
+         }
+
+      sz -= end-p;
+
+      if (sz <= 2) goto end;
+
+      (end = p)[0] = '\0';
+
+      U_INTERNAL_PRINT("Remove trailing \"/.\": sz = %u path(%u) = %s", sz, strlen(path), path)
+      }
+
+   /* Remove trailing "/" */
+
+   if (end[-1] == '/')
+      {
+      for (p = end-2; p > path; --p)
+         {
+         if (*p != '/') break;
+         }
+
+      sz -= end - ++p;
+
+      if (sz <= 2) goto end;
+
+      (end = p)[0] = '\0';
+
+      U_INTERNAL_PRINT("Remove trailing \"/\": sz = %u path(%u) = %s", sz, strlen(path), path)
+      }
+
+   /* Collapse multiple slashes */
+
+   bflag = false;
+
+   for (p = path; p < end; ++p)
+      {
+      c = *p;
+
+           if (c == '.') bflag = true;
+      else if (c == '/')
+         {
+         if (u_get_unalignedp16(p) == U_MULTICHAR_CONSTANT16('/','/'))
+            {
+            s = ++p;
+
+            while (*++s == '/') {}
+
+            for (dst = p, src = s; (*dst = *src); ++src, ++dst) {}
+
+            sz -= s-p;
+
+            if (sz <= 2) goto end;
+
+            continue;
+            }
+         }
+      }
+
+   U_INTERNAL_PRINT("Collapse multiple slashes: sz = %u path(%u) = %s", sz, strlen(path), path)
+
+   if (bflag == false) return sz;
+
+   /* Collapse "/./" -> "/" */
+
+   end = (p = path) + sz;
+
+   while (p < end)
+      {
+      if (memcmp(p, U_CONSTANT_TO_PARAM("/./")) != 0) ++p;
+      else
+         {
+         s = p+3;
+
+loop:    if ((sz -= 2) <= 2) goto end;
+
+         end -= 2;
+
+         if (u_get_unalignedp16(s) == U_MULTICHAR_CONSTANT16('.','/'))
+            {
+            s += 2;
+
+            goto loop;
             }
 
-         is_modified = true;
-
-         lpath[len-2] = 0;
+         for (dst = p+1, src = s; (*dst = *src); ++src, ++dst) {}
          }
       }
+
+   U_INTERNAL_ASSERT_EQUALS(*end, '\0')
+
+   U_INTERNAL_PRINT("Collapse \"/./\" -> \"/\": sz = %u path(%u) = %s", sz, strlen(path), path)
 
    /* Collapse "/.." with the previous part of path */
 
-   p = lpath;
+   p = path;
 
    while (p[0] &&
           p[1] &&
@@ -2361,25 +2605,29 @@ bool u_canonicalize_pathname(char* restrict path)
            p[1] != '.'  ||
            p[2] != '.') ||
           (p[3] != '/'  &&
-           p[3] != 0))
+           p[3] != '\0'))
          {
          ++p;
 
          continue;
          }
 
-      /* search for the previous token */
+      /* Search for the previous token */
 
       s = p-1;
 
-      while (s >= lpath && *s != '/') --s;
+      while ( s >= path &&
+             *s != '/')
+         {
+         --s;
+         }
 
       ++s;
 
       /* If the previous token is "..", we cannot collapse it */
 
-      if (u_get_unalignedp16(s) == U_MULTICHAR_CONSTANT16('.','.') &&
-          (s + 2) == p)
+      if ((s+2) == p &&
+          u_get_unalignedp16(s) == U_MULTICHAR_CONSTANT16('.','.'))
          {
          p += 3;
 
@@ -2391,44 +2639,50 @@ bool u_canonicalize_pathname(char* restrict path)
          /*      "/../foo" -> "/foo" */
          /* "token/../foo" ->  "foo" */
 
-         is_modified = true;
+         p += 4;
 
-         for (src = p+4, dst = s + (s == lpath && *s == '/'); (*dst = *src); ++src, ++dst) {} /* u__strcpy(s + (s == lpath && *s == '/'), p + 4); */
+         bflag = (s == path && *s == '/');
 
-         U_INTERNAL_PRINT("path = %s", path)
+         for (dst = s+bflag, src = p; (*dst = *src); ++src, ++dst) {}
 
-         p = s - (s > lpath);
+         sz -= p-(s+bflag);
+
+         U_INTERNAL_PRINT("sz = %u path(%u) = %s", sz, strlen(path), path)
+
+         if (sz <= 2) goto end;
+
+         p = s - (s > path);
 
          continue;
          }
 
-      /* trailing ".." */
+      /* Trailing ".." */
 
-      is_modified = true;
-
-      if (s == lpath)
+      if (s == path)
          {
          /* "token/.." -> "." */
 
-         if (lpath[0] != '/') lpath[0] = '.';
+         if (path[0] != '/') path[0] = '.';
 
-         lpath[1] = 0;
+         return 1;
          }
-      else
-         {
-         /* "foo/token/.." -> "foo" */
 
-         if (s == (lpath + 1)) s[ 0] = '\0';
-         else                  s[-1] = '\0';
-         }
+      /* "foo/token/.." -> "foo" */
+
+      if (s != (path+1)) --s;
+
+      *s = '\0';
+
+      U_INTERNAL_PRINT("sz = %u s - path = %u", sz, s - path)
+
+      sz = (s - path);
 
       break;
       }
 
-end:
-   U_INTERNAL_PRINT("path = %s", path)
+   U_INTERNAL_PRINT("sz = %u path(%u) = %s", sz, strlen(path), path)
 
-   return is_modified;
+   return sz;
 }
 
 /* Prepare command for call to exec() */
@@ -2443,10 +2697,10 @@ int u_splitCommand(char* restrict s, uint32_t n, char** restrict argv, char* res
    U_INTERNAL_TRACE("u_splitCommand(%.*s,%u,%p,%p,%u)", U_min(n,128), s, n, argv, pathbuf, pathbuf_size)
 
    U_INTERNAL_ASSERT_POINTER(s)
-   U_INTERNAL_ASSERT_MAJOR(n,0)
-   U_INTERNAL_ASSERT_MAJOR(pathbuf_size,0)
+   U_INTERNAL_ASSERT_MAJOR(n, 0)
+   U_INTERNAL_ASSERT_MAJOR(pathbuf_size, 0)
 
-   /* check if command have path separator */
+   /* Check if command have path separator */
 
    while ((c = argv[1][i++]))
       {
@@ -2461,7 +2715,7 @@ int u_splitCommand(char* restrict s, uint32_t n, char** restrict argv, char* res
    if (bpath)
       {
       argv[0] = argv[1];
-      argv[1] = (char* restrict) u_basename(argv[0]);
+      argv[1] = (char* restrict) u_basename(argv[0], u__strlen(argv[0], __PRETTY_FUNCTION__));
 
       pathbuf[0] = '\0';
       }
@@ -2479,53 +2733,6 @@ int u_splitCommand(char* restrict s, uint32_t n, char** restrict argv, char* res
       }
 
    return result;
-}
-
-/**
- * It uses George Marsaglia's MWC algorithm to produce an unsigned integer.
- *
- * see http://www.bobwheeler.com/statistics/Password/MarsagliaPost.txt
- */
-
-uint32_t u_get_num_random(uint32_t range)
-{
-   uint32_t result;
-
-   U_INTERNAL_TRACE("u_get_num_random(%u)", range)
-
-   U_INTERNAL_ASSERT_MAJOR(u_m_w, 0)
-   U_INTERNAL_ASSERT_MAJOR(u_m_z, 0)
-
-   u_m_z = 36969 * (u_m_z & 65535) + (u_m_z >> 16);
-   u_m_w = 18000 * (u_m_w & 65535) + (u_m_w >> 16);
-
-   result = (u_m_z << 16) + u_m_w;
-
-   if (range)
-      {
-      result = ((result % range) + 1);
-
-      U_INTERNAL_ASSERT(result <= range)
-      }
-
-   return result;
-}
-
-/* Produce a uniform random sample from the open interval (0, 1). The method will not return either end point */
-
-double u_get_uniform(void)
-{
-   uint32_t u;
-
-   U_INTERNAL_TRACE("u_get_uniform()")
-
-   /* 0 <= u < 2^32 */
-
-   u = u_get_num_random(0);
-
-   /* The magic number below is 1/(2^32 + 2). The result is strictly between 0 and 1 */
-
-   return (u + 1.0) * 2.328306435454494e-10;
 }
 
 /**
@@ -2563,13 +2770,13 @@ static inline int rangematch(const char* restrict pattern, char test, int flags,
    do {
       char c2;
 
-      if (c == '\\' && !(flags & FNM_NOESCAPE)) c = *pattern++;
+      if (c == '\\' && (flags & FNM_NOESCAPE) == 0) c = *pattern++;
 
       U_INTERNAL_PRINT("c = %c test = %c", c, test)
 
       if (pattern > end_p) return -1; /* if (c == EOS) return (RANGE_ERROR); */
 
-      if (c == '/' && (flags & FNM_PATHNAME)) return 0;
+      if (c == '/' && (flags & FNM_PATHNAME) != 0) return 0;
 
       if (flags & FNM_CASEFOLD) c = u__tolower((unsigned char)c);
 
@@ -2579,11 +2786,11 @@ static inline int rangematch(const char* restrict pattern, char test, int flags,
          {
          pattern += 2;
 
-         if (c2 == '\\' && !(flags & FNM_NOESCAPE)) c2 = *pattern++;
+         if (c2 == '\\' && (flags & FNM_NOESCAPE) == 0) c2 = *pattern++;
 
          if (pattern > end_p) return -1; /* if (c2 == EOS) return (RANGE_ERROR); */
 
-         if (flags & FNM_CASEFOLD) c2 = u__tolower((unsigned char)c2);
+         if ((flags & FNM_CASEFOLD) != 0) c2 = u__tolower((unsigned char)c2);
 
          if (c    <= test &&
              test <= c2)
@@ -2619,7 +2826,7 @@ __pure static int kfnmatch(const char* restrict pattern, const char* restrict st
 
       if (pattern > end_p)
          {
-         if ((flags & FNM_LEADING_DIR) && *string == '/') return 0;
+         if ((flags & FNM_LEADING_DIR) != 0 && *string == '/') return 0;
 
          return (string != end_s);
          }
@@ -2630,10 +2837,10 @@ __pure static int kfnmatch(const char* restrict pattern, const char* restrict st
             {
             if (string == end_s) return 1;
 
-            if (*string == '/' && (flags & FNM_PATHNAME)) return 1;
+            if (*string == '/' && (flags & FNM_PATHNAME) != 0) return 1;
 
-            if (*string == '.' && (flags & FNM_PERIOD) &&
-                (string == stringstart || ((flags & FNM_PATHNAME) && *(string - 1) == '/')))
+            if (*string == '.' && (flags & FNM_PERIOD) != 0 &&
+                (string == stringstart || ((flags & FNM_PATHNAME) != 0 && *(string - 1) == '/')))
                {
                return 1;
                }
@@ -2650,8 +2857,8 @@ __pure static int kfnmatch(const char* restrict pattern, const char* restrict st
 
             while (c == '*') c = *++pattern;
 
-            if (*string == '.' && (flags & FNM_PERIOD) &&
-                (string == stringstart || ((flags & FNM_PATHNAME) && *(string - 1) == '/')))
+            if (*string == '.' && (flags & FNM_PERIOD) != 0 &&
+                (string == stringstart || ((flags & FNM_PATHNAME) != 0 && *(string - 1) == '/')))
                {
                return 1;
                }
@@ -2660,12 +2867,12 @@ __pure static int kfnmatch(const char* restrict pattern, const char* restrict st
 
             if (pattern == end_p) /* if (c == EOS) */
                {
-               if (flags & FNM_PATHNAME) return ((flags & FNM_LEADING_DIR) || memchr(string, '/', end_s - string) == 0 ? 0 : 1);
+               if ((flags & FNM_PATHNAME) != 0) return ((flags & FNM_LEADING_DIR) != 0 || memchr(string, '/', end_s - string) == 0 ? 0 : 1);
 
                return 0;
                }
 
-            if (c == '/' && flags & FNM_PATHNAME)
+            if (c == '/' && (flags & FNM_PATHNAME) != 0)
                {
                if ((string = (const char* restrict)memchr(string, '/', end_s - string)) == 0) return 1;
 
@@ -2680,7 +2887,7 @@ __pure static int kfnmatch(const char* restrict pattern, const char* restrict st
 
                if (!kfnmatch(pattern, string, flags & ~FNM_PERIOD, nesting + 1)) return 0;
 
-               if (test == '/' && flags & FNM_PATHNAME) break;
+               if (test == '/' && (flags & FNM_PATHNAME) != 0) break;
 
                ++string;
                }
@@ -2692,10 +2899,10 @@ __pure static int kfnmatch(const char* restrict pattern, const char* restrict st
             {
             if (string == end_s) return 1;
 
-            if (*string == '/' && (flags & FNM_PATHNAME)) return 1;
+            if (*string == '/' && (flags & FNM_PATHNAME) != 0) return 1;
 
-            if (*string == '.' && (flags & FNM_PERIOD) &&
-                (string == stringstart || ((flags & FNM_PATHNAME) && *(string - 1) == '/')))
+            if (*string == '.' && (flags & FNM_PERIOD) != 0 &&
+                (string == stringstart || ((flags & FNM_PATHNAME) != 0 && *(string - 1) == '/')))
                {
                return 1;
                }
@@ -2713,7 +2920,7 @@ __pure static int kfnmatch(const char* restrict pattern, const char* restrict st
 
          case '\\':
             {
-            if (!(flags & FNM_NOESCAPE))
+            if ((flags & FNM_NOESCAPE) == 0)
                {
                c = *pattern++;
 
@@ -2733,7 +2940,7 @@ __pure static int kfnmatch(const char* restrict pattern, const char* restrict st
 norm:       if (c == *string)
                {
                }
-            else if ((flags & FNM_CASEFOLD) && (u__tolower((unsigned char)c) == u__tolower((unsigned char)*string)))
+            else if ((flags & FNM_CASEFOLD) != 0 && (u__tolower((unsigned char)c) == u__tolower((unsigned char)*string)))
                {
                }
             else
@@ -3255,6 +3462,20 @@ __pure bool u_isMacAddr(const char* restrict p, uint32_t len)
    return false;
 }
 
+__pure bool u_isXMacAddr(const char* restrict s, uint32_t n)
+{
+   U_INTERNAL_TRACE("u_isXMacAddr(%.*s,%u)", U_min(n,128), s, n)
+
+   if (n == 12)
+      {
+      U_LOOP_STRING( if (u__isxdigit(c) == false) return false )
+
+      return true;
+      }
+
+   return false;
+}
+
 /************************************************************************
  * From rfc2044: encoding of the Unicode values on UTF-8:               *
  *                                                                      *
@@ -3429,7 +3650,7 @@ __pure int u_isUTF16(const unsigned char* restrict buf, uint32_t len)
  */
 
 #define U__S  0x00000001 /* character space    ' ' (32 0x20) */
-#define U__E  0x00000002 /* character used in printf format  */
+#define U__E  0x00000002 /* character used in printf format */
 #define U__H  0x00000004 /* character         '+' (43 0x2B) */
 #define U__V  0x00000008 /* character         ',' (44 0x2C) */
 #define U__O  0x00000010 /* character minus   '-' (45 0x2D) */
@@ -3446,7 +3667,7 @@ __pure int u_isUTF16(const unsigned char* restrict buf, uint32_t len)
 #define U__U  0x00008000 /* Uppercase */
 #define U__Z  0x00010000 /* Octal */
 #define U__F  0x00020000 /* character never appears in plain ASCII text */
-#define U__T  0x00040000 /* character      appears in plain ASCII text */
+#define U__T  0x00040000 /* character       appears in plain ASCII text */
 #define U__X  0x00080000 /* Hexadecimal */
 #define U__A  0x00100000 /* BASE64 encoded: '+' (43 0x2B) | '/' (47 0x2F) | '=' (61 0x3D) */
 #define U__M  0x00200000 /* HTTP request/response (COPY, DELETE, GET, HEAD|HTTP, OPTIONS, POST/PUT/PATCH) */
@@ -3457,28 +3678,33 @@ __pure int u_isUTF16(const unsigned char* restrict buf, uint32_t len)
 #define U__UQ 0x04000000 /* FROM URL query:  '&' (38 0x26) | '=' (61 0x3D) | '#' (35 0x23) */
 #define U__UF 0x08000000 /* filename invalid char: '"' '*' ':' '<' '>' '?' '\' '|' */
 #define U__XM 0x10000000 /* char >= (32 0x20) */
+#define U__XE 0x20000000 /* char '}' | ']' */
+#define U__XD 0x40000000 /* char [1-9] */
 
 #define LU    (U__L | U__U)
 #define LX    (U__L | U__X)
 #define UX    (U__U | U__X)
-#define ITK   (U__I | U__T | U__K | U__UF |               U__XM)
 #define LT    (U__L | U__T |                              U__XM)
 #define UT    (U__U | U__T |                              U__XM)
+#define DT    (U__D | U__T |               U__E |         U__XM)
+#define IT    (U__I |        U__T |        U__E | U__UF | U__XM)
+#define ITK   (U__I | U__T | U__K | U__UF |               U__XM)
 #define ITF   (U__I | U__T |                              U__XM) 
 #define ITA   (U__I | U__T | U__A |                       U__XM)
 #define ITQ   (U__I | U__T | U__Q |                       U__XM)
 #define LTE   (U__L | U__T |               U__E |         U__XM)
 #define LTY   (U__L | U__T | U__Y |        U__E |         U__XM)
 #define UXT   (U__U | U__X | U__T |        U__E |         U__XM)
-#define DT    (U__D | U__T |               U__E |         U__XM)
 #define ITN   (U__I | U__T | U__N |        U__E |         U__XM)
 #define ITO   (U__I | U__T | U__O |        U__E |         U__XM)
 #define DTZ   (U__D | U__T | U__Z |        U__E |         U__XM)
+#define DTW   (U__D | U__T |               U__E |         U__XM | U__XD)
 #define UTE   (U__U | U__T |               U__E |         U__XM)
 #define UTY   (U__U | U__T | U__Y |        U__E |         U__XM)
 #define UTM   (U__U | U__T | U__M |        U__E |         U__XM)
 #define LTM   (U__L | U__T | U__M |        U__E |         U__XM)
 #define LXT   (U__L | U__X | U__T |        U__E |         U__XM)
+#define DTZW  (U__D | U__T | U__Z |        U__E |         U__XM | U__XD)
 #define LTMY  (U__L | U__T | U__M | U__Y | U__E |         U__XM)
 #define UTMY  (U__U | U__T | U__M | U__Y | U__E |         U__XM)
 #define UXTM  (U__U | U__X | U__T | U__M | U__E |         U__XM)
@@ -3487,22 +3713,21 @@ __pure int u_isUTF16(const unsigned char* restrict buf, uint32_t len)
 #define LXTY  (U__L | U__X | U__T | U__Y | U__E |         U__XM)
 #define LXTMY (U__L | U__X | U__T | U__M | U__E | U__Y  | U__XM)
 #define UXTMY (U__U | U__X | U__T | U__M | U__E | U__Y  | U__XM)
-#define IT    (U__I |        U__T |        U__E | U__UF | U__XM)
 
-#define FUE   (U__F |                       U__UE | U__XM)
 #define IF    (U__I | U__F |                U__UE)
 #define CF    (U__C | U__F |                U__UE)
 #define CT    (U__C | U__T |                U__UE)
 #define WF    (U__W | U__F |                U__UE)
-#define ITUE  (U__I | U__T |        U__UF | U__UE | U__XM)
+#define FUE   (U__F |                       U__UE | U__XM)
 #define CWT   (U__C | U__W | U__T |         U__UE)
 #define CWF   (U__C | U__W | U__F |         U__UE)
 #define ITG   (U__I | U__T | U__G | U__UF | U__UE | U__XM)
 #define ITJ   (U__I | U__T | U__J | U__UF |         U__XM)
+#define SWT   (U__S | U__W | U__T |         U__UE | U__XM | U__E)
+#define ITUE  (U__I | U__T |        U__UF | U__UE | U__XM)
 #define CWBT  (U__C | U__W | U__B | U__T  | U__UE)
 #define CWRT  (U__C | U__W | U__R | U__T  | U__UE)
 #define ITUQ  (U__I | U__T |                U__UE | U__XM)
-#define SWT   (U__S | U__W | U__T |         U__UE | U__XM | U__E)
 #define ITAH  (U__I | U__T | U__A | U__H  | U__UE | U__XM | U__E)
 #define ITAU  (U__I | U__T | U__A |         U__UE | U__XM | U__UQ)
 #define ITJU  (U__I | U__T | U__J |         U__UE | U__XM | U__UQ)
@@ -3510,6 +3735,7 @@ __pure int u_isUTF16(const unsigned char* restrict buf, uint32_t len)
 #define ITKF  (U__I | U__T | U__K |                 U__XM | U__E)
 
 #define ITUEF  (U__I | U__T | U__UE | U__XM)
+#define ITUEFX (U__I | U__T | U__UE | U__XM | U__XE)
 #define ITUEFQ (U__I | U__T | U__UE | U__XM | U__UQ | U__E)
 
 const unsigned int u__ct_tab[256] = {
@@ -3518,27 +3744,27 @@ CF, CF, CF, CF, CF, CF, CF, CT, CT, CWBT, CWRT, CWF, CWT, CWRT, CF, CF,/* 0x00 *
 /*                                              ESC                            */
 CF, CF, CF, CF, CF, CF, CF, CF, CF,   CF,   CF,  CT,  CF,  CF,  CF, CF,/* 0x10 */
 
-/* ' ' '!' '"'  '#'   '$'  '%'  '&' '\'' '('  ')' '*' '+'   ','  '-'   '.'  '/'         */
-  SWT, ITF,ITK,ITUEFQ,ITF,ITUQ,ITJU,ITKF,ITF,ITF, IT,ITAH,ITVF, ITO,  ITN, ITA, /* 0x20 */
-/* '0' '1' '2'  '3'   '4'  '5'  '6' '7'  '8'  '9' ':' ';'   '<'  '='   '>'  '?'         */
-  DTZ, DTZ,DTZ, DTZ, DTZ,  DTZ,DTZ, DTZ, DT,  DT,ITG,ITUEF,ITJ, ITAU, ITJ,ITUE, /* 0x30 */
-/* '@' 'A' 'B'  'C'   'D'  'E'  'F' 'G'  'H'  'I' 'J' 'K'   'L'  'M'   'N'  'O'         */
-  ITF,UXTY,UXT,UXTMY,UXTM, UXT,UXT, UTM,UTMY, UTY,UTE,UT,  UTE, UTE,  UTE, UTM, /* 0x40 */
-/* 'P' 'Q' 'R'  'S'   'T'  'U'  'V' 'W'  'X'  'Y' 'Z' '['   '\'  ']'   '^'  '_'         */
-  UTM,UTE,UTY, UTY,  UTE, UTY, UTE,UTE, UTY, UTE, UT,ITUEF,ITUE,ITUEF,ITUEF,ITQ,/* 0x50 */
-/* '`' 'a' 'b'  'c'   'd'  'e'  'f' 'g'  'h'  'i' 'j' 'k'   'l'  'm'   'n'  'o'         */
-ITUEF,LXTY,LXT,LXTMY,LXTM,LXT, LXT,LTM,LTMY, LTY,LTE, LT,  LTE,  LT,  LTE, LTM, /* 0x60 */
-/* 'p' 'q' 'r'  's'   't'  'u'  'v' 'w'  'x'  'y' 'z' '{'   '|'  '}'   '~'              */
-  LTM,LTE,LTY, LTY,   LT, LTY, LTE,LTE, LTY,  LT, LT,ITUEF,ITUE,ITUEF,ITF, CF,  /* 0x70 */
+/* ' ' '!' '"'  '#'   '$'  '%'  '&' '\'' '('  ')' '*' '+'   ','  '-'   '.'  '/'          */
+  SWT, ITF,ITK,ITUEFQ,ITF,ITUQ,ITJU,ITKF,ITF,ITF, IT,ITAH,ITVF, ITO,  ITN, ITA,  /* 0x20 */
+/* '0' '1' '2'  '3'   '4'  '5'  '6' '7'  '8'  '9' ':' ';'   '<'  '='   '>'  '?'          */
+  DTZ,DTZW,DTZW,DTZW,DTZW,DTZW,DTZW,DTZW,DTW,DTW,ITG,ITUEF,ITJ, ITAU, ITJ,ITUE,  /* 0x30 */
+/* '@' 'A' 'B'  'C'   'D'  'E'  'F' 'G'  'H'  'I' 'J' 'K'   'L'  'M'   'N'  'O'          */
+  ITF,UXTY,UXT,UXTMY,UXTM, UXT,UXT, UTM,UTMY, UTY,UTE,UT,  UTE, UTE,  UTE, UTM,  /* 0x40 */
+/* 'P' 'Q' 'R'  'S'   'T'  'U'  'V' 'W'  'X'  'Y' 'Z' '['   '\'  ']'   '^'  '_'          */
+  UTM,UTE,UTY, UTY,  UTE, UTY, UTE,UTE, UTY, UTE, UT,ITUEF,ITUE,ITUEFX,ITUEF,ITQ,/* 0x50 */
+/* '`' 'a' 'b'  'c'   'd'  'e'  'f' 'g'  'h'  'i' 'j' 'k'   'l'  'm'   'n'  'o'          */
+ITUEF,LXTY,LXT,LXTMY,LXTM,LXT, LXT,LTM,LTMY, LTY,LTE, LT,  LTE,  LT,  LTE, LTM,  /* 0x60 */
+/* 'p' 'q' 'r'  's'   't'  'u'  'v' 'w'  'x'  'y' 'z' '{'   '|'  '}'   '~'               */
+  LTM,LTE,LTY, LTY,   LT, LTY, LTE,LTE, LTY,  LT, LT,ITUEF,ITUE,ITUEFX,ITF, CF,  /* 0x70 */
 
-FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, /* 0x80 */
-FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, /* 0x90 */
-FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, /* 0xa0 */
-FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, /* 0xb0 */
-FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, /* 0xc0 */
-FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, /* 0xd0 */
-FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, /* 0xe0 */
-FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE  /* 0xf0 */
+FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE,  /* 0x80 */
+FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE,  /* 0x90 */
+FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE,  /* 0xa0 */
+FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE,  /* 0xb0 */
+FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE,  /* 0xc0 */
+FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE,  /* 0xd0 */
+FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE,  /* 0xe0 */
+FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE   /* 0xf0 */
 
 /**
  * ISO-1 character set
@@ -3582,6 +3808,8 @@ FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE  
 #undef U__UQ
 #undef U__UF
 #undef U__XM
+#undef U__XE
+#undef U__XD
 
 #undef CF
 #undef CT
@@ -3600,6 +3828,7 @@ FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE  
 #undef CWT
 #undef CWF
 #undef DTZ
+#undef DTW
 #undef ITA
 #undef ITF
 #undef ITG
@@ -3615,6 +3844,7 @@ FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE  
 #undef SWT
 #undef UTY
 #undef UTM
+#undef DTZW
 #undef ITVF
 #undef ITKF
 #undef ITUE
@@ -3630,6 +3860,7 @@ FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE, FUE  
 #undef ITJU
 #undef ITUQ
 #undef ITUEF
+#undef ITUEFX
 #undef ITUEFQ
 #undef LXTMY
 #undef UXTMY
@@ -4666,7 +4897,6 @@ static struct mimeentry mimetab_r[] = {
 };
 
 static struct mimeentry mimetab_s[] = {
-   MIME_ENTRY( "svg",        "image/svg+xml" ), /* (svg, svgz) */
    MIME_ENTRY( "swf",        "application/x-shockwave-flash" ),
    MIME_ENTRY( "sgm",        "text/sgml" ), /* (sgml) */
    MIME_ENTRY( "sh",         "application/x-sh" ),
@@ -4857,6 +5087,7 @@ const char* u_get_mimetype(const char* restrict suffix, int* pmime_index)
       case U_MULTICHAR_CONSTANT32('c','s','p',0):
       case U_MULTICHAR_CONSTANT32('c','g','i',0):
       case U_MULTICHAR_CONSTANT32('p','h','p',0):
+      case U_MULTICHAR_CONSTANT32('s','v','g',0):
          {
          if (pmime_index)
             {
@@ -4866,11 +5097,12 @@ const char* u_get_mimetype(const char* restrict suffix, int* pmime_index)
                case U_MULTICHAR_CONSTANT32('u','s','p',0): *pmime_index = U_usp; break;
                case U_MULTICHAR_CONSTANT32('c','s','p',0): *pmime_index = U_csp; break;
                case U_MULTICHAR_CONSTANT32('c','g','i',0): *pmime_index = U_cgi; break;
+               case U_MULTICHAR_CONSTANT32('s','v','g',0): *pmime_index = U_svg; return "image/svg+xml";
                case U_MULTICHAR_CONSTANT32('p','h','p',0): *pmime_index = U_php; return "application/x-httpd-php";
                }
             }
 
-         return U_CTYPE_TEXT;
+         return U_CTYPE_TEXT_WITH_CHARSET;
          }
       }
 
@@ -4881,6 +5113,12 @@ const char* u_get_mimetype(const char* restrict suffix, int* pmime_index)
          if (pmime_index) *pmime_index = U_gz;
 
          return "application/x-gzip";
+         }
+      case U_MULTICHAR_CONSTANT16('b','r'):
+         {
+         if (pmime_index) *pmime_index = U_br;
+
+         return "application/x-brotli";
          }
       case U_MULTICHAR_CONSTANT16('p','l'):
          {

@@ -129,17 +129,17 @@ U_NO_EXPORT bool UPCRE::checkBrackets()
          {
          U_SYSCALL_VOID(pcre_free, "%p", p_pcre);
 
-         p_pcre = 0;
+         p_pcre = U_NULLPTR;
          }
 
       if (p_pcre_extra)
          {
          U_SYSCALL_VOID(pcre_free, "%p", p_pcre_extra);
 
-         p_pcre_extra = 0;
+         p_pcre_extra = U_NULLPTR;
          }
 
-      compile(0);
+      compile(U_NULLPTR);
 
       U_RETURN(true);
       }
@@ -151,11 +151,11 @@ U_NO_EXPORT void UPCRE::zero(uint32_t flags)
 {
    U_TRACE(0, "UPCRE::zero(%u)", flags)
 
-   p_pcre       = 0;
-   sub_vec      = 0;
-   resultset    = 0;
-   stringlist   = 0;
-   p_pcre_extra = 0;
+   p_pcre       = U_NULLPTR;
+   sub_vec      = U_NULLPTR;
+   resultset    = U_NULLPTR;
+   stringlist   = U_NULLPTR;
+   p_pcre_extra = U_NULLPTR;
 
    sub_len = num_matches = 0;
    did_match = false;
@@ -177,7 +177,7 @@ U_NO_EXPORT void UPCRE::zero(uint32_t flags)
 
 UPCRE::UPCRE()
 {
-   U_TRACE_REGISTER_OBJECT(0, UPCRE, "")
+   U_TRACE_CTOR(0, UPCRE, "")
 
    zero(0);
 }
@@ -192,7 +192,7 @@ void UPCRE::set(const UString& expression, uint32_t flags)
 
    zero(flags);
 
-   if ((replace_t && checkBrackets()) == false) compile(0);
+   if ((replace_t && checkBrackets()) == false) compile(U_NULLPTR);
 }
 
 void UPCRE::set(const UString& expression, const char* flags)
@@ -218,7 +218,7 @@ void UPCRE::set(const UString& expression, const char* flags)
          }
       }
 
-   compile(0);
+   compile(U_NULLPTR);
 }
 
 void UPCRE::clean()
@@ -228,21 +228,21 @@ void UPCRE::clean()
    if (sub_vec)
       {
       UMemoryPool::_free(sub_vec, sub_len, sizeof(int));
-                         sub_vec = 0;
+                         sub_vec = U_NULLPTR;
       }
 
    if (stringlist)
       {
       U_SYSCALL_VOID(pcre_free_substring_list, "%p", stringlist);
-                                                     stringlist = 0;
+                                                     stringlist = U_NULLPTR;
 
       U_INTERNAL_ASSERT_POINTER(resultset)
 
       resultset->clear();
 
-      delete resultset;
+      U_DELETE(resultset)
 
-      resultset = 0;
+      resultset = U_NULLPTR;
       }
 }
 
@@ -255,13 +255,13 @@ void UPCRE::clear()
    if (p_pcre)
       {
       U_SYSCALL_VOID(pcre_free, "%p", p_pcre);
-                                      p_pcre = 0;
+                                      p_pcre = U_NULLPTR;
       }
 
    if (p_pcre_extra)
       {
       U_SYSCALL_VOID(pcre_free, "%p", p_pcre_extra);
-                                      p_pcre_extra = 0;
+                                      p_pcre_extra = U_NULLPTR;
       }
 
    clean();
@@ -309,7 +309,7 @@ void UPCRE::compile(const unsigned char* tables) /* locale tables */
    p_pcre = (pcre*) U_SYSCALL(pcre_compile, "%S,%u,%p,%p,%S", ptr, _flags, &err_str, &erroffset, tables);
 
 #ifdef DEBUG
-   if (p_pcre == 0) U_INTERNAL_DUMP("pcre_compile() failed: %S at: %S", err_str, ptr + erroffset)
+   if (p_pcre == U_NULLPTR) U_INTERNAL_DUMP("pcre_compile() failed: %S at: %S", err_str, ptr + erroffset)
 #endif
 
    U_INTERNAL_ASSERT_POINTER(p_pcre)
@@ -348,7 +348,7 @@ void UPCRE::study(int options)
    p_pcre_extra = (pcre_extra*) U_SYSCALL(pcre_study, "%p,%d,%p", p_pcre, options, &err_str);
 
 #ifdef DEBUG
-   if (p_pcre_extra == 0 && err_str) U_INTERNAL_DUMP("pcre_study() failed: %S", err_str)
+   if (p_pcre_extra == U_NULLPTR && err_str) U_INTERNAL_DUMP("pcre_study() failed: %S", err_str)
 #endif
 }
 
@@ -389,15 +389,15 @@ bool UPCRE::search(const char* stuff, uint32_t stuff_len, int offset, int option
       if (stringlist)
          {
          U_SYSCALL_VOID(pcre_free_substring_list, "%p", stringlist);
-                                                        stringlist = 0;
+                                                        stringlist = U_NULLPTR;
 
          U_INTERNAL_ASSERT_POINTER(resultset)
 
          resultset->clear();
 
-         delete resultset;
+         U_DELETE(resultset)
 
-         resultset = 0;
+         resultset = U_NULLPTR;
          }
 
       if (bresultset == false) goto end;
@@ -419,21 +419,30 @@ bool UPCRE::search(const char* stuff, uint32_t stuff_len, int offset, int option
 
       U_DUMP("getMatchStart() = %u getMatchEnd() = %u", getMatchStart(), getMatchEnd())
 
-      U_INTERNAL_ASSERT_EQUALS(resultset, 0)
+      U_INTERNAL_ASSERT_EQUALS(resultset, U_NULLPTR)
 
       U_NEW(UVector<UString>, resultset, UVector<UString>);
 
+      uint32_t len;
+      const char* p;
+
       for (i = 1; i < num; ++i)
          {
-         UString str(stringlist[i]);
+         len = u__strlen((p = stringlist[i]), __PRETTY_FUNCTION__);
 
-         resultset->push_back(str);
+         if (len == 0) resultset->push_back(UString::getStringNull());
+         else
+            {
+            UString str(p, len);
 
-         U_INTERNAL_DUMP("resultset[%d] = (%u) %V", i-1, str.size(), str.rep)
+            resultset->push_back(str);
 
-         U_DUMP("getMatchStart(%d) = %u getMatchEnd(%d) = %u getMatchLength(%d) = %u", i-1, getMatchStart(i-1), i-1, getMatchEnd(i-1), i-1, getMatchLength(i-1))
+            U_INTERNAL_DUMP("resultset[%d] = (%u) %V", i-1, str.size(), str.rep)
 
-         U_ASSERT_EQUALS(str.size(), getMatchLength(i-1))
+            U_DUMP("getMatchStart(%d) = %u getMatchEnd(%d) = %u getMatchLength(%d) = %u", i-1, getMatchStart(i-1), i-1, getMatchEnd(i-1), i-1, getMatchLength(i-1))
+
+            U_ASSERT_EQUALS(str.size(), getMatchLength(i-1))
+            }
          }
       }
 
@@ -552,7 +561,7 @@ UString UPCRE::replace(const UString& piece, const UString& with)
 {
    U_TRACE(0, "UPCRE::replace(%V,%V)", piece.rep, with.rep)
 
-   if (dollar == 0)
+   if (dollar == U_NULLPTR)
       {
       U_NEW_ULIB_OBJECT(UPCRE, dollar, UPCRE(U_STRING_FROM_CONSTANT("\\${?([0-9]+)}?"), 0U));
 
@@ -641,7 +650,7 @@ U_NO_EXPORT UString UPCRE::replaceVars(const UString& piece)
 
       first = dollar->resultset->at(0);
 
-      uint32_t iBracketIndex = first.strtol(10);
+      uint32_t iBracketIndex = first.strtoul();
 
       // NB: we need this check...
 
@@ -686,7 +695,7 @@ bool UPCRE::validateUsername(const UString& username)
 {
    U_TRACE(0, "UPCRE::validateUsername(%V)", username.rep)
 
-   if (username_mask == 0)
+   if (username_mask == U_NULLPTR)
       {
       U_NEW_ULIB_OBJECT(UPCRE, username_mask, UPCRE(U_STRING_FROM_CONSTANT("(/^[a-zA-Z0-9_]{3,16}$/)"), PCRE_FOR_REPLACE));
 
@@ -706,7 +715,7 @@ uint32_t UPCRE::getTag(UVector<UString>& vec, const UString& xml, const char* at
 {
    U_TRACE(0, "UPCRE::getTag(%p,%V,%S,%S,%S)", &vec, xml.rep, attr, value, tag)
 
-   if (xml_mask == 0)
+   if (xml_mask == U_NULLPTR)
       {
       UString cstr(U_CAPACITY);
 
@@ -746,7 +755,7 @@ bool UPCRE::isValidURL(const UString& url)
 {
    U_TRACE(0, "UPCRE::isValidURL(%V)", url.rep)
 
-   if (url_mask == 0)
+   if (url_mask == U_NULLPTR)
       {
       U_NEW_ULIB_OBJECT(UPCRE, url_mask, UPCRE(U_STRING_FROM_CONSTANT(U_REGEX_URL), PCRE_FOR_REPLACE));
 
@@ -781,6 +790,6 @@ const char* UPCRE::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

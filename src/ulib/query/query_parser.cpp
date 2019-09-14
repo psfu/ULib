@@ -21,20 +21,20 @@ UVector<UQueryNode*>* UQueryParser::termRoots;
 
 UQueryNode::UQueryNode(Type t, UQueryNode* l, UQueryNode* r) : left(l), right(r), type(t)
 {
-   U_TRACE_REGISTER_OBJECT(0, UQueryNode, "%d,%p,%p", t, l, r)
+   U_TRACE_CTOR(0, UQueryNode, "%d,%p,%p", t, l, r)
 }
 
-UQueryNode::UQueryNode(const UString& d) : left(0), right(0), value(d), type(VALUE)
+UQueryNode::UQueryNode(const UString& d) : left(U_NULLPTR), right(U_NULLPTR), value(d), type(VALUE)
 {
-   U_TRACE_REGISTER_OBJECT(0, UQueryNode, "%V", d.rep)
+   U_TRACE_CTOR(0, UQueryNode, "%V", d.rep)
 }
 
 UQueryNode::~UQueryNode()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UQueryNode)
+   U_TRACE_DTOR(0, UQueryNode)
 
-   if (left)  delete left;
-   if (right) delete right;
+   if (left)  U_DELETE(left)
+   if (right) U_DELETE(right)
 }
 
 void UQueryParser::clear()
@@ -43,24 +43,35 @@ void UQueryParser::clear()
 
    if (tree)
       {
-      delete tree;
-             tree = 0;
+      U_DELETE(tree)
+
+      tree = U_NULLPTR;
+
+      U_INTERNAL_DUMP("termRoots = %p", termRoots)
 
       if (termRoots)
          {
-         uint32_t i, sz = termRoots->size();
+         UVector<UString>* pvec1;
+         UVector<UString>* pvec2;
+         uint32_t sz = termRoots->size();
 
-         for (i = 0; i < sz; ++i)
+         for (uint32_t i = 0; i < sz; ++i)
             {
-            delete negatives[i];
-            delete positives[i];
+            pvec1 = negatives[i];
+            pvec2 = positives[i];
+
+            U_INTERNAL_DUMP("pvec1 = %p pvec2 = %p", pvec1, pvec2)
+
+            U_DELETE(pvec1)
+            U_DELETE(pvec2)
             }
 
          UMemoryPool::_free(negatives, sz, sizeof(void*));
          UMemoryPool::_free(positives, sz, sizeof(void*));
 
-         delete termRoots;
-                termRoots = 0;
+         U_DELETE(termRoots)
+
+         termRoots = U_NULLPTR;
          }
       }
 
@@ -98,8 +109,8 @@ bool UQueryParser::parse(const UString& query)
       switch (tree->type)
          {
          case UQueryNode::VALUE:
-            U_INTERNAL_ASSERT_EQUALS(tree->left,0)
-            U_INTERNAL_ASSERT_EQUALS(tree->right,0)
+            U_INTERNAL_ASSERT_EQUALS(tree->left,U_NULLPTR)
+            U_INTERNAL_ASSERT_EQUALS(tree->right,U_NULLPTR)
          break;
 
          case UQueryNode::OR:
@@ -109,8 +120,8 @@ bool UQueryParser::parse(const UString& query)
          break;
 
          case UQueryNode::NOT:
-            U_INTERNAL_ASSERT_EQUALS(tree->left,0)
             U_INTERNAL_ASSERT_POINTER(tree->right)
+            U_INTERNAL_ASSERT_EQUALS(tree->left,U_NULLPTR)
          break;
          }
 
@@ -172,7 +183,7 @@ U_NO_EXPORT UQueryNode* UQueryParser::parseFactor()
 
    UQueryNode* result;
    
-   U_NEW(UQueryNode, result, UQueryNode(UQueryNode::NOT, 0, atom));
+   U_NEW(UQueryNode, result, UQueryNode(UQueryNode::NOT, U_NULLPTR, atom));
 
    U_RETURN_POINTER(result, UQueryNode);
 }
@@ -210,12 +221,12 @@ __pure bool UQueryNode::isDisjunctiveNormalForm() const
 
    U_CHECK_MEMORY
 
-   if (type == VALUE) U_RETURN(left == 0 && right == 0);
+   if (type == VALUE) U_RETURN(left == U_NULLPTR && right == U_NULLPTR);
 
    if (type == NOT)
       {
-      if (left       ||
-          right == 0 ||
+      if (left               ||
+          right == U_NULLPTR ||
           !right->isDisjunctiveNormalForm())
          {
          U_RETURN(false);
@@ -232,7 +243,8 @@ __pure bool UQueryNode::isDisjunctiveNormalForm() const
 
    if (type == AND)
       {
-      if (left == 0 || right == 0         ||
+      if (left  == U_NULLPTR              ||
+          right == U_NULLPTR              ||
          !left->isDisjunctiveNormalForm() ||
          !right->isDisjunctiveNormalForm())
          {
@@ -250,8 +262,8 @@ __pure bool UQueryNode::isDisjunctiveNormalForm() const
 
    if (type == OR)
       {
-      if (left  == 0                       ||
-          right == 0                       ||
+      if (left  == U_NULLPTR               ||
+          right == U_NULLPTR               ||
           !left->isDisjunctiveNormalForm() ||
           !right->isDisjunctiveNormalForm())
          {
@@ -274,7 +286,7 @@ U_NO_EXPORT UQueryNode* UQueryNode::cloneTree(const UQueryNode* root)
 {
    U_TRACE(0, "UQueryNode::cloneTree(%p)", root)
 
-   if (root == 0) U_RETURN_POINTER(0, UQueryNode);
+   if (root == U_NULLPTR) U_RETURN_POINTER(U_NULLPTR, UQueryNode);
 
    UQueryNode* cloneRoot;
    UQueryNode* leftClone  = cloneTree(root->left);
@@ -305,7 +317,7 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
 {
    U_TRACE(0, "UQueryNode::getRawDNF(%p)", root)
 
-   if (root == 0) U_RETURN_POINTER(0, UQueryNode);
+   if (root == U_NULLPTR) U_RETURN_POINTER(U_NULLPTR, UQueryNode);
 
    // One-level trees
 
@@ -319,7 +331,7 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
       {
       case NOT:
          {
-         U_INTERNAL_ASSERT_EQUALS(root->left,0)
+         U_INTERNAL_ASSERT_EQUALS(root->left,U_NULLPTR)
 
          if (root->right->type == VALUE) U_RETURN_POINTER(root, UQueryNode);
          }
@@ -357,19 +369,19 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
 
    if (root->type == NOT)
       {
-      U_INTERNAL_ASSERT_EQUALS(root->left, 0)
+      U_INTERNAL_ASSERT_EQUALS(root->left, U_NULLPTR)
 
       if (root->right->type == NOT)
          {
          // Two NOTs make a positive
 
          U_INTERNAL_ASSERT_POINTER(root->right)
-         U_INTERNAL_ASSERT_EQUALS(root->left, 0)
+         U_INTERNAL_ASSERT_EQUALS(root->left, U_NULLPTR)
 
          UQueryNode* newRoot = root->right->right;
-                               root->right->right = 0;
+                               root->right->right = U_NULLPTR;
 
-         delete root; // deletes two nodes
+         U_DELETE(root) // deletes two nodes
 
          UQueryNode* result = getRawDNF(newRoot);
 
@@ -384,9 +396,9 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
          // We have !(a | b), which becomes !a && !b:
 
          root->right->left  =
-         root->right->right = 0;
+         root->right->right = U_NULLPTR;
 
-         delete root->right;  // destroy the OR node
+         U_DELETE(root->right)  // destroy the OR node
 
          UQueryNode* notA = root;
                      notA->right = a;
@@ -394,7 +406,7 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
          UQueryNode* notB;
          UQueryNode* newRoot;
 
-         U_NEW(UQueryNode, notB,    UQueryNode(NOT, 0, b));
+         U_NEW(UQueryNode, notB,    UQueryNode(NOT, U_NULLPTR, b));
          U_NEW(UQueryNode, newRoot, UQueryNode(AND, notA, notB));
 
          UQueryNode* result = getRawDNF(newRoot);
@@ -410,9 +422,9 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
          // We have !(a & b), which becomes !a | !b:
 
          root->right->left  =
-         root->right->right = 0;
+         root->right->right = U_NULLPTR;
 
-         delete root->right; // destroy the AND node
+         U_DELETE(root->right) // destroy the AND node
 
          UQueryNode* notA = root;
                      notA->right = a;
@@ -420,7 +432,7 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
          UQueryNode* notB;
          UQueryNode* newRoot;
 
-         U_NEW(UQueryNode, notB,    UQueryNode(NOT, 0, b));
+         U_NEW(UQueryNode, notB,    UQueryNode(NOT, U_NULLPTR, b));
          U_NEW(UQueryNode, newRoot, UQueryNode(OR, notA, notB));
 
          UQueryNode* result = getRawDNF(newRoot);
@@ -487,8 +499,8 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
 
       if (root->left->type == NOT)
          {
-         U_INTERNAL_ASSERT_EQUALS(root->left->left, 0)
-         U_INTERNAL_ASSERT_EQUALS(root->right->left, 0)
+         U_INTERNAL_ASSERT_EQUALS(root->left->left, U_NULLPTR)
+         U_INTERNAL_ASSERT_EQUALS(root->right->left, U_NULLPTR)
          U_INTERNAL_ASSERT_EQUALS(root->right->type, NOT) // expected re: conv. order
 
          // Expected because of recursion step
@@ -565,8 +577,8 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
 
       if (root->left->type == NOT)
          {
-         U_INTERNAL_ASSERT_EQUALS(root->left->left, 0)
-         U_INTERNAL_ASSERT_EQUALS(root->right->left, 0)
+         U_INTERNAL_ASSERT_EQUALS(root->left->left, U_NULLPTR)
+         U_INTERNAL_ASSERT_EQUALS(root->right->left, U_NULLPTR)
          U_INTERNAL_ASSERT_EQUALS(root->right->type, NOT) // expected re: conv. order
 
          // Expected because of recursion step
@@ -580,7 +592,7 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
       if (root->right->type == NOT)
          {
          U_INTERNAL_ASSERT_POINTER(root->right->right)
-         U_INTERNAL_ASSERT_EQUALS(root->right->left, 0)
+         U_INTERNAL_ASSERT_EQUALS(root->right->left, U_NULLPTR)
          U_INTERNAL_ASSERT_EQUALS(root->right->right->type, VALUE)
 
          if (root->left->type == AND) U_RETURN_POINTER(root,UQueryNode);
@@ -599,7 +611,7 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
          UQueryNode* newAndNode;
 
          U_NEW(UQueryNode, newCNode,   UQueryNode(c->value));
-         U_NEW(UQueryNode, newNotNode, UQueryNode(NOT, 0, newCNode));
+         U_NEW(UQueryNode, newNotNode, UQueryNode(NOT, U_NULLPTR, newCNode));
          U_NEW(UQueryNode, newAndNode, UQueryNode(AND, b, newNotNode));
 
          orNode->left   = andNode;
@@ -692,7 +704,7 @@ U_NO_EXPORT UQueryNode* UQueryNode::getRawDNF(UQueryNode* root)
       U_INTERNAL_ASSERT(false)
       }
 
-   U_RETURN_POINTER(0, UQueryNode);
+   U_RETURN_POINTER(U_NULLPTR, UQueryNode);
 }
 
 /**
@@ -755,7 +767,7 @@ U_NO_EXPORT void UQueryNode::destroyDNFOrNodes(UQueryNode* root)
 {
    U_TRACE(0, "UQueryNode::destroyDNFOrNodes(%p)", root)
 
-   if (root == 0 ||
+   if (root == U_NULLPTR ||
        root->type != OR)
       {
       return;
@@ -769,9 +781,10 @@ U_NO_EXPORT void UQueryNode::destroyDNFOrNodes(UQueryNode* root)
    U_INTERNAL_ASSERT_POINTER(_left)
    U_INTERNAL_ASSERT_POINTER(_right)
 
-   root->left = root->right = 0;
+   root->left  =
+   root->right = U_NULLPTR;
 
-   delete root;
+   U_DELETE(root)
 
    destroyDNFOrNodes(_left);
    destroyDNFOrNodes(_right);
@@ -786,14 +799,14 @@ U_NO_EXPORT UQueryNode* UQueryNode::joinTreesWithOrNodes(UVector<UQueryNode*>& t
 
    uint32_t sz = trees.size();
 
-   if (sz == 0) U_RETURN_POINTER(0,        UQueryNode);
-   if (sz == 1) U_RETURN_POINTER(trees[0], UQueryNode);
+   if (sz == 0) U_RETURN_POINTER(U_NULLPTR, UQueryNode);
+   if (sz == 1) U_RETURN_POINTER(trees[0],  UQueryNode);
 
    uint32_t i = 0;
 
    UQueryNode* result;
 
-   U_NEW(UQueryNode, result, UQueryNode(OR, trees[i], 0));
+   U_NEW(UQueryNode, result, UQueryNode(OR, trees[i], U_NULLPTR));
 
    result->right = trees[++i];
 
@@ -833,7 +846,7 @@ void UQueryNode::getDNFTermRoots(UVector<UQueryNode*>* dest)
       case AND:
       case NOT:
       case VALUE:
-         dest->push(this);
+         dest->push_back(this);
       break;
       }
 }
@@ -844,7 +857,7 @@ UQueryNode* UQueryNode::getDisjunctiveNormalForm(UQueryNode* root)
 
    UQueryNode* dnfRoot = getRawDNF(root);
 
-   if (dnfRoot == 0) U_RETURN_POINTER(dnfRoot,UQueryNode);
+   if (dnfRoot == U_NULLPTR) U_RETURN_POINTER(dnfRoot, UQueryNode);
 
    UVector<UQueryNode*> termRoots, usefulTerms;
 
@@ -888,7 +901,7 @@ void UQueryParser::startEvaluate(bPFpr func)
 
    U_INTERNAL_ASSERT_POINTER(tree)
    U_INTERNAL_ASSERT_POINTER(func)
-   U_INTERNAL_ASSERT_EQUALS(termRoots,0)
+   U_INTERNAL_ASSERT_EQUALS(termRoots,U_NULLPTR)
 
    function = func;
 
@@ -946,7 +959,7 @@ void UQueryParser::evaluate(UStringRep* _word, bool positive)
     * --------------------------------------------------------------------------------------
     */
 
-   char* p = (u_buffer_len ? (char*) u_find(u_buffer, u_buffer_len, (const char*)&_word, sizeof(void*)) : 0);
+   char* p = (u_buffer_len ? (char*) u_find(u_buffer, u_buffer_len, (const char*)&_word, sizeof(void*)) : U_NULLPTR);
 
    bool result = (p ? (p[sizeof(void*)] == '1') : function(_word));
 
@@ -1116,7 +1129,7 @@ const char* UQueryNode::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* UQueryParser::dump(bool reset) const
@@ -1132,7 +1145,7 @@ const char* UQueryParser::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #  endif
 #endif

@@ -6,21 +6,21 @@
 #include <iostream>
 
 extern "C" {
-#  include "file_config.gperf"
+#include "file_config.gperf"
 }
 
-static bool setIndex(UHashMap<void*>* pthis, const char* p, uint32_t sz)
+static bool setIndex(UHashMap<void*>* pthis)
 {
-   U_TRACE(5, "setIndex(%p,%.*S,%u)", pthis, sz, p, sz)
+   U_TRACE(5, "setIndex(%p)", pthis)
 
-   pthis->index = gperf_hash(p, sz);
+   UHashMap<void*>::index = (UHashMap<void*>::lhash = gperf_hash(U_STRING_TO_PARAM(*UHashMap<void*>::lkey))) & pthis->getMask();
 
    U_RETURN(false);
 }
 
 static void check(UFileConfig& y)
 {
-   U_TRACE(5,"check()")
+   U_TRACE_NO_PARAM(5, "check()")
 
    U_ASSERT( y[U_STRING_FROM_CONSTANT("LOG_FILE")]                  == U_STRING_FROM_CONSTANT("ldap_update.log") )
    U_ASSERT( y[U_STRING_FROM_CONSTANT("LDAP_SERVER_ADDRESS")]       == U_STRING_FROM_CONSTANT("10.10.15.1:389") )
@@ -45,54 +45,44 @@ static void check(UFileConfig& y)
 
 static void check1(UFileConfig& y)
 {
-   U_TRACE(5,"check1()")
-
-// y.table.reserve(y.table.capacity() * 2);
+   U_TRACE_NO_PARAM(5, "check1()")
 
    UString value = y.erase(U_STRING_FROM_CONSTANT("LDAP_SERVER_ADDRESS"));
 
    U_ASSERT( value                                            == U_STRING_FROM_CONSTANT("10.10.15.1:389") )
-   U_ASSERT( y[U_STRING_FROM_CONSTANT("LDAP_SERVER_ADDRESS")] == U_STRING_FROM_CONSTANT("") )
+   U_ASSERT( y[U_STRING_FROM_CONSTANT("LDAP_SERVER_ADDRESS")] == UString::getStringNull() )
 
    U_ASSERT( y.erase(U_STRING_FROM_CONSTANT("ROOT_DN"))  == U_STRING_FROM_CONSTANT("o=BNL,c=IT") )
-   U_ASSERT( y[U_STRING_FROM_CONSTANT("ROOT_DN")]        == U_STRING_FROM_CONSTANT("") )
+   U_ASSERT( y[U_STRING_FROM_CONSTANT("ROOT_DN")]        == UString::getStringNull() )
 
    U_ASSERT( y.erase(U_STRING_FROM_CONSTANT("ADMIN_DN")) == U_STRING_FROM_CONSTANT("cn=Manager,o=BNL,c=IT") )
-   U_ASSERT( y[U_STRING_FROM_CONSTANT("ADMIN_DN")]       == U_STRING_FROM_CONSTANT("") )
+   U_ASSERT( y[U_STRING_FROM_CONSTANT("ADMIN_DN")]       == UString::getStringNull() )
 
    y.table.clear();
 
    U_ASSERT( y.empty() == true )
-   U_ASSERT( y[U_STRING_FROM_CONSTANT("TIME_SLEEP_MQSERIES_ERROR")] == U_STRING_FROM_CONSTANT("") )
+   U_ASSERT( y[U_STRING_FROM_CONSTANT("TIME_SLEEP_MQSERIES_ERROR")] == UString::getStringNull() )
 }
 
 static void check2(UFileConfig& y)
 {
-   U_TRACE(5,"check2()")
+   U_TRACE_NO_PARAM(5, "check2()")
 
-   U_ASSERT( y.erase(U_STRING_FROM_CONSTANT("NOT_PRESENT")) == U_STRING_FROM_CONSTANT("") )
-   U_ASSERT( y[U_STRING_FROM_CONSTANT("NOT_PRESENT")]       == U_STRING_FROM_CONSTANT("") )
+   U_ASSERT( y.erase(U_STRING_FROM_CONSTANT("NOT_PRESENT")) == UString::getStringNull() )
+   U_ASSERT( y[U_STRING_FROM_CONSTANT("NOT_PRESENT")]       == UString::getStringNull() )
 
-   y.table.insertAfterFind(U_STRING_FROM_CONSTANT("NOT_PRESENT"), U_STRING_FROM_CONSTANT("60M"));
+   y.table.insert(U_STRING_FROM_CONSTANT("NOT_PRESENT"), U_STRING_FROM_CONSTANT("60M"));
 
-   U_ASSERT( y[U_STRING_FROM_CONSTANT("NOT_PRESENT")]  == U_STRING_FROM_CONSTANT("60M") )
+   U_ASSERT( y[U_STRING_FROM_CONSTANT("NOT_PRESENT")] == U_STRING_FROM_CONSTANT("60M") )
 
    UString value = y[U_STRING_FROM_CONSTANT("NOT_PRESENT")];
 
    U_ASSERT( y.erase(U_STRING_FROM_CONSTANT("NOT_PRESENT")) == U_STRING_FROM_CONSTANT("60M") )
 
-   U_ASSERT( value           == U_STRING_FROM_CONSTANT("60M") )
-   U_ASSERT( value.strtol(10)  == 60   * 1024   * 1024 )
-#ifdef HAVE_STRTOLL
-   U_ASSERT( value.strtoll(10) == 60LL * 1024LL * 1024LL )
-#endif
-#ifdef HAVE_STRTOF
-   U_ASSERT( value.strtof()  == 60.0 )
-#endif
-   U_ASSERT( value.strtod()  == 60.0 )
-#ifdef HAVE_STRTOLD
-   U_ASSERT( value.strtold() == 60.0 )
-#endif
+   U_ASSERT( value == U_STRING_FROM_CONSTANT("60M") )
+
+   U_ASSERT( value.strtoul(true)  == 60   * 1024   * 1024 )
+   U_ASSERT( value.strtoull(true) == 60LL * 1024LL * 1024LL )
 }
 
 static bool print(UStringRep* key, void* value)
@@ -118,7 +108,7 @@ static bool cancella(UStringRep* key, void* value)
    U_RETURN(false);
 }
 
-int U_EXPORT main (int argc, char* argv[])
+int U_EXPORT main (int argc, char* argv[], char* env[])
 {
    U_ULIB_INIT(argv);
 
@@ -126,9 +116,11 @@ int U_EXPORT main (int argc, char* argv[])
 
    UFileConfig y;
 
-   y.table.setIndexFunction(setIndex);
+   y.load(U_STRING_FROM_CONSTANT("inp/nodog.conf"));
+   y.destroy();
 
-   y.table.allocate(MAX_HASH_VALUE+1);
+   y.table.setIndexFunction(setIndex);
+   y.table.allocate(64);
 
    y.load(U_STRING_FROM_CONSTANT("file_config.cf"));
 
@@ -175,9 +167,11 @@ int U_EXPORT main (int argc, char* argv[])
 
    x.clear();
 
+   U_ASSERT( y.table.invariant() )
+
    // Time Consumed with num_iteration(10) = 543 ms
 
-   n = (argc > 1 ? atoi(argv[1]) : 5);
+   n = (argc > 1 ? u_atoi(argv[1]) : 5);
 
    UCrono crono;
 

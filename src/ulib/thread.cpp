@@ -46,31 +46,32 @@ void UThread::close()
 
    U_INTERNAL_DUMP("tid = %p first = %p next = %p", _tid, first, next)
 
-   U_INTERNAL_ASSERT_POINTER(first)
-
-   UThread* obj;
-   UThread** ptr = &first;
-
-   while ((obj = *ptr))
+   if (first)
       {
-      U_INTERNAL_ASSERT_POINTER(obj)
+      UThread* obj;
+      UThread** ptr = &first;
 
-#  ifdef _MSWINDOWS_
-      if (tid == obj->tid)
-#  else
-      if (pthread_equal(tid, obj->tid))
-#  endif
+      while ((obj = *ptr))
          {
-         U_INTERNAL_ASSERT_EQUALS(this, obj)
-         U_INTERNAL_ASSERT_EQUALS(next, obj->next)
+         U_INTERNAL_ASSERT_POINTER(obj)
 
-         *ptr = next;
-                next = 0;
+#     ifdef _MSWINDOWS_
+         if (tid == obj->tid)
+#     else
+         if (pthread_equal(tid, obj->tid))
+#     endif
+            {
+            U_INTERNAL_ASSERT_EQUALS(this, obj)
+            U_INTERNAL_ASSERT_EQUALS(next, obj->next)
 
-         break;
+            *ptr = next;
+                   next = U_NULLPTR;
+
+            break;
+            }
+
+         ptr = &(*ptr)->next;
          }
-
-      ptr = &(*ptr)->next;
       }
 
    if (_tid)
@@ -94,7 +95,7 @@ void UThread::close()
       (void) U_SYSCALL(pthread_cancel, "%p", _tid);
 #   endif
 
-      if (detachstate == PTHREAD_CREATE_JOINABLE) (void) U_SYSCALL(pthread_join, "%p,%p", _tid, 0);
+      if (detachstate == PTHREAD_CREATE_JOINABLE) (void) U_SYSCALL(pthread_join, "%p,%p", _tid, U_NULLPTR);
 #   ifdef HAVE_PTHREAD_YIELD
       else
          {
@@ -199,7 +200,7 @@ void UThread::sigInstall(int signo)
 #endif
    sa.sa_handler = sigHandler;
 
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", signo,  &sa, 0);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", signo,  &sa, U_NULLPTR);
 }
 
 void UThread::manageSignal(int signo)
@@ -268,7 +269,7 @@ void UThread::maskSignal()
    (void) U_SYSCALL(sigaddset, "%p,%d", &mask, SIGALRM);
 #endif
 
-   (void) U_SYSCALL(pthread_sigmask, "%d,%p,%p", SIG_BLOCK, &mask, 0);
+   (void) U_SYSCALL(pthread_sigmask, "%d,%p,%p", SIG_BLOCK, &mask, U_NULLPTR);
 
 #ifndef HAVE_PTHREAD_SUSPEND
 # ifdef sigemptyset
@@ -285,7 +286,7 @@ void UThread::maskSignal()
    (void) U_SYSCALL(sigaddset, "%p,%d", &mask, U_SIGCONT);
 # endif
 
-   (void) U_SYSCALL(pthread_sigmask, "%d,%p,%p", SIG_UNBLOCK, &mask, 0);
+   (void) U_SYSCALL(pthread_sigmask, "%d,%p,%p", SIG_UNBLOCK, &mask, U_NULLPTR);
 
    sigInstall(U_SIGSTOP);
    sigInstall(U_SIGCONT);
@@ -430,7 +431,7 @@ bool UThread::start(uint32_t timeoutMS)
 
          ts.tv_nsec *= (long)timeoutMS;
 
-         (void) U_SYSCALL(nanosleep, "%p,%p", &ts, 0);
+         (void) U_SYSCALL(nanosleep, "%p,%p", &ts, U_NULLPTR);
          }
 
       U_RETURN(true);
@@ -553,7 +554,7 @@ void UThread::sleep(time_t timeoutMS)
 #else
    U_INTERNAL_DUMP("Call   nanosleep(%2D)")
 
-   (void) U_SYSCALL(nanosleep, "%p,%p", &ts, 0);
+   (void) U_SYSCALL(nanosleep, "%p,%p", &ts, U_NULLPTR);
 
    U_INTERNAL_DUMP("Return nanosleep(%2D)")
 #endif
@@ -567,7 +568,7 @@ void UThread::sleep(time_t timeoutMS)
 
 UThreadPool::UThreadPool(uint32_t size) : UThread(PTHREAD_CREATE_DETACHED), pool(size)
 {
-   U_TRACE_REGISTER_OBJECT(0, UThreadPool, "%u", size)
+   U_TRACE_CTOR(0, UThreadPool, "%u", size)
 
    UThread* th;
 
@@ -605,7 +606,7 @@ UThreadPool::UThreadPool(uint32_t size) : UThread(PTHREAD_CREATE_DETACHED), pool
             U_WARNING("Create Thread Fail, get_errno fail, returned %d", m_return_value);
             }
 
-         delete th;
+         U_DELETE(th)
 
          continue;
          }
@@ -630,12 +631,12 @@ UThreadPool::UThreadPool(uint32_t size) : UThread(PTHREAD_CREATE_DETACHED), pool
 
       if (pthread_create(&(th->tid), &attr, (pvPFpv)execHandler, this))
          {
-         delete th;
+         U_DELETE(th)
 
          continue;
          }
 
-      pool.push(th);
+      pool.push_back(th);
       }
 
    (void) pthread_attr_destroy(&attr);
@@ -646,7 +647,7 @@ UThreadPool::UThreadPool(uint32_t size) : UThread(PTHREAD_CREATE_DETACHED), pool
 
 UThreadPool::~UThreadPool()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UThread)
+   U_TRACE_DTOR(0, UThread)
 
    active = false;
 
@@ -703,7 +704,7 @@ void UThreadPool::run()
 
       current_task->run(); // execute the task
 
-      delete current_task;
+      U_DELETE(current_task)
 
       signal(&condition_task_finished);
       }
@@ -727,7 +728,7 @@ const char* UThread::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* UThreadPool::dump(bool reset) const
@@ -743,6 +744,6 @@ const char* UThreadPool::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

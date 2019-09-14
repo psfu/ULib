@@ -1,7 +1,6 @@
 // all.h
 
 #include <ulib/base/hash.h>
-#include <ulib/log.h>
 #include <ulib/cache.h>
 #include <ulib/timer.h>
 #include <ulib/options.h>
@@ -15,6 +14,7 @@
 #include <ulib/ui/dialog.h>
 #include <ulib/query/parser.h>
 #include <ulib/net/udpsocket.h>
+#include <ulib/event/event_db.h>
 #include <ulib/mime/multipart.h>
 #include <ulib/net/client/ftp.h>
 #include <ulib/net/client/http.h>
@@ -36,6 +36,7 @@
 #include <ulib/utility/interrupt.h>
 #include <ulib/utility/websocket.h>
 #include <ulib/utility/xml_escape.h>
+#include <ulib/serialize/flatbuffers.h>
 #include <ulib/utility/quoted_printable.h>
 
 #ifdef USE_PARSER
@@ -53,6 +54,7 @@
 #  include <ulib/ssl/digest.h>
 #  include <ulib/ssl/certificate.h>
 #  include <ulib/net/client/twilio.h>
+#  include <ulib/net/client/websocket.h>
 #  include <ulib/ssl/mime/mime_pkcs7.h>
 #  include <ulib/ssl/net/ssl_session.h>
 #  ifdef HAVE_SSL_TS
@@ -77,7 +79,7 @@
 #  include <ulib/magic/magic.h>
 #endif
 
-#ifdef USE_LIBXML2
+#if defined(USE_LIBXML2) && !defined(U_USP_PROCESS)
 #  include "ulib/xml/libxml2/schema.h"
 #endif
 

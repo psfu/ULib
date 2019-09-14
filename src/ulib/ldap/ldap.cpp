@@ -18,9 +18,9 @@ struct timeval ULDAP::timeOut = { 30L, 0L }; // 30 second connection/search time
 
 ULDAPEntry::ULDAPEntry(int num_names, const char** names, int num_entry)
 {
-   U_TRACE_REGISTER_OBJECT(0, ULDAPEntry, "%d,%p,%d", num_names, names, num_entry)
+   U_TRACE_CTOR(0, ULDAPEntry, "%d,%p,%d", num_names, names, num_entry)
 
-   U_INTERNAL_ASSERT_EQUALS(names[num_names], 0)
+   U_INTERNAL_ASSERT_EQUALS(names[num_names], U_NULLPTR)
 
    U_DUMP_ATTRS(names)
 
@@ -34,7 +34,7 @@ ULDAPEntry::ULDAPEntry(int num_names, const char** names, int num_entry)
 
 ULDAPEntry::~ULDAPEntry()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, ULDAPEntry)
+   U_TRACE_DTOR(0, ULDAPEntry)
 
    for (int i = 0, j, k = 0; i < n_entry; ++i)
       {
@@ -50,7 +50,7 @@ ULDAPEntry::~ULDAPEntry()
                {
                U_INTERNAL_DUMP("ULDAPEntry(%d): %S = %V", k, attr_name[j], attr_val[k]->rep)
 
-               delete attr_val[k];
+               U_DELETE(attr_val[k])
                }
             }
          }
@@ -74,7 +74,7 @@ void ULDAPEntry::set(char* attribute, char** values, int index_entry)
          {
          U_INTERNAL_DUMP("ULDAPEntry(%d): %S", k, attr_name[j])
 
-         U_NEW(UString, attr_val[k], UString((void*)values[0]));
+         U_NEW_STRING(attr_val[k], UString((void*)values[0], u__strlen(values[0], __PRETTY_FUNCTION__)));
 
          for (j = 1; values[j]; ++j)
             {
@@ -101,7 +101,7 @@ void ULDAPEntry::set(char* attribute, char* value, uint32_t len, int index_entry
          {
          U_INTERNAL_DUMP("ULDAPEntry(%d): %S", k, attr_name[j])
 
-         U_NEW(UString, attr_val[k], UString((void*)value, len));
+         U_NEW_STRING(attr_val[k], UString((void*)value, len));
 
          U_INTERNAL_DUMP("value = %V", attr_val[k]->rep)
 
@@ -180,7 +180,7 @@ void ULDAP::clear()
       U_SYSCALL_VOID(free, "%p", ludpp);
 #  endif
 
-      ludpp = 0;
+      ludpp = U_NULLPTR;
       }
 
    if (ld)
@@ -188,11 +188,11 @@ void ULDAP::clear()
       if (searchResult)
          {
          U_SYSCALL(ldap_msgfree, "%p", searchResult);
-                                       searchResult = 0;
+                                       searchResult = U_NULLPTR;
          }
 
       U_SYSCALL(ldap_unbind_s, "%p", ld);
-                                     ld = 0;
+                                     ld = U_NULLPTR;
 
 #  if defined(HAVE_LDAP_SSL_H) && defined(HAS_NOVELL_LDAPSDK)
       if (isSecure) U_SYSCALL_NO_PARAM(ldapssl_client_deinit);
@@ -315,7 +315,7 @@ void ULDAP::setStatus()
     * identify the error code
     */
 #if defined(HAVE_LDAP_SSL_H) && !defined(_MSWINDOWS_) && !defined(HAVE_WINLDAP_H)
-   if (descr == 0) descr = (char*)ldapssl_err2string(result);
+   if (descr == U_NULLPTR) descr = (char*)ldapssl_err2string(result);
 #endif
 
    U_INTERNAL_ASSERT_EQUALS(u_buffer_len, 0)
@@ -377,12 +377,12 @@ bool ULDAP::init(const char* url)
     * Defined in RFC4516 section 2
     */
 
-   Url _url(url, strlen(url));
+   Url _url(url, u__strlen(url, __PRETTY_FUNCTION__));
 
    ludpp = (LDAPURLDesc*) calloc(1, sizeof(LDAPURLDesc));
 
    ludpp->lud_host  = _url.getHost().c_strdup();
-   ludpp->lud_port  = _url.getPort();
+   ludpp->lud_port  = _url.getPortNumber();
    ludpp->lud_dn    = _url.getPath().c_strndup(1);
    ludpp->lud_scope = LDAP_SCOPE_BASE;
 
@@ -531,7 +531,7 @@ next:
 #  endif
          }
 
-      U_INTERNAL_DUMP("ldap_url_parse() failed - %.*s", u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("(%d, %s) - %s"), result, descr, errstr), buffer)
+      U_INTERNAL_DUMP("ldap_url_parse() failed - %.*s", u__snprintf(buffer, U_CONSTANT_SIZE(buffer), U_CONSTANT_TO_PARAM("(%d, %s) - %s"), result, descr, errstr), buffer)
 #  endif
 
       U_RETURN(false);
@@ -623,10 +623,10 @@ void ULDAP::get(ULDAPEntry& e)
    char** values;
    char* attribute;
    LDAPMessage* entry;
-   BerElement* ber = 0;
+   BerElement* ber = U_NULLPTR;
 
    char* _attribute;
-   struct berval** bvs = 0;
+   struct berval** bvs = U_NULLPTR;
 
    for (entry = ldap_first_entry(ld, searchResult); entry;
         entry = ldap_next_entry( ld, entry), ++i)
@@ -699,7 +699,7 @@ const char* ULDAPEntry::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 const char* ULDAP::dump(bool reset) const
@@ -718,6 +718,6 @@ const char* ULDAP::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

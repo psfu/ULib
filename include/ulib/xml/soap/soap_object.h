@@ -34,12 +34,12 @@ public:
 
    USOAPObject()
       {
-      U_TRACE_REGISTER_OBJECT(0, USOAPObject, "", 0)
+      U_TRACE_CTOR(0, USOAPObject, "")
       }
 
    virtual ~USOAPObject()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, USOAPObject)
+      U_TRACE_DTOR(0, USOAPObject)
       }
 
    // Triggers the creation of the USOAPFault
@@ -57,8 +57,8 @@ public:
       {
       U_TRACE(0, "USOAPObject::loadGenericMethod(%p)", file_method)
 
-      U_INTERNAL_ASSERT_EQUALS(dispatcher,0)
-      U_INTERNAL_ASSERT_EQUALS(URPCMethod::encoder,0)
+      U_INTERNAL_ASSERT_EQUALS(dispatcher, U_NULLPTR)
+      U_INTERNAL_ASSERT_EQUALS(URPCMethod::encoder, U_NULLPTR)
 
       U_NEW(USOAPObject, dispatcher, USOAPObject);
       U_NEW(USOAPEncoder, URPCMethod::encoder, USOAPEncoder);

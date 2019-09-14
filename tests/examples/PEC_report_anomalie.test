@@ -4,11 +4,12 @@
 
 ## PEC.test -- Test PEC feature
 
-#UTRACE="5 5M 0"
+#UTRACE="0 5M -1"
 #UOBJDUMP="0 100k 10"
 #USIMERR="error.sim"
 #VALGRIND=valgrind
- export UTRACE UOBJDUMP USIMERR VALGRIND
+export UTRACE_FOLDER=/tmp
+export UTRACE UOBJDUMP USIMERR VALGRIND
 
 rm -rf out/PEC_report_anomalie*.out err/PEC_report_anomalie*.err \
        trace.*PEC_report_anomalie*.[0-9]* object.*PEC_report_anomalie*.[0-9]* stack.*PEC_report_anomalie*.[0-9]* mempool.*PEC_report_anomalie*.[0-9]*

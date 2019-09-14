@@ -22,12 +22,12 @@ public:
 
    UClientImageExample() : UClientImage<UTCPSocket>()
       {
-      U_TRACE_REGISTER_OBJECT(5, UClientImageExample, "")
+      U_TRACE_CTOR(5, UClientImageExample, "")
       }
 
    ~UClientImageExample()
       {
-      U_TRACE_UNREGISTER_OBJECT(5, UClientImageExample)
+      U_TRACE_DTOR(5, UClientImageExample)
       }
 
    // DEBUG
@@ -46,7 +46,7 @@ protected:
 
       if (UClientImage_Base::manageRead() == U_NOTIFIER_DELETE) U_RETURN(U_NOTIFIER_DELETE);
 
-      if (U_ClientImage_state == U_PLUGIN_HANDLER_GO_ON)
+      if (U_ClientImage_state == U_PLUGIN_HANDLER_OK)
          {
 #  ifndef U_LOG_DISABLE
       if (UClientImage_Base::logbuf) 
@@ -83,15 +83,15 @@ public:
       {
       U_TRACE(5, "Application::Application()")
 
-      server = 0;
+      server = U_NULLPTR;
       }
 
    ~Application()
       {
       U_TRACE(5, "Application::~Application()")
 
-      if (server)           delete server;
-      if (request_response) delete request_response;
+      if (server)           U_DELETE(server)
+      if (request_response) U_DELETE(request_response)
       }
 
    void run(int argc, char* argv[], char* env[])
@@ -102,7 +102,7 @@ public:
 
       // manage config file
 
-      if (argv[optind] == 0) U_ERROR("argument 'file_config' not specified");
+      if (argv[optind] == U_NULLPTR) U_ERROR("argument 'file_config' not specified");
 
       cfg.UFile::setPath(UString(argv[optind]));
 

@@ -108,8 +108,8 @@ void UShibTarget::setCookie(const string& name, const string& value)
 
    if (!setcookie) setcookie = new UVector<UString>();
 
-   setcookie->push(UString((void*)name.c_str()));
-   setcookie->push(UString((void*)value.c_str()));
+   setcookie->push_back(UString((void*) name.c_str()));
+   setcookie->push_back(UString((void*)value.c_str()));
 }
 
 string UShibTarget::getArgs()
@@ -173,8 +173,8 @@ void* UShibTarget::sendPage(const std::string& msg, int code, const std::string&
       {
       const header_t& h = headers.next();
 
-      sendpage->push(UString((void*)h.first.c_str()));
-      sendpage->push(UString((void*)h.second.c_str()));
+      sendpage->push_back(UString((void*) h.first.c_str()));
+      sendpage->push_back(UString((void*)h.second.c_str()));
       }
 
    codepage = code;
@@ -223,7 +223,7 @@ class U_EXPORT URequestMapper : public virtual IRequestMapper, public virtual IP
 public:
 
    URequestMapper(const DOMElement* e);
-   ~URequestMapper() { delete m_mapper; delete m_htaccess; delete m_staKey; delete m_propsKey; }
+   ~URequestMapper() { U_DELETE(m_mapper) U_DELETE(m_htaccess) U_DELETE(m_staKey) U_DELETE(m_propsKey) }
 
    void lock()    { m_mapper->lock(); }
    void unlock()  { m_staKey->setData(NULL); m_propsKey->setData(NULL); m_mapper->unlock(); }
@@ -274,7 +274,7 @@ URequestMapper::URequestMapper(const DOMElement* e) : m_mapper(NULL), m_staKey(N
 
    if (!m_mapper)
       {
-      delete p;
+      U_DELETE(p)
 
       throw UnsupportedExtensionException("Embedded request mapper plugin was not of correct type.");
       }
@@ -538,9 +538,9 @@ int UShibPlugIn::handlerConfig(UFileConfig& cfg)
 {
    U_TRACE(0, "UShibPlugIn::handlerConfig(%p)", &cfg)
 
-   if (UModProxyService::loadConfig(cfg)) U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   if (UModProxyService::loadConfig(cfg)) U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 /*
@@ -587,7 +587,7 @@ int UShibPlugIn::handlerInit()
          m_plugMgr->regFactory(shibtarget::XML::NativeRequestMapType, &URequestMapFactory);
          m_plugMgr->regFactory(shibtarget::XML::LegacyRequestMapType, &URequestMapFactory);
 
-         if (conf->load(SHIB_CONFIG)) U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+         if (conf->load(SHIB_CONFIG)) U_RETURN(U_PLUGIN_HANDLER_OK);
          }
       }
 
@@ -641,7 +641,7 @@ int UShibPlugIn::handlerRequest()
                   {
                   static char buf[1024];
 
-                  (void) snprintf(buf, sizeof(buf), U_CONSTANT_TO_PARAM("%s://%s%s/"), UShibTarget::protocol, UShibTarget::hostname, UShibTarget::uri);
+                  (void) snprintf(buf, U_CONSTANT_SIZE(buf), U_CONSTANT_TO_PARAM("%s://%s%s/"), UShibTarget::protocol, UShibTarget::hostname, UShibTarget::uri);
 
                   UShibTarget::location = buf;
                   }
@@ -654,8 +654,8 @@ int UShibPlugIn::handlerRequest()
          U_ASSERT(U_HTTP_CTYPE_STRNEQ("application/x-www-form-urlencoded"))
 
          UShibTarget::content_type = "application/x-www-form-urlencoded";
-         UShibTarget::postdata_ptr = UClientImage_Base::body->data();
-         UShibTarget::postdata_len = UClientImage_Base::body->size();
+         UShibTarget::postdata_ptr = UHTTP::body->data();
+         UShibTarget::postdata_len = UHTTP::body->size();
 
          if (shib_handler()) mode = -1;
          else
@@ -687,7 +687,7 @@ int UShibPlugIn::handlerRequest()
                   UHTTP::ext->snprintf_add(U_CONSTANT_TO_PARAM("Set-Cookie: %v=%v\r\n"), name.rep, value.rep);
                   }
 
-               delete UShibTarget::setcookie;
+               U_DELETE(UShibTarget::setcookie)
 
                UShibTarget::setcookie = 0;
                }
@@ -702,8 +702,8 @@ int UShibPlugIn::handlerRequest()
       U_SYSCALL_VOID(free, "%p", (void*)UShibTarget::hostname);
       U_SYSCALL_VOID(free, "%p", (void*)UShibTarget::remote_addr);
 
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+      U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }

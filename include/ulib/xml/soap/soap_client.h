@@ -31,7 +31,7 @@ public:
       {
       U_TRACE_NO_PARAM(0, "USOAPClient_Base::sendRequest()")
 
-      if (UClient_Base::sendRequest()) U_RETURN(true);
+      if (UClient_Base::sendRequest(false)) U_RETURN(true);
 
       U_RETURN(false);
       }
@@ -45,15 +45,15 @@ public:
 protected:
    USOAPParser* parser;
 
-   USOAPClient_Base(UFileConfig* _cfg = 0) : URPCClient_Base(_cfg)
+   USOAPClient_Base(UFileConfig* _cfg = U_NULLPTR) : URPCClient_Base(_cfg)
       {
-      U_TRACE_REGISTER_OBJECT(0, USOAPClient_Base, "%p", _cfg)
+      U_TRACE_CTOR(0, USOAPClient_Base, "%p", _cfg)
 
-      parser = 0;
+      parser = U_NULLPTR;
 
       u_init_http_method_list();
 
-      delete URPCMethod::encoder;
+      U_DELETE(URPCMethod::encoder)
 
       U_NEW(USOAPEncoder, URPCMethod::encoder, USOAPEncoder);
       }
@@ -69,14 +69,14 @@ public:
 
    USOAPClient(UFileConfig* _cfg) : USOAPClient_Base(_cfg)
       {
-      U_TRACE_REGISTER_OBJECT(0, USOAPClient, "%p", _cfg)
+      U_TRACE_CTOR(0, USOAPClient, "%p", _cfg)
 
       U_NEW(Socket, UClient_Base::socket, Socket(UClient_Base::bIPv6));
       }
 
    virtual ~USOAPClient()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, USOAPClient)
+      U_TRACE_DTOR(0, USOAPClient)
       }
 
 #if defined(U_STDCPP_ENABLE) && defined(DEBUG)
@@ -93,14 +93,14 @@ public:
 
    USOAPClient(UFileConfig* _cfg) : USOAPClient_Base(_cfg)
       {
-      U_TRACE_REGISTER_OBJECT(0, USOAPClient<USSLSocket>, "%p", _cfg)
+      U_TRACE_CTOR(0, USOAPClient<USSLSocket>, "%p", _cfg)
 
       UClient_Base::setSSLContext();
       }
 
    ~USOAPClient()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, USOAPClient<USSLSocket>)
+      U_TRACE_DTOR(0, USOAPClient<USSLSocket>)
       }
 
    // DEBUG

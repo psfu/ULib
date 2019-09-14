@@ -36,7 +36,7 @@ void UCommand::freeCommand()
       {
       U_SYSCALL_VOID(free, "%p", pathcmd);
 
-      pathcmd = 0;
+      pathcmd = U_NULLPTR;
       }
 
    if (argv_exec)
@@ -47,7 +47,7 @@ void UCommand::freeCommand()
 
       UMemoryPool::_free(argv_exec, 1+ncmd+1 + U_ADD_ARGS, sizeof(char*));
 
-      argv_exec = 0;
+      argv_exec = U_NULLPTR;
       }
 }
 
@@ -61,7 +61,7 @@ void UCommand::freeEnvironment()
 
       freeEnvironment(envp_exec, nenv);
 
-      envp_exec = 0;
+      envp_exec = U_NULLPTR;
       }
 }
 
@@ -71,7 +71,7 @@ void UCommand::reset(const UString* penv)
 
    freeEnvironment();
 
-   envp = 0;
+   envp = U_NULLPTR;
    nenv = 0;
 
    if (penv)
@@ -91,22 +91,25 @@ void UCommand::setCommand()
 {
    U_TRACE_NO_PARAM(0, "UCommand::setCommand()")
 
-   U_INTERNAL_ASSERT(command)
-
-   command.duplicate();
+   if (command.writeable() == false) command.duplicate();
 
    freeCommand();
 
    char* argv[U_MAX_ARGS];
    char buffer[U_PATH_MAX+1];
 
-   argv[0] = argv[1] = 0;
+   argv[0] =
+   argv[1] = U_NULLPTR;
 
    ncmd = u_splitCommand(U_STRING_TO_PARAM(command), argv, buffer, sizeof(buffer));
 
-   U_INTERNAL_DUMP("ncmd = %d", ncmd)
+   U_INTERNAL_DUMP("ncmd = %u", ncmd)
 
-   if (ncmd != -1)
+   if (ncmd == U_NOT_FOUND)
+      {
+      U_WARNING("setCommand() failed, command %V not found", command.rep);
+      }
+   else
       {
       U_INTERNAL_ASSERT_RANGE(1,ncmd,U_MAX_ARGS)
 
@@ -122,23 +125,19 @@ void UCommand::setCommand()
 
       U_MEMCPY(argv_exec, argv, n * sizeof(char*)); // NB: copy also null terminator...
       }
-   else
-      {
-      U_WARNING("setCommand() failed, command %V not found", command.rep);
-      }
 
    U_DUMP_ATTRS(argv_exec)
 }
 
-int32_t UCommand::setEnvironment(const UString& env, char**& _envp)
+uint32_t UCommand::setEnvironment(const UString& env, char**& _envp)
 {
    U_TRACE(0, "UCommand::setEnvironment(%V,%p)", env.rep, _envp)
 
    char* argp[U_MAX_ARGS];
 
-   int32_t _nenv = u_split(U_STRING_TO_PARAM(env), argp, 0);
+   uint32_t _nenv = u_split(U_STRING_TO_PARAM(env), argp, U_NULLPTR);
 
-   U_INTERNAL_DUMP("_nenv = %d", _nenv)
+   U_INTERNAL_DUMP("_nenv = %u", _nenv)
 
    U_INTERNAL_ASSERT_RANGE(1, _nenv, U_MAX_ARGS)
 
@@ -157,13 +156,13 @@ int32_t UCommand::setEnvironment(const UString& env, char**& _envp)
    U_RETURN(_nenv);
 }
 
-U_NO_EXPORT void UCommand::setEnvironment(const UString& env)
+U_NO_EXPORT void UCommand::setEnvironment(UString& env)
 {
    U_TRACE(0, "UCommand::setEnvironment(%V)", env.rep)
 
    freeEnvironment();
 
-   env.duplicate();
+   if (env.writeable() == false) env.duplicate();
 
    nenv = setEnvironment(env, envp);
 }
@@ -188,11 +187,11 @@ void UCommand::setFileArgument()
 
    U_INTERNAL_ASSERT_POINTER(argv_exec)
 
-   U_INTERNAL_DUMP("ncmd = %d", ncmd)
+   U_INTERNAL_DUMP("ncmd = %u", ncmd)
 
-   for (int32_t i = ncmd; i >= 2; --i)
+   for (uint32_t i = ncmd; i >= 2; --i)
       {
-      U_INTERNAL_DUMP("argv_exec[%d] = %S", i, argv_exec[i])
+      U_INTERNAL_DUMP("argv_exec[%u] = %S", i, argv_exec[i])
 
       if (u_get_unalignedp32(argv_exec[i]) == U_MULTICHAR_CONSTANT32('$','F','I','L'))
          {
@@ -202,12 +201,12 @@ void UCommand::setFileArgument()
          }
       }
 
-   U_INTERNAL_DUMP("nfile = %d", nfile)
+   U_INTERNAL_DUMP("nfile = %u", nfile)
 }
 
-void UCommand::setNumArgument(int32_t n, bool bfree)
+void UCommand::setNumArgument(uint32_t n, bool bfree)
 {
-   U_TRACE(1, "UCommand::setNumArgument(%d,%b)", n, bfree)
+   U_TRACE(1, "UCommand::setNumArgument(%u,%b)", n, bfree)
 
    U_INTERNAL_ASSERT_POINTER(argv_exec)
 
@@ -224,7 +223,7 @@ void UCommand::setNumArgument(int32_t n, bool bfree)
          }
       }
 
-   argv_exec[(ncmd = n) + 1] = 0;
+   argv_exec[(ncmd = n) + 1] = U_NULLPTR;
 }
 
 U_NO_EXPORT void UCommand::setStdInOutErr(int fd_stdin, bool flag_stdin, bool flag_stdout, int fd_stderr)
@@ -235,11 +234,10 @@ U_NO_EXPORT void UCommand::setStdInOutErr(int fd_stdin, bool flag_stdin, bool fl
       {
       if (fd_stdin == -1)
          {
-         UProcess::pipe(STDIN_FILENO); // UProcess::filedes[0] is for READING,
+         UProcess::pipe(STDIN_FILENO); // UProcess::filedes[0] is for READING
                                        // UProcess::filedes[1] is for WRITING
 #     ifdef _MSWINDOWS_
-         // Ensure the write handle to the pipe for STDIN is not inherited
-         (void) U_SYSCALL(SetHandleInformation, "%p,%ld,%ld", UProcess::hFile[1], HANDLE_FLAG_INHERIT, 0);
+         (void) U_SYSCALL(SetHandleInformation, "%p,%ld,%ld", UProcess::hFile[1], HANDLE_FLAG_INHERIT, 0); // Ensure the write handle to the pipe for STDIN is not inherited
 #     endif
          }
       else
@@ -250,18 +248,14 @@ U_NO_EXPORT void UCommand::setStdInOutErr(int fd_stdin, bool flag_stdin, bool fl
 
    if (flag_stdout)
       {
-      UProcess::pipe(STDOUT_FILENO);   // UProcess::filedes[2] is for READING,
+      UProcess::pipe(STDOUT_FILENO);   // UProcess::filedes[2] is for READING
                                        // UProcess::filedes[3] is for WRITING
 #  ifdef _MSWINDOWS_
-      // Ensure the read handle to the pipe for STDOUT is not inherited
-      (void) U_SYSCALL(SetHandleInformation, "%p,%ld,%ld", UProcess::hFile[2], HANDLE_FLAG_INHERIT, 0);
+      (void) U_SYSCALL(SetHandleInformation, "%p,%ld,%ld", UProcess::hFile[2], HANDLE_FLAG_INHERIT, 0); // Ensure the read handle to the pipe for STDOUT is not inherited
 #  endif
       }
 
-   if (fd_stderr != -1)
-      {
-      UProcess::filedes[5] = fd_stderr;
-      }
+   if (fd_stderr != -1) UProcess::filedes[5] = fd_stderr;
 }
 
 U_NO_EXPORT void UCommand::execute(bool flag_stdin, bool flag_stdout, bool flag_stderr)
@@ -273,7 +267,7 @@ U_NO_EXPORT void UCommand::execute(bool flag_stdin, bool flag_stdout, bool flag_
 
    if (flag_expand != U_NOT_FOUND)
       {
-      // NB: it must remain in this way (I don't understand why...)
+      // NB: it must be in this way but I don't understand why
 
       environment = UStringExt::expandEnvironmentVar(environment, &environment);
 
@@ -290,13 +284,13 @@ U_NO_EXPORT void UCommand::execute(bool flag_stdin, bool flag_stdout, bool flag_
    U_INTERNAL_ASSERT_RANGE(begin, argv_exec[1], _end)
 # endif
 
-   int32_t i;
+   uint32_t i;
 
-   // NB: we cannot check argv a cause of addArgument()...
+   // NB: we cannot check argv cause of addArgument()...
 
    for (i = 0; argv_exec[1+i]; ++i) {}
 
-   U_INTERNAL_ASSERT_EQUALS(i,ncmd)
+   U_INTERNAL_ASSERT_EQUALS(i, ncmd)
 
    if (envp            &&
        envp != environ &&
@@ -320,11 +314,25 @@ U_NO_EXPORT void UCommand::execute(bool flag_stdin, bool flag_stdout, bool flag_
    pid        = UProcess::execute(U_PATH_CONV(argv_exec[0]), argv_exec+1, envp, flag_stdin, flag_stdout, flag_stderr);
 }
 
+U_NO_EXPORT bool UCommand::wait()
+{
+   U_TRACE_NO_PARAM(0, "UCommand::wait()")
+
+   if (UProcess::waitpid(pid, &status, 0) > 0)
+      {
+      exit_value = UProcess::exitValue(status);
+
+      if (exit_value == 0) U_RETURN(true);
+      }
+
+   U_RETURN(false);
+}
+
 U_NO_EXPORT bool UCommand::postCommand(UString* input, UString* output)
 {
    U_TRACE(1, "UCommand::postCommand(%p,%p)", input, output)
 
-   U_INTERNAL_DUMP("pid = %d", pid)
+   U_INTERNAL_DUMP("pid = %u", pid)
 
    if (input)
       {
@@ -382,7 +390,7 @@ U_NO_EXPORT bool UCommand::postCommand(UString* input, UString* output)
 
          UProcess::kill(pid, SIGTERM);
 
-         UTimeVal::nanosleep(1L);
+         UTimeVal::nanosleep(1000L);
 
          UProcess::kill(pid, SIGKILL);
          }
@@ -402,30 +410,19 @@ U_NO_EXPORT bool UCommand::postCommand(UString* input, UString* output)
    U_RETURN(true);
 }
 
-U_NO_EXPORT bool UCommand::wait()
-{
-   U_TRACE_NO_PARAM(0, "UCommand::wait()")
-
-   UProcess::waitpid(pid, &status, 0);
-
-   exit_value = UProcess::exitValue(status);
-
-   U_RETURN(exit_value == 0);
-}
-
 bool UCommand::setMsgError(const char* cmd, bool only_if_error)
 {
    U_TRACE(0, "UCommand::setMsgError(%S,%b)", cmd, only_if_error)
 
    U_INTERNAL_ASSERT_EQUALS(u_buffer_len, 0)
 
-   U_INTERNAL_DUMP("pid = %d exit_value = %d status = %d", pid, exit_value, status)
+   U_INTERNAL_DUMP("pid = %u exit_value = %d status = %d", pid, exit_value, status)
 
    // NB: '<' is reserved for xml...
 
    if (isStarted() == false)
       {
-      u_buffer_len = u__snprintf(u_buffer, U_MAX_SIZE_PREALLOCATE, U_CONSTANT_TO_PARAM("command %S didn't start %R"),  cmd, 0); // NB: the last argument (0) is necessary...
+      u_buffer_len = u__snprintf(u_buffer, U_BUFFER_SIZE, U_CONSTANT_TO_PARAM("command %S didn't start %R"), cmd, 0); // NB: the last argument (0) is necessary...
 
       U_RETURN(true);
       }
@@ -433,7 +430,7 @@ bool UCommand::setMsgError(const char* cmd, bool only_if_error)
    if (isTimeout() &&
        timeoutMS > 0)
       {
-      u_buffer_len = u__snprintf(u_buffer, U_MAX_SIZE_PREALLOCATE, U_CONSTANT_TO_PARAM("command %S (pid %u) excedeed time (%d secs) for execution"), cmd, pid, timeoutMS / 1000);
+      u_buffer_len = u__snprintf(u_buffer, U_BUFFER_SIZE, U_CONSTANT_TO_PARAM("command %S (pid %u) excedeed time (%u secs) for execution"), cmd, pid, timeoutMS / 1000);
 
       U_RETURN(true);
       }
@@ -442,8 +439,8 @@ bool UCommand::setMsgError(const char* cmd, bool only_if_error)
       {
       char buffer[128];
 
-      u_buffer_len = u__snprintf(u_buffer, U_MAX_SIZE_PREALLOCATE, U_CONSTANT_TO_PARAM("command %S started (pid %u) and ended with status: %d (%d, %s)"),
-                                                                    cmd, pid, status, exit_value, UProcess::exitInfo(buffer, status));
+      u_buffer_len = u__snprintf(u_buffer, U_BUFFER_SIZE, U_CONSTANT_TO_PARAM("command %S started (pid %u) and ended with status: %d (%d, %s)"),
+                                                                               cmd, pid, status, exit_value, UProcess::exitInfo(buffer, status));
       }
 
    U_RETURN(false);
@@ -457,7 +454,7 @@ bool UCommand::executeWithFileArgument(UString* output, UFile* file)
 
    int fd_stdin = -1;
 
-   if (getNumFileArgument() == -1)
+   if (getNumFileArgument() == U_NOT_FOUND)
       {
       if (file->open()) fd_stdin = file->getFd();
       }
@@ -466,7 +463,7 @@ bool UCommand::executeWithFileArgument(UString* output, UFile* file)
       setFileArgument(file->getPathRelativ());
       }
 
-   bool result = execute(0, output, fd_stdin, -1);
+   bool result = execute(U_NULLPTR, output, fd_stdin, -1);
 
    if (result == false) printMsgError();
 
@@ -479,7 +476,7 @@ bool UCommand::executeAndWait(UString* input, int fd_stdin, int fd_stderr)
 {
    U_TRACE(0, "UCommand::executeAndWait(%p,%d,%d)", input, fd_stdin, fd_stderr)
 
-   if (execute(input, 0, fd_stdin, fd_stderr) &&
+   if (execute(input, U_NULLPTR, fd_stdin, fd_stderr) &&
        wait())
       {
       U_RETURN(true);
@@ -493,7 +490,7 @@ bool UCommand::execute(UString* input, UString* output, int fd_stdin, int fd_std
    U_TRACE(0, "UCommand::execute(%p,%p,%d,%d)", input, output, fd_stdin, fd_stderr)
 
    bool flag_stdin  = (input ? true : fd_stdin != -1),
-        flag_stdout = (output != 0),
+        flag_stdout = (output != U_NULLPTR),
         flag_stderr = (fd_stderr != -1);
 
    setStdInOutErr(fd_stdin, flag_stdin, flag_stdout, fd_stderr);
@@ -536,7 +533,7 @@ void UCommand::outputCommandWithDialog(const UString& cmd, char** penv, UString*
 
    tmp.execute(flag_stdin, flag_stdout, flag_stderr);
 
-   if (postCommand(0, output) == false || exit_value) (void) setMsgError(cmd.data(), false);
+   if (postCommand(U_NULLPTR, output) == false || exit_value) (void) setMsgError(cmd.data(), false);
 }
 
 UString UCommand::outputCommand(const UString& cmd, char** penv, int fd_stdin, int fd_stderr)
@@ -558,7 +555,7 @@ UCommand* UCommand::loadConfigCommand(UFileConfig* cfg)
 
    U_INTERNAL_ASSERT_POINTER(cfg)
 
-   UCommand* cmd   = 0;
+   UCommand* cmd   = U_NULLPTR;
    UString command = cfg->at(U_CONSTANT_TO_PARAM("COMMAND"));
 
    if (command)
@@ -578,9 +575,9 @@ UCommand* UCommand::loadConfigCommand(UFileConfig* cfg)
          {
          U_WARNING("loadConfigCommand() failed, command %V not executable", cmd->command.rep);
 
-         delete cmd;
+         U_DELETE(cmd)
 
-         U_RETURN_POINTER(0,UCommand);
+         U_RETURN_POINTER(U_NULLPTR, UCommand);
          }
 
       UString environment = cfg->at(U_CONSTANT_TO_PARAM("ENVIRONMENT"));
@@ -593,7 +590,7 @@ UCommand* UCommand::loadConfigCommand(UFileConfig* cfg)
          }
       }
 
-   U_RETURN_POINTER(cmd,UCommand);
+   U_RETURN_POINTER(cmd, UCommand);
 }
 
 #if defined(U_STDCPP_ENABLE) && defined(DEBUG)
@@ -613,6 +610,6 @@ const char* UCommand::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

@@ -24,48 +24,44 @@ USOAPParser* USoapPlugIn::soap_parser;
 
 USoapPlugIn::~USoapPlugIn()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, USoapPlugIn)
+   U_TRACE_DTOR(0, USoapPlugIn)
 
    if (soap_parser)
       {
-      delete soap_parser;
-      delete URPCMethod::encoder;
-      delete URPCObject::dispatcher;
+      U_DELETE(soap_parser)
+      U_DELETE(URPCMethod::encoder)
+      U_DELETE(URPCObject::dispatcher)
       }
 }
 
 // Server-wide hooks
 
-int USoapPlugIn::handlerConfig(UFileConfig& cfg)
-{
-   U_TRACE(0, "USoapPlugIn::handlerConfig(%p)", &cfg)
-
-   // Perform registration of server SOAP method
-
-   U_NEW(USOAPParser, soap_parser, USOAPParser);
-
-   USOAPObject::loadGenericMethod(&cfg);
-
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
-}
-
 int USoapPlugIn::handlerInit()
 {
    U_TRACE_NO_PARAM(0, "USoapPlugIn::handlerInit()")
 
-   // NB: soap is NOT a static page, so to avoid stat() syscall we use alias mechanism...
+   // Perform registration of server SOAP method
 
-   if (soap_parser)
+   if (UServer_Base::pcfg &&
+       UServer_Base::pcfg->searchForObjectStream(U_CONSTANT_TO_PARAM("soap")))
       {
+      UServer_Base::pcfg->table.clear();
+
+      U_NEW(USOAPParser, soap_parser, USOAPParser);
+
+      USOAPObject::loadGenericMethod(UServer_Base::pcfg);
+
+      // NB: soap is NOT a static page, so to avoid stat() syscall we use alias mechanism...
+
 #  ifndef U_ALIAS
       U_SRV_LOG("WARNING: Sorry, I can't run soap plugin because alias URI support is missing, please recompile ULib...");
 #  else
-      if (UHTTP::valias == 0) U_NEW(UVector<UString>, UHTTP::valias, UVector<UString>(2U));
+      if (UHTTP::valias == U_NULLPTR) U_NEW(UVector<UString>, UHTTP::valias, UVector<UString>(2U))
 
       UHTTP::valias->push_back(*UString::str_soap);
       UHTTP::valias->push_back(*UString::str_nostat);
 
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+      U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 #  endif
       }
 
@@ -80,31 +76,29 @@ int USoapPlugIn::handlerRequest()
 
    if (UHTTP::isSOAPRequest())
       {
-      if (soap_parser == 0) UHTTP::setInternalError();
+      if (soap_parser == U_NULLPTR) UHTTP::setInternalError();
       else
          {
          // process the SOAP message -- should be the contents of the message from "<SOAP:" to the end of the string
 
          bool bSendingFault;
 
-         UString body   = soap_parser->processMessage(*UClientImage_Base::body, *URPCObject::dispatcher, bSendingFault),
+         UString body   = soap_parser->processMessage(*UHTTP::body, *URPCObject::dispatcher, bSendingFault),
                  method = soap_parser->getMethodName();
 
          U_SRV_LOG_WITH_ADDR("method %V process %s for", method.rep, (bSendingFault ? "failed" : "passed"));
 
 #     ifdef DEBUG
-         (void) UFile::writeToTmp(U_STRING_TO_PARAM(body), O_RDWR | O_TRUNC, U_CONSTANT_TO_PARAM("soap.res"), 0);
+         U_FILE_WRITE_TO_TMP(body, "soap.res");
 #     endif
-
-         U_http_info.nResponseCode = HTTP_OK;
 
          UHTTP::setResponse(*UString::str_ctype_soap, &body);
          }
 
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+      U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // DEBUG
@@ -121,6 +115,6 @@ const char* USoapPlugIn::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

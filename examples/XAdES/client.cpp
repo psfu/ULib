@@ -25,21 +25,21 @@
 
 #include <ulib/application.h>
 
-#define U_DATA_URI                           (const char*)(num_args >= 1  ?      argv[optind+0]  : "")
-#define U_X509                               (const char*)(num_args >= 2  ?      argv[optind+1]  : "")
-#define U_KEY_HANDLE                         (const char*)(num_args >= 3  ?      argv[optind+2]  : "")
-#define U_DIGEST_ALGORITHM                   (const char*)(num_args >= 4  ?      argv[optind+3]  : "")
-#define U_SIGNING_TIME                                    (num_args >= 5  ? atoi(argv[optind+4]) : 0)
-#define U_CLAIMED_ROLE                       (const char*)(num_args >= 6  ?      argv[optind+5]  : "")
-#define U_PRODUCTION_PLACE_CITY              (const char*)(num_args >= 7  ?      argv[optind+6]  : "")
-#define U_PRODUCTION_PLACE_STATE_OR_PROVINCE (const char*)(num_args >= 8  ?      argv[optind+7]  : "")
-#define U_PRODUCTION_PLACE_POSTAL_CODE       (const char*)(num_args >= 9  ?      argv[optind+8]  : "")
-#define U_PRODUCTION_PLACE_COUNTRY_NAME      (const char*)(num_args >= 10 ?      argv[optind+9]  : "")
-#define U_CA_STORE                           (const char*)(num_args >= 11 ?      argv[optind+10] : "")
-#define U_SIGNATURE_TIMESTAMP                (const char*)(num_args >= 12 ?      argv[optind+11] : "")
+#define U_DATA_URI                           (const char*)(lnum_args >= 1  ?        argv[optind+0]   : "")
+#define U_X509                               (const char*)(lnum_args >= 2  ?        argv[optind+1]   : "")
+#define U_KEY_HANDLE                         (const char*)(lnum_args >= 3  ?        argv[optind+2]   : "")
+#define U_DIGEST_ALGORITHM                   (const char*)(lnum_args >= 4  ?        argv[optind+3]   : "")
+#define U_SIGNING_TIME                                    (lnum_args >= 5  ? u_atoi(argv[optind+4])  : 0)
+#define U_CLAIMED_ROLE                       (const char*)(lnum_args >= 6  ?        argv[optind+5]   : "")
+#define U_PRODUCTION_PLACE_CITY              (const char*)(lnum_args >= 7  ?        argv[optind+6]   : "")
+#define U_PRODUCTION_PLACE_STATE_OR_PROVINCE (const char*)(lnum_args >= 8  ?        argv[optind+7]   : "")
+#define U_PRODUCTION_PLACE_POSTAL_CODE       (const char*)(lnum_args >= 9  ?        argv[optind+8]   : "")
+#define U_PRODUCTION_PLACE_COUNTRY_NAME      (const char*)(lnum_args >= 10 ?        argv[optind+9]   : "")
+#define U_CA_STORE                           (const char*)(lnum_args >= 11 ?        argv[optind+10]  : "")
+#define U_SIGNATURE_TIMESTAMP                (const char*)(lnum_args >= 12 ?        argv[optind+11]  : "")
 
-#define U_ARCHIVE_TIMESTAMP                  (const char*)(num_args >= 0  ?      argv[optind+0]  : "")
-#define U_SCHEMA                             (const char*)(num_args >= 1  ?      argv[optind+1]  : "")
+#define U_ARCHIVE_TIMESTAMP                  (const char*)(lnum_args >= 0  ?        argv[optind+0]   : "")
+#define U_SCHEMA                             (const char*)(lnum_args >= 1  ?        argv[optind+1]   : "")
 
 template <class T> class UClientXAdES : public USOAPClient<T> {
 public:
@@ -78,7 +78,7 @@ public:
 
       XAdES_BES()
          {
-         U_TRACE_REGISTER_OBJECT(5, XAdES_BES, "")
+         U_TRACE_CTOR(5, XAdES_BES, "")
 
          SIGNING_TIME            = 0;
          URPCMethod::method_name = U_STRING_FROM_CONSTANT("XAdES-BES");
@@ -86,7 +86,7 @@ public:
 
       virtual ~XAdES_BES()
          {
-         U_TRACE_UNREGISTER_OBJECT(5, XAdES_BES)
+         U_TRACE_DTOR(5, XAdES_BES)
          }
 
       // Transforms the method into something that SOAP servers and client can send.
@@ -140,7 +140,7 @@ public:
 
       XAdES_C()
          {
-         U_TRACE_REGISTER_OBJECT(5, XAdES_C, "")
+         U_TRACE_CTOR(5, XAdES_C, "")
 
          SIGNING_TIME            = 0;
          URPCMethod::method_name = U_STRING_FROM_CONSTANT("XAdES-C");
@@ -148,7 +148,7 @@ public:
 
       virtual ~XAdES_C()
          {
-         U_TRACE_UNREGISTER_OBJECT(5, XAdES_C)
+         U_TRACE_DTOR(5, XAdES_C)
          }
 
       // Transforms the method into something that SOAP servers and client can send.
@@ -191,14 +191,14 @@ public:
 
       XAdES_L()
          {
-         U_TRACE_REGISTER_OBJECT(5, XAdES_L, "")
+         U_TRACE_CTOR(5, XAdES_L, "")
 
          URPCMethod::method_name = U_STRING_FROM_CONSTANT("XAdES-L");
          }
 
       virtual ~XAdES_L()
          {
-         U_TRACE_UNREGISTER_OBJECT(5, XAdES_L)
+         U_TRACE_DTOR(5, XAdES_L)
          }
 
       // Transforms the method into something that SOAP servers and client can send.
@@ -321,14 +321,14 @@ public:
       {
       U_TRACE(5, "Application::Application()")
 
-      client = 0;
+      client = U_NULLPTR;
       }
 
    ~Application()
       {
       U_TRACE(5, "Application::~Application()")
 
-      delete client;
+      U_DELETE(client)
       }
 
    void run(int argc, char* argv[], char* env[])
@@ -348,11 +348,11 @@ public:
 
       const char* method = argv[optind++];
 
-      if (method == 0) usage();
+      if (method == U_NULLPTR) usage();
 
-      int op = atoi(method), num_args = (argc - optind);
+      int op = u_atoi(method), lnum_args = (argc - optind);
 
-      U_INTERNAL_DUMP("optind = %d num_args = %d", optind, num_args)
+      U_INTERNAL_DUMP("optind = %d lnum_args = %d", optind, lnum_args)
 
       // manage file configuration
 

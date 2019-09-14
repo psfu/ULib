@@ -87,7 +87,7 @@ public:
 
    ~UMimeMultipartMsg()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UMimeMultipartMsg)
+      U_TRACE_DTOR(0, UMimeMultipartMsg)
       }
 
    uint32_t message(UString& body, bool bterminator = true);
@@ -101,7 +101,7 @@ public:
       U_INTERNAL_ASSERT_MAJOR(U_line_terminator_len, 0)
       U_ASSERT_EQUALS(_section.find(boundary, U_line_terminator_len, boundary_len), U_NOT_FOUND)
 
-      vec_part.push(_section);
+      vec_part.push_back(_section);
       }
 
    uint32_t getNumPart() const            { return vec_part.size(); }
@@ -120,7 +120,7 @@ public:
    // the headers into the generated MIME section
    // -----------------------------------------------------------------------------------------------------
 
-   static UString section(const UString& content,
+   static UString section(const char* content, uint32_t content_len,
                           const char* type = "", uint32_t type_len = 0,
                           Encoding encoding = AUTO, const char* charset = "", const char* name = "",
                           const char* header = "", uint32_t header_len = 0);
@@ -145,7 +145,7 @@ protected:
    static const char* str_encoding[4];
 
 private:
-   static inline int encodeAutodetect(const UString& content, const char* charset) U_NO_EXPORT __pure;
+   static inline int encodeAutodetect(const char* content, uint32_t content_len, const char* charset) U_NO_EXPORT __pure;
 
    U_DISALLOW_COPY_AND_ASSIGN(UMimeMultipartMsg)
 };

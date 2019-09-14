@@ -24,14 +24,14 @@ bool URPCClient_Base::readResponse(USocket* sk, UString& buffer, UString& respon
      buffer.setEmptyForce();
    response.setEmptyForce();
 
-   if (URPC::readTokenString(sk, 0, buffer, rstart, response))
+   if (URPC::readTokenString(sk, U_NULLPTR, buffer, rstart, response))
       {
       // NB: we force for U_SUBSTR_INC_REF case (string can be referenced more)...
 
       buffer.size_adjust_force(U_TOKEN_NM);
       }
 
-   U_INTERNAL_DUMP("buffer = %V response = %V)", buffer.rep, response.rep)
+   U_INTERNAL_DUMP("buffer = %V response = %V", buffer.rep, response.rep)
 
    if (buffer) U_RETURN(true);
 

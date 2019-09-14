@@ -83,38 +83,38 @@ static u_property property[32];
 
 UPosting::UPosting(uint32_t dimension, bool parsing, bool index)
 {
-   U_TRACE_REGISTER_OBJECT(5, UPosting, "%u,%b,%b", dimension, parsing, index)
+   U_TRACE_CTOR(5, UPosting, "%u,%b,%b", dimension, parsing, index)
 
-   U_INTERNAL_ASSERT_EQUALS(word,0)
-   U_INTERNAL_ASSERT_EQUALS(posting,0)
-   U_INTERNAL_ASSERT_EQUALS(filename,0)
-   U_INTERNAL_ASSERT_EQUALS(str_cur_doc_id,0)
+   U_INTERNAL_ASSERT_EQUALS(word, U_NULLPTR)
+   U_INTERNAL_ASSERT_EQUALS(posting, U_NULLPTR)
+   U_INTERNAL_ASSERT_EQUALS(filename, U_NULLPTR)
+   U_INTERNAL_ASSERT_EQUALS(str_cur_doc_id, U_NULLPTR)
 
-   U_NEW(UString, word, UString);
-   U_NEW(UString, posting, UString);
-   U_NEW(UString, filename, UString);
-   U_NEW(UString, str_cur_doc_id, UString(sizeof(cur_doc_id)));
+   U_NEW_STRING(word, UString);
+   U_NEW_STRING(posting, UString);
+   U_NEW_STRING(filename, UString);
+   U_NEW_STRING(str_cur_doc_id, UString(sizeof(cur_doc_id)));
 
    approximate_num_words = 2000 + (dimension * 8);
 
    if (index)
       {
-      U_INTERNAL_ASSERT_EQUALS(tbl_name, 0)
-      U_INTERNAL_ASSERT_EQUALS(tbl_words, 0)
+      U_INTERNAL_ASSERT_EQUALS(tbl_name, U_NULLPTR)
+      U_INTERNAL_ASSERT_EQUALS(tbl_words, U_NULLPTR)
 
       dimension += dimension / 4;
 
-      U_NEW(UHashMap<UString>, tbl_name,  UHashMap<UString>(U_GET_NEXT_PRIME_NUMBER(dimension)));
-      U_NEW(UHashMap<UString>, tbl_words, UHashMap<UString>(U_GET_NEXT_PRIME_NUMBER(approximate_num_words), ignore_case));
+      U_NEW(UHashMap<UString>, tbl_name,  UHashMap<UString>(u_nextPowerOfTwo(dimension)));
+      U_NEW(UHashMap<UString>, tbl_words, UHashMap<UString>(u_nextPowerOfTwo(approximate_num_words), ignore_case));
       }
 
    if (parsing)
       {
-      U_INTERNAL_ASSERT_EQUALS(file,0)
-      U_INTERNAL_ASSERT_EQUALS(content,0)
+      U_INTERNAL_ASSERT_EQUALS(file, U_NULLPTR)
+      U_INTERNAL_ASSERT_EQUALS(content, U_NULLPTR)
 
       U_NEW(UFile, file, UFile);
-      U_NEW(UString, content, UString);
+      U_NEW_STRING(content, UString);
       }
 }
 
@@ -122,13 +122,13 @@ void UPosting::resetVectorCompositeWord()
 {
    U_TRACE(5, "UPosting::resetVectorCompositeWord()")
 
-   delete sub_word;
-   delete vec_sub_word;
-   delete vec_sub_word_posting;
+   U_DELETE(sub_word)
+   U_DELETE(vec_sub_word)
+   U_DELETE(vec_sub_word_posting)
 
-   sub_word             = 0;
-   vec_sub_word         = 0;
-   vec_sub_word_posting = 0;
+   sub_word             = U_NULLPTR;
+   vec_sub_word         = U_NULLPTR;
+   vec_sub_word_posting = U_NULLPTR;
    vec_sub_word_size    = 0;
 }
 
@@ -143,37 +143,37 @@ void UPosting::reset()
 
    if (vec_word)
       {
-      delete vec_word;
-      delete vec_entry;
-      delete vec_posting;
+      U_DELETE(vec_word)
+      U_DELETE(vec_entry)
+      U_DELETE(vec_posting)
 
-      vec_word    = 0;
-      vec_entry   = 0;
-      vec_posting = 0;
+      vec_word    = U_NULLPTR;
+      vec_entry   = U_NULLPTR;
+      vec_posting = U_NULLPTR;
       }
 }
 
 UPosting::~UPosting()
 {
-   U_TRACE_UNREGISTER_OBJECT(5, UPosting)
+   U_TRACE_DTOR(5, UPosting)
 
-   delete posting;
-   delete filename;
-   delete str_cur_doc_id;
+   U_DELETE(posting)
+   U_DELETE(filename)
+   U_DELETE(str_cur_doc_id)
 
-   if (tbl_name == 0) reset();
+   if (tbl_name == U_NULLPTR) reset();
    else
       {
-      delete tbl_name;
-      delete tbl_words;
+      U_DELETE(tbl_name)
+      U_DELETE(tbl_words)
       }
 
-   delete word;
+   U_DELETE(word)
 
    if (file)
       {
-      delete file;
-      delete content;
+      U_DELETE(file)
+      U_DELETE(content)
       }
 }
 
@@ -215,7 +215,7 @@ U_NO_EXPORT void UPosting::readPosting(UStringRep* word_rep, bool flag)
       {
       // check if add operation...
 
-      if (word_rep == 0) posting->duplicate(); // NB: need duplicate string because we need space on string constant..
+      if (word_rep == U_NULLPTR) posting->duplicate(); // NB: need duplicate string because we need space on string constant..
       }
 
    U_INTERNAL_ASSERT_EQUALS(UStringExt::isCompress(posting->data()), false)
@@ -308,7 +308,7 @@ U_NO_EXPORT __pure char* UPosting::find(char* s, uint32_t n, bool boptmize)
       U_INTERNAL_ASSERT_EQUALS((str - s), (ptrdiff_t)n)
       }
 
-   U_RETURN((char*)0);
+   U_RETURN((char*)U_NULLPTR);
 }
 
 U_NO_EXPORT bool UPosting::setPosting(bool bcache)
@@ -335,7 +335,7 @@ U_NO_EXPORT bool UPosting::setPosting(bool bcache)
             }
          }
 
-      char* posting_ptr = (last_posting_sz ? find(last_posting_ptr, last_posting_sz, true) : 0);
+      char* posting_ptr = (last_posting_sz ? find(last_posting_ptr, last_posting_sz, true) : U_NULLPTR);
 
       if (posting_ptr) U_RETURN(true);
 
@@ -518,7 +518,7 @@ U_NO_EXPORT void UPosting::add()
 
    U_INTERNAL_ASSERT(*word)
 
-   bool present = (tbl_words ?          tbl_words->find(*word)
+   bool present = (tbl_words ?         tbl_words->find(*word)
                              : ((URDB*)cdb_words)->find(*word));
 
    if (present == false)
@@ -540,17 +540,19 @@ U_NO_EXPORT void UPosting::add()
 
       if (tbl_words)
          {
-         word->duplicate(); // NB: need duplicate string because depends on mmap()'s content of document...
-
          tbl_words_space += word->size() + posting->capacity();
 
-         tbl_words->insertAfterFind(*word, *posting);
+         word->duplicate(); // NB: need duplicate string because depends on mmap()'s content of document...
+
+         UHashMap<void*>::lkey = word->rep;
+
+         tbl_words->insertAfterFind(*posting);
          }
       }
    else
       {
       if (tbl_words) posting->_assign(tbl_words->elem());
-      else           readPosting(0, false);
+      else           readPosting(U_NULLPTR, false);
 
    // U_ASSERT_EQUALS(0,find(posting->data() + sizeof(uint32_t), posting->size() - sizeof(uint32_t)))
 
@@ -609,7 +611,7 @@ U_NO_EXPORT void UPosting::add()
 
    posting->size_adjust_force(space);
 
-   if (tbl_words == 0)
+   if (tbl_words == U_NULLPTR)
       {
       int result = writePosting(present ? RDB_REPLACE : RDB_INSERT);
 
@@ -718,7 +720,7 @@ U_NO_EXPORT int UPosting::checkDocument(UStringRep* word_rep, UStringRep* value)
 
 #  ifndef U_OPTIMIZE
       if (cdb_words->ignoreCase() == false &&
-          u_find(content->data(), content->size(), word->data(), word->size()) == 0)
+          u_find(content->data(), content->size(), word->data(), word->size()) == U_NULLPTR)
          {
          U_RETURN(1);
          }
@@ -736,7 +738,7 @@ U_NO_EXPORT int UPosting::checkAllEntry(UStringRep* word_rep, UStringRep* value)
 
    word->_assign(word_rep);
 
-   callForPostingAndSetFilename(0);
+   callForPostingAndSetFilename(U_NULLPTR);
 
    (void) write(1, U_CONSTANT_TO_PARAM(".")); // CHECK_2
 
@@ -747,7 +749,7 @@ void UPosting::checkAllEntry()
 {
    U_TRACE(5, "UPosting::checkAllEntry()")
 
-   cdb_words->callForAllEntryWithPattern(checkAllEntry, 0);
+   cdb_words->callForAllEntryWithPattern(checkAllEntry, U_NULLPTR);
 }
 
 // SUBSTITUTE DOCUMENT
@@ -841,7 +843,7 @@ void UPosting::setDocID(int32_t op)
 
          U_INTERNAL_ASSERT_POINTER(cdb_words)
 
-         ((URDB*)cdb_words)->callForAllEntryWithPattern(substitute, 0);
+         ((URDB*)cdb_words)->callForAllEntryWithPattern(substitute, U_NULLPTR);
          }
       else if (op == 3) // check
          {
@@ -849,7 +851,7 @@ void UPosting::setDocID(int32_t op)
 
          U_INTERNAL_ASSERT_POINTER(cdb_words)
 
-         cdb_words->callForAllEntryWithPattern(checkDocument, 0);
+         cdb_words->callForAllEntryWithPattern(checkDocument, U_NULLPTR);
          }
       }
 }
@@ -926,10 +928,10 @@ U_NO_EXPORT bool UPosting::setVectorCompositeWord()
 
    U_INTERNAL_ASSERT(*word)
    U_INTERNAL_ASSERT_POINTER(cdb_words)
-   U_INTERNAL_ASSERT_EQUALS(vec_sub_word,0)
-   U_INTERNAL_ASSERT_EQUALS(vec_sub_word_posting,0)
+   U_INTERNAL_ASSERT_EQUALS(vec_sub_word,U_NULLPTR)
+   U_INTERNAL_ASSERT_EQUALS(vec_sub_word_posting,U_NULLPTR)
 
-   U_NEW(UString, sub_word, UString);
+   U_NEW_STRING(sub_word, UString);
    U_NEW(UVector<UString>, vec_sub_word, UVector<UString>(*word));
    U_NEW(UVector<UString>, vec_sub_word_posting, UVector<UString>);
 
@@ -943,7 +945,7 @@ U_NO_EXPORT bool UPosting::setVectorCompositeWord()
 
       if (sub_word->size() < min_word_size)
          {
-         vec_sub_word_posting->push(UString::getStringNull());
+         vec_sub_word_posting->push_back(UString::getStringNull());
 
          continue;
          }
@@ -957,7 +959,7 @@ U_NO_EXPORT bool UPosting::setVectorCompositeWord()
          U_RETURN(false);
          }
 
-      vec_sub_word_posting->push(*posting);
+      vec_sub_word_posting->push_back(*posting);
       }
 
    U_RETURN(true);
@@ -1085,7 +1087,7 @@ bool UPosting::findDocID(UStringRep* word_rep)
 
       i = vec_word->size();
 
-      vec_word->push(*word);
+      vec_word->push_back(*word);
 
       if (word_rep->isQuoted('"'))
          {
@@ -1118,7 +1120,7 @@ bool UPosting::findDocID(UStringRep* word_rep)
          if (vec_sub_word) resetVectorCompositeWord();
          }
 
-      if (callForCompositeWord(0)) U_RETURN(true);
+      if (callForCompositeWord(U_NULLPTR)) U_RETURN(true);
 
       U_RETURN(false);
       }
@@ -1136,7 +1138,7 @@ bool UPosting::findDocID(UStringRep* word_rep)
 
          if (cdb_words->getValuesWithKeyNask(*vec_entry, *word, &size_entry)) entry = extractDocID();
 
-         vec_posting->push(entry);
+         vec_posting->push_back(entry);
          }
 
       if (entry &&
@@ -1199,7 +1201,7 @@ U_NO_EXPORT bool UPosting::callForCompositeWord(vPF function)
 
    U_INTERNAL_ASSERT_POINTER(cdb_names)
 
-   if (vec_sub_word == 0 &&
+   if (vec_sub_word == U_NULLPTR &&
        setVectorCompositeWord() == false)
       {
       U_RETURN(false);
@@ -1227,7 +1229,7 @@ U_NO_EXPORT bool UPosting::callForCompositeWord(vPF function)
 
    bool match;
    char* ptr1;
-   char* end1 = 0;
+   char* end1 = U_NULLPTR;
    int32_t i, first_subword_freq;
    uint32_t j, k, sz = sub_word_size;
 
@@ -1236,7 +1238,7 @@ U_NO_EXPORT bool UPosting::callForCompositeWord(vPF function)
    // immatricolazione (-261845,1,1148)(-261811,1,2024)(-261819,4,2037,2624,4075,4567)(-261832,4,2037,2624,4479,4971)
    // ---------------------------------------------------------------------------------------------------------------
 
-   if (function == 0)
+   if (function == U_NULLPTR)
       {
       if (setPosting(false) == false) U_RETURN(false);
 
@@ -1324,7 +1326,7 @@ loop1:
 
       U_INTERNAL_ASSERT_EQUALS(i, first_subword_freq)
 
-      if (function == 0) U_RETURN(match);
+      if (function == U_NULLPTR) U_RETURN(match);
 
       if (match)
          {
@@ -1437,7 +1439,7 @@ void UPosting::printDB(ostream& s)
 #ifdef U_STDCPP_ENABLE
    os = &s;
 
-   U_NEW(UString, buffer, UString(U_CAPACITY));
+   U_NEW_STRING(buffer, UString(U_CAPACITY));
 
    if (tbl_words) tbl_words->callForAllEntry((bPFprpv)print);
    else
@@ -1445,8 +1447,8 @@ void UPosting::printDB(ostream& s)
       U_INTERNAL_ASSERT_POINTER(cdb_names)
       U_INTERNAL_ASSERT_POINTER(cdb_words)
 
-      cdb_names->callForAllEntryWithPattern(printDocName, 0);
-      cdb_words->callForAllEntryWithPattern(print, 0);
+      cdb_names->callForAllEntryWithPattern(printDocName, U_NULLPTR);
+      cdb_words->callForAllEntryWithPattern(print, U_NULLPTR);
       }
 
    *os << ' ' << *buffer
@@ -1454,7 +1456,7 @@ void UPosting::printDB(ostream& s)
 
    os->flush();
 
-   delete buffer;
+   U_DELETE(buffer)
 #endif
 }
 
@@ -1501,6 +1503,6 @@ const char* UPosting::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

@@ -72,7 +72,7 @@ inline void Messaggio::allocDestinatari(int n)
 
 Messaggio::Messaggio() : id(*PEC_report::id), mittente(*PEC_report::mittente), identifier(*PEC_report::identifier)
 {
-   U_TRACE_REGISTER_OBJECT(5, Messaggio, "")
+   U_TRACE_CTOR(5, Messaggio, "")
 
    (void) memset(flag, U_MEMSET_VALUE, sizeof(flag));
 
@@ -134,7 +134,7 @@ Messaggio::Messaggio() : id(*PEC_report::id), mittente(*PEC_report::mittente), i
 
 Messaggio::~Messaggio()
 {
-   U_TRACE_UNREGISTER_OBJECT(5, Messaggio)
+   U_TRACE_DTOR(5, Messaggio)
 
    free(vdestinatari_domini);
    free(vdestinatari_certificati);
@@ -305,7 +305,7 @@ void PEC_report_anomalie::processLine(bool bnew)
       U_INTERNAL_DUMP("flag[U_OUTPUT] = %C", Messaggio::msg->flag[U_OUTPUT])
 
       if (Messaggio::msg->flag[U_OUTPUT] == '0' &&
-          atoi(Messaggio::msg->vdestinatari_domini) == 0)
+          u_atoi(Messaggio::msg->vdestinatari_domini) == 0)
          {
          U_WARNING(U_ERROR_MESSAGE_INCORRECT_MESSAGE, U_STRING_TO_TRACE(*PEC_report::identifier));
          }
@@ -947,7 +947,7 @@ const char* Messaggio::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 #endif

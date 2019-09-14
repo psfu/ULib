@@ -15,6 +15,11 @@
 #define ULIB_SERVICES_H 1
 
 #include <ulib/string.h>
+#include <ulib/utility/hexdump.h>
+
+#ifdef USE_LIBUUID
+#  include <uuid/uuid.h>
+#endif
 
 #ifdef USE_LIBSSL
 #  include <openssl/pem.h>
@@ -37,6 +42,10 @@ typedef int (*verify_cb)(int,X509_STORE_CTX*); /* error callback */
 #ifndef FNM_CASEFOLD
 #define FNM_CASEFOLD FNM_IGNORECASE
 #endif
+
+// HTTP Access Authentication
+#define U_HTTP_QOP   "auth"
+#define U_HTTP_REALM "Protected Area"
 
 struct U_EXPORT UServices {
 
@@ -62,36 +71,6 @@ struct U_EXPORT UServices {
 
       while (UServices::read(fd, buffer, U_SINGLE_READ, -1)) {}
       }
-
-   // generic MatchType { U_FNMATCH, U_DOSMATCH, U_DOSMATCH_EXT, U_DOSMATCH_WITH_OR, U_DOSMATCH_EXT_WITH_OR }
-
-   static bool match(const char* s, uint32_t len, const char* mask, uint32_t size)
-      {
-      U_TRACE(0, "UServices::match(%.*S,%u,%.*S,%u)", len, s, len, size, mask, size)
-
-      U_INTERNAL_DUMP("u_pfn_match = %p u_pfn_flags = %u", u_pfn_match, u_pfn_flags)
-
-      if (u_pfn_match(s, len, mask, size, u_pfn_flags)) U_RETURN(true);
-
-      U_RETURN(false);
-      }
-
-   static bool matchNoCase(const char* s, uint32_t len, const char* mask, uint32_t size)
-      {
-      U_TRACE(0, "UServices::matchNoCase(%.*S,%u,%.*S,%u)", len, s, len, size, mask, size)
-
-      U_INTERNAL_DUMP("u_pfn_match = %p u_pfn_flags = %u", u_pfn_match, u_pfn_flags)
-
-      if (u_pfn_match(s, len, mask, size, u_pfn_flags | FNM_CASEFOLD)) U_RETURN(true);
-
-      U_RETURN(false);
-      }
-
-   static bool match(const UString& s,    const UString& mask)       { return match(U_STRING_TO_PARAM(s),  U_STRING_TO_PARAM(mask)); }
-   static bool match(const UStringRep* r, const UString& mask)       { return match(U_STRING_TO_PARAM(*r), U_STRING_TO_PARAM(mask)); }
-
-   static bool matchNoCase(const UString& s,    const UString& mask) { return matchNoCase(U_STRING_TO_PARAM(s),  U_STRING_TO_PARAM(mask)); }
-   static bool matchNoCase(const UStringRep* r, const UString& mask) { return matchNoCase(U_STRING_TO_PARAM(*r), U_STRING_TO_PARAM(mask)); }
 
    // ------------------------------------------------------------
    // DOS or wildcard regexpr - multiple patterns separated by '|'
@@ -164,7 +143,22 @@ struct U_EXPORT UServices {
    // manage session cookies and hashing password...
 
    static unsigned char key[16];
-   static void generateKey(unsigned char* pkey = 0, unsigned char* hexdump = 0);
+
+   static void generateKey(unsigned char* pkey, unsigned char* hexdump)
+      {
+      U_TRACE(1, "UServices::generateKey(%p,%p)", pkey, hexdump)
+
+      U_INTERNAL_ASSERT_POINTER(pkey)
+
+#  ifdef USE_LIBUUID
+      U_SYSCALL_VOID(uuid_generate, "%p", pkey);
+#  else
+      *(uint64_t*) pkey                     = getUniqUID();
+      *(uint64_t*)(pkey + sizeof(uint64_t)) = getUniqUID();
+#  endif
+
+      if (hexdump) (void) u_hexdump_encode(pkey, 16, hexdump);
+      }
 
    static UString generateToken(const UString& data, time_t expire);
    static bool    getTokenData(       UString& data, const UString& value, time_t& expire);
@@ -179,6 +173,8 @@ struct U_EXPORT UServices {
    static void generateDigest(int alg, uint32_t keylen, const UString& data,                UString& output, int base64 = 0)
       { generateDigest(alg, keylen, (unsigned char*)U_STRING_TO_PARAM(data), output, base64); }
 
+   static bool setDigestCalcResponse(const UString& ha1, const UString& nc, const UString& nonce, const UString& cnonce, const UString& _uri, const UString& user, UString& response);
+
    static UString generateCode(uint32_t len = 6)
       {
       U_TRACE(0, "UServices::generateCode(%u)", len)
@@ -186,7 +182,10 @@ struct U_EXPORT UServices {
       UString code(len);
       char* ptr = code.data();
 
-      for (uint32_t i = 0; i < len; ++i, ++ptr) *ptr = u_b64[u_get_num_random(sizeof(u_b64) - 3)];
+      for (uint32_t i = 0; i < len; ++i, ++ptr)
+         {
+         *ptr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[u_get_num_random_range0(U_CONSTANT_SIZE("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"))];
+         }
 
       code.size_adjust(len);
 
@@ -200,11 +199,11 @@ struct U_EXPORT UServices {
       {
       U_TRACE(0, "UServices::generateDigest(%d,%.*S,%u)", alg, size, data, size)
 
-      u_dgst_init(alg, 0, 0);
+      u_dgst_init(alg, U_NULLPTR, 0);
 
       u_dgst_hash(data, size);
 
-      (void) u_dgst_finish(0, 0);
+      (void) u_dgst_finish(U_NULLPTR, 0);
 
       U_INTERNAL_DUMP("u_mdLen = %d", u_mdLen)
       }
@@ -256,8 +255,8 @@ struct U_EXPORT UServices {
    static int X509Callback(int ok, X509_STORE_CTX* ctx);
    static UString getFileName(long hash, bool crl = false);
    static ENGINE* loadEngine(const char* id, unsigned int flags);
-   static bool setupOpenSSLStore(const char* CAfile = 0, const char* CApath = 0, int store_flags = U_STORE_FLAGS);
-   static EVP_PKEY* loadKey(const UString& x, const char* format, bool _private = true, const char* password = 0, ENGINE* e = 0);
+   static bool setupOpenSSLStore(const char* CAfile = U_NULLPTR, const char* CApath = U_NULLPTR, int store_flags = U_STORE_FLAGS);
+   static EVP_PKEY* loadKey(UString& x, const char* format, bool _private = true, const char* password = U_NULLPTR, ENGINE* e = U_NULLPTR);
 
    /**
     * data   is the data to be signed
@@ -265,8 +264,8 @@ struct U_EXPORT UServices {
     * passwd is the corresponsding password for the private key
     */
 
-   static bool    verifySignature(  int alg, const UString& data, const UString& signature, const UString& pkey,                                    ENGINE* e = 0);
-   static UString getSignatureValue(int alg, const UString& data,                           const UString& pkey, const UString& passwd, int base64, ENGINE* e = 0);
+   static bool    verifySignature(  int alg, const UString& data, const UString& signature, UString& pkey,                              ENGINE* e = U_NULLPTR);
+   static UString getSignatureValue(int alg, const UString& data,                           UString& pkey, UString& passwd, int base64, ENGINE* e = U_NULLPTR);
 #endif
 };
 

@@ -5,7 +5,7 @@
 static const char* getArg(const char* param) { return (param && *param ? param : 0); }
 
 int
-U_EXPORT main (int argc, char* argv[])
+U_EXPORT main (int argc, char* argv[], char* env[])
 {
    U_ULIB_INIT(argv);
 
@@ -16,7 +16,7 @@ U_EXPORT main (int argc, char* argv[])
 
    // Check server certificates agains our known trusted certificate
 
-   if (((USSLSocket*)x.socket)->setContext(0, getArg(argv[1]), getArg(argv[2]), getArg(argv[3]), getArg(argv[4]), getArg(argv[5]), atoi(argv[6])) &&
+   if (((USSLSocket*)x.socket)->setContext(0, getArg(argv[1]), getArg(argv[2]), getArg(argv[3]), getArg(argv[4]), getArg(argv[5]), u_atoi(argv[6])) &&
        ((USSLSocket*)x.socket)->connectServer(host, 8080))
       {
       U_DUMP("getPeerCertificate() = %p", ((USSLSocket*)x.socket)->getPeerCertificate())

@@ -25,7 +25,7 @@ U_NO_EXPORT int UTDB::_getKeys(TDB_CONTEXT* tdb, TDB_DATA key, TDB_DATA dbuf, vo
 
    UString str((void*)key.dptr, key.dsize);
 
-   ((UVector<UString>*)ptr)->push(str);
+   ((UVector<UString>*)ptr)->push_back(str);
 
    U_RETURN(0); // A non-zero return value from fn() indicates that the traversal should stop
 }
@@ -195,7 +195,7 @@ const char* UTDB::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #  endif
 #endif

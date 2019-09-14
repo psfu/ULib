@@ -76,7 +76,7 @@ UTrace::UTrace(int level, const char* format, uint32_t fmt_size, ...)
       va_list argp;
       va_start(argp, fmt_size);
 
-      buffer_trace_len = u__vsnprintf(buffer_trace, sizeof(buffer_trace), format, fmt_size, argp);
+      buffer_trace_len = u__vsnprintf(buffer_trace, U_CONSTANT_SIZE(buffer_trace), format, fmt_size, argp);
 
       va_end(argp);
 
@@ -99,7 +99,7 @@ UTrace::~UTrace()
 
       u_trace_writev(iov + skip, 4 - skip);
 
-      if (u_trace_mask_level == this) u_trace_mask_level = 0;
+      if (u_trace_mask_level == this) u_trace_mask_level = U_NULLPTR;
       }
 
    if (u_trace_signal) u_trace_handlerSignal();
@@ -129,7 +129,7 @@ void UTrace::trace_return(const char* format, uint32_t fmt_size, ...)
       va_list argp;
       va_start(argp, fmt_size);
 
-      buffer_trace_len += u__vsnprintf(ptr, sizeof(buffer_trace) - buffer_trace_len, format, fmt_size, argp);
+      buffer_trace_len += u__vsnprintf(ptr, U_CONSTANT_SIZE(buffer_trace) - buffer_trace_len, format, fmt_size, argp);
 
       va_end(argp);
 
@@ -144,7 +144,7 @@ void UTrace::trace_syscall(const char* format, uint32_t fmt_size, ...)
    va_list argp;
    va_start(argp, fmt_size);
 
-   buffer_syscall_len = u__vsnprintf(buffer_syscall, sizeof(buffer_trace), format, fmt_size, argp);
+   buffer_syscall_len = u__vsnprintf(buffer_syscall, U_CONSTANT_SIZE(buffer_trace), format, fmt_size, argp);
 
    va_end(argp);
 
@@ -170,7 +170,7 @@ void UTrace::trace_syscall(const char* format, uint32_t fmt_size, ...)
 #ifdef _MSWINDOWS_
    SetLastError(0);
 #endif
-   errno = u_errno = 0;
+   errno = 0;
 }
 
 void UTrace::trace_sysreturn(bool error, const char* format, uint32_t fmt_size, ...)
@@ -221,7 +221,7 @@ void UTrace::trace_sysreturn(bool error, const char* format, uint32_t fmt_size, 
          va_list argp;
          va_start(argp, fmt_size);
 
-         buffer_syscall_len += u__vsnprintf(ptr, sizeof(buffer_syscall) - buffer_syscall_len, format, fmt_size, argp);
+         buffer_syscall_len += u__vsnprintf(ptr, U_CONSTANT_SIZE(buffer_syscall) - buffer_syscall_len, format, fmt_size, argp);
 
          va_end(argp);
 
@@ -233,7 +233,7 @@ void UTrace::trace_sysreturn(bool error, const char* format, uint32_t fmt_size, 
                {
                char msg_sys_error[sizeof(buffer_syscall)];
 
-               buffer_syscall_len += u__snprintf(msg_sys_error, sizeof(buffer_syscall), U_CONSTANT_TO_PARAM("%R"), 0); // NB: the last argument (0) is necessary...
+               buffer_syscall_len += u__snprintf(msg_sys_error, U_CONSTANT_SIZE(buffer_syscall), U_CONSTANT_TO_PARAM("%R"), 0); // NB: the last argument (0) is necessary...
 
                U_INTERNAL_ASSERT_MINOR(buffer_syscall_len, sizeof(buffer_syscall))
 
@@ -242,12 +242,15 @@ void UTrace::trace_sysreturn(bool error, const char* format, uint32_t fmt_size, 
                u_errno = errno;
                }
 
-            if (errno != EAGAIN                            &&
-                errno != EINPROGRESS                       &&
+            if (errno != EAGAIN      &&
+                errno != EINPROGRESS &&
 #           ifdef USE_LIBPCRE
-                strstr(buffer_syscall, "::pcre_exec") == 0 &&
+                strstr(buffer_syscall, "::pcre_exec") == U_NULLPTR &&
 #           endif
-                strstr(buffer_syscall, "::getenv")    == 0)
+#           ifdef U_STATIC_ORM_DRIVER_PGSQL
+                strstr(buffer_syscall, "::PQgetResult") == U_NULLPTR &&
+#           endif
+                strstr(buffer_syscall, "::getenv") == U_NULLPTR)
                {
                U_WARNING("%s", buffer_syscall);
                }
@@ -278,7 +281,7 @@ void UTrace::trace_sysreturn(bool error, const char* format, uint32_t fmt_size, 
                   char msg[sizeof(buffer_syscall)];
                   double rate = u_calcRate(bytes_read_or_write, dltime, &units);
 
-                  buffer_syscall_len += u__snprintf(msg, sizeof(buffer_syscall), U_CONSTANT_TO_PARAM(" (%.2f %s/s)"), rate, u_short_units[units]);
+                  buffer_syscall_len += u__snprintf(msg, U_CONSTANT_SIZE(buffer_syscall), U_CONSTANT_TO_PARAM(" (%.2f %s/s)"), rate, u_short_units[units]);
 
                   U_INTERNAL_ASSERT_MINOR(buffer_syscall_len, sizeof(buffer_syscall))
 

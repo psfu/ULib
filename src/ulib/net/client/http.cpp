@@ -204,12 +204,12 @@
 
 #define U_MAX_REDIRECTS 10 // HTTP 1.0 used to suggest 5
 
-bool             UHttpClient_Base::server_context_flag;
-struct uhttpinfo UHttpClient_Base::u_http_info_save;
+bool UHttpClient_Base::data_chunked;
+bool UHttpClient_Base::server_context_flag;
 
 UHttpClient_Base::UHttpClient_Base(UFileConfig* _cfg) : UClient_Base(_cfg)
 {
-   U_TRACE_REGISTER_OBJECT(0, UHttpClient_Base, "%p", _cfg)
+   U_TRACE_CTOR(0, UHttpClient_Base, "%p", _cfg)
 
    method_num       = 0;
    bFollowRedirects = true;
@@ -219,6 +219,8 @@ UHttpClient_Base::UHttpClient_Base(UFileConfig* _cfg) : UClient_Base(_cfg)
 
    U_NEW(UMimeHeader,  requestHeader, UMimeHeader);
    U_NEW(UMimeHeader, responseHeader, UMimeHeader);
+
+   responseHeader->setIgnoreCase(true);
 }
 
 void UHttpClient_Base::reset()
@@ -226,6 +228,8 @@ void UHttpClient_Base::reset()
    U_TRACE_NO_PARAM(0, "UHttpClient_Base::reset()")
 
    body.clear();
+
+   data_chunked = false;
 
     requestHeader->clear();
    responseHeader->clear();
@@ -264,9 +268,9 @@ UString UHttpClient_Base::getBasicAuthorizationHeader()
    U_RETURN_STRING(headerValue);
 }
 
-bool UHttpClient_Base::createAuthorizationHeader(bool bProxy)
+bool UHttpClient_Base::createAuthorizationHeader(bool bProxy, const UString& _uri)
 {
-   U_TRACE(0, "UHttpClient_Base::createAuthorizationHeader(%b)", bProxy)
+   U_TRACE(0, "UHttpClient_Base::createAuthorizationHeader(%b,%V)", bProxy, _uri.rep)
 
    if (    user.empty() ||
        password.empty())
@@ -277,25 +281,11 @@ bool UHttpClient_Base::createAuthorizationHeader(bool bProxy)
       U_RETURN(false);
       }
 
-   uint32_t keylen;
-   const char* key;
-
-   if (bProxy)
-      {
-      key    =                 "Proxy-Authenticate";
-      keylen = U_CONSTANT_SIZE("Proxy-Authenticate");
-      }
-   else
-      {
-      key    =                 "WWW-Authenticate";
-      keylen = U_CONSTANT_SIZE("WWW-Authenticate");
-      }
-
-   UString authResponse = responseHeader->getHeader(key, keylen);
+   UString key = (bProxy ? U_STRING_FROM_CONSTANT("Proxy-Authenticate") : U_STRING_FROM_CONSTANT("WWW-Authenticate")), authResponse = responseHeader->getHeader(key);
 
    if (authResponse.empty())
       {
-      U_DUMP("%.*S header missing from HTTP response: %d", keylen, key, U_http_info.nResponseCode)
+      U_INTERNAL_DUMP("%V header missing from HTTP response: %d", key.rep, U_http_info.nResponseCode)
 
       U_RETURN(false);
       }
@@ -314,12 +304,12 @@ bool UHttpClient_Base::createAuthorizationHeader(bool bProxy)
 
    if (n < 3)
       {
-      U_WARNING("%.*S header: %V value is invalid", keylen, key, authResponse.rep);
+      U_WARNING("%V header: %V value is invalid", key.rep, authResponse.rep);
 
       U_RETURN(false);
       }
 
-   UString scheme = name_value[0], headerValue(300U);
+   UString scheme = name_value[0], headerValue(U_CAPACITY);
 
    // ---------------------------------------------------------------------------------------------------------------------------
    // According to RFC 2617 HTTP Authentication: Basic and Digest Access Authentication
@@ -398,7 +388,7 @@ bool UHttpClient_Base::createAuthorizationHeader(bool bProxy)
           realm.empty() ||
           nonce.empty())
          {
-         // We cannot continue. This is signalled by returning false to the sendRequest() function.
+         // We cannot continue. This is signalled by returning false to the sendRequest() function
 
          U_RETURN(false);
          }
@@ -406,36 +396,43 @@ bool UHttpClient_Base::createAuthorizationHeader(bool bProxy)
       static uint32_t nc; //  nonce: counter incremented by client
                           // cnonce: client generated random nonce (u_now)
 
-      UString a1(100U), ha1(33U),                     // MD5(user : realm : password)
-              a2(4 + 1 + UClient_Base::uri.size()),   //     method : uri
-              ha2(33U),                               // MD5(method : uri)
-              a3(200U), _response(33U);               // MD5(HA1 : nonce : nc : cnonce : qop : HA2)
+      UString a1(100U), ha1(33U),      // MD5(user : realm : password)
+              a2(4 + 1 + _uri.size()), //     method : uri
+              ha2(33U),                // MD5(method : uri)
+              a3(200U), ha3(33U);      // MD5(HA1 : nonce : nc : cnonce : qop : HA2)
 
       // MD5(user : realm : password)
 
-      a1.snprintf(U_CONSTANT_TO_PARAM("%v:%v:%v"), user.rep, realm.rep, password.rep);
+      a1.snprintf(U_CONSTANT_TO_PARAM("%v:%v:%v"), user.rep, realm.getUnQuoted().rep, password.rep);
 
       UServices::generateDigest(U_HASH_MD5, 0, a1, ha1, false);
 
+      U_INTERNAL_DUMP("ha1 = %V", ha1.rep)
+ 
       // MD5(method : uri)
 
-      a2.snprintf(U_CONSTANT_TO_PARAM("%.*s:%v"), U_HTTP_METHOD_NUM_TO_TRACE(method_num), UClient_Base::uri.rep);
+      a2.snprintf(U_CONSTANT_TO_PARAM("%.*s:%v"), U_HTTP_METHOD_NUM_TO_TRACE(method_num), _uri.rep);
 
       UServices::generateDigest(U_HASH_MD5, 0, a2, ha2, false);
 
+      U_INTERNAL_DUMP("ha2 = %V", ha2.rep)
+
       // MD5(HA1 : nonce : nc : cnonce : qop : HA2)
 
-      a3.snprintf(U_CONSTANT_TO_PARAM("%v:%v:%08u:%ld:%v:%v"), ha1.rep, nonce.rep, ++nc, u_now->tv_sec, qop.rep, ha2.rep);
+      a3.snprintf(U_CONSTANT_TO_PARAM("%v:%v:%08u:%ld:%v:%v"), ha1.rep, nonce.getUnQuoted().rep, ++nc, u_now->tv_sec,
+                                                                          qop.getUnQuoted().rep, ha2.rep);
 
-      UServices::generateDigest(U_HASH_MD5, 0, a3, _response, false);
+      UServices::generateDigest(U_HASH_MD5, 0, a3, ha3, false);
 
-      // Authorization: Digest username="s.casazza", realm="Protected Area", nonce="1222108408", uri="/ok", cnonce="dad0f85801e27b987d6dc59338c7bf99",
-      //                       nc=00000001, response="240312fba053f6d687d10c90928f4af2", qop="auth", algorithm="MD5"
+      U_INTERNAL_DUMP("ha3 = %V", ha3.rep)
 
-      headerValue.snprintf(U_CONSTANT_TO_PARAM("Digest username=\"%v\", realm=%v, nonce=%v, uri=\"%v\", cnonce=\"%ld\", nc=%08u, response=\"%v\", qop=%v"),
-                           user.rep, &realm.rep, nonce.rep, UClient_Base::uri.rep, u_now->tv_sec, nc, _response.rep, qop.rep);
+      // Authorization: Digest username=s.casazza, realm="Protected Area", nonce=1222108408, uri=/ok, cnonce=dad0f85801e27b987d6dc59338c7bf99,
+      //                       nc=00000001, response=240312fba053f6d687d10c90928f4af2, qop=auth, algorithm=MD5
 
-      if (algorithm) (void) headerValue.append(U_CONSTANT_TO_PARAM(", algorithm=\"MD5\""));
+      headerValue.snprintf(U_CONSTANT_TO_PARAM("Digest username=%v, realm=%v, nonce=%v, uri=%v, cnonce=%ld, nc=%08u, response=%v, qop=%v"),
+                           user.rep, realm.rep, nonce.rep, _uri.rep, u_now->tv_sec, nc, ha3.rep, qop.rep);
+
+      if (algorithm) (void) headerValue.append(U_CONSTANT_TO_PARAM(", algorithm=MD5"));
       }
 
    // Only basic and digest authentication is supported at present. By failing to create an authentication header,
@@ -460,9 +457,9 @@ bool UHttpClient_Base::createAuthorizationHeader(bool bProxy)
 //  2 indicates an success, no redirects, ok to read body
 // ------------------------------------------------------------
 
-int UHttpClient_Base::checkResponse(int& redirectCount)
+int UHttpClient_Base::checkResponse(int& redirectCount, const UString& _uri)
 {
-   U_TRACE(0, "UHttpClient_Base::checkResponse(%d)", redirectCount)
+   U_TRACE(0, "UHttpClient_Base::checkResponse(%d,%V)", redirectCount, _uri.rep)
 
    U_DUMP("HTTP status = (%d, %S)", U_http_info.nResponseCode, UHTTP::getStatusDescription())
 
@@ -470,7 +467,8 @@ int UHttpClient_Base::checkResponse(int& redirectCount)
 
    bool connection_close = (UClient_Base::isClosed() || responseHeader->isClose());
 
-   // General category of response:
+   // ------------------------------------------------------------
+   // general category of HTTP/1.x response:
    // ------------------------------------------------------------
    // 1xx indicates an informational message only
    // 2xx indicates success of some kind
@@ -491,7 +489,7 @@ int UHttpClient_Base::checkResponse(int& redirectCount)
 
       if ((bAuth  && requestHeader->containsHeader(U_CONSTANT_TO_PARAM("Authorization")))       ||
           (bProxy && requestHeader->containsHeader(U_CONSTANT_TO_PARAM("Proxy-Authorization"))) ||
-          (redirectCount == -1 || createAuthorizationHeader(bProxy) == false))
+          (redirectCount == -1 || createAuthorizationHeader(bProxy, _uri) == false))
          {
          U_RETURN(-2);
          }
@@ -531,7 +529,7 @@ int UHttpClient_Base::checkResponse(int& redirectCount)
                {
                newLocation = refresh.substr(pos + U_CONSTANT_SIZE("url="));
 
-               if (newLocation.isQuoted()) newLocation.rep->unQuote();
+               if (newLocation.isQuoted()) newLocation.unQuote();
                }
             }
 
@@ -597,9 +595,9 @@ bool UHttpClient_Base::putRequestOnQueue() // In general, if sendRequest() faile
 {
    U_TRACE(0, "UHttpClient_Base::putRequestOnQueue()")
 
-   char _buffer[U_PATH_MAX];
+   char _buffer[U_PATH_MAX+1];
 
-   (void) u__snprintf(_buffer, sizeof(_buffer), U_CONSTANT_TO_PARAM("%v/%v.%4D"), UString::str_CLIENT_QUEUE_DIR->rep, UClient_Base::host_port.rep);
+   (void) u__snprintf(_buffer, U_PATH_MAX, U_CONSTANT_TO_PARAM("%v/%v.%4D"), UString::str_CLIENT_QUEUE_DIR->rep, UClient_Base::host_port.rep);
 
    int fd = UFile::creat(_buffer);
 
@@ -629,6 +627,7 @@ int UHttpClient_Base::sendRequestAsync(const UString& _url, bool bqueue, const c
 {
    U_TRACE(0, "UHttpClient_Base::sendRequestAsync(%V,%b,%S,%d)", _url.rep, bqueue, log_msg, log_fd)
 
+   U_INTERNAL_ASSERT_EQUALS(UClient_Base::queue_dir, U_NULLPTR)
    U_INTERNAL_ASSERT_EQUALS(UClient_Base::socket->isSSLActive(), false)
 
    pid_t pid = UServer_Base::startNewChild();
@@ -637,12 +636,36 @@ int UHttpClient_Base::sendRequestAsync(const UString& _url, bool bqueue, const c
 
    // child
 
-   int num_attempts = 1;
-
-   U_INTERNAL_ASSERT_EQUALS(UClient_Base::queue_dir, 0)
+   uint32_t num_attempts = 1;
 
    if (UClient_Base::connectServer(_url))
       {
+#  ifndef U_LOG_DISABLE
+      char msg[8196];
+      uint32_t log_msg_len = 0;
+
+      if (log_msg)
+         {
+         U_INTERNAL_ASSERT_DIFFERS(log_fd, -1)
+
+         log_msg_len = u__strlen(log_msg, __PRETTY_FUNCTION__);
+         }
+      else if (log_fd == 0     &&
+               method_num == 2 &&
+               UServer_Base::isLog())
+         {
+         U_INTERNAL_ASSERT_EQUALS(log_msg, U_NULLPTR)
+
+         log_msg_len = u__snprintf(msg, sizeof(msg),
+                                   U_CONSTANT_TO_PARAM("%s(pid %P)> Sent request %V %%s (%u bytes) after %%u attempts to %V: %V"),
+                                   UServer_Base::mod_name[0][0] ? UServer_Base::mod_name[0] : "",
+                                   UClient_Base::getUrlPath().rep, body.size(), UClient_Base::getUrlHost().rep, body.rep);
+
+         log_fd  = UServer_Base::log->getFd();
+         log_msg = msg;
+         }
+#  endif
+
       // we need to compose the request to the HTTP server...
 
       composeRequest(U_CONSTANT_TO_PARAM("application/x-www-form-urlencoded"));
@@ -650,31 +673,22 @@ int UHttpClient_Base::sendRequestAsync(const UString& _url, bool bqueue, const c
       UClient_Base::adjustTimeOut();
 
       UTimeVal to_sleep(10);
-loop:
-      if (UClient_Base::isOpen() == false) UClient_Base::socket->_socket();
 
-      if ((UClient_Base::isConnected() ||
-           UClient_Base::connect())    &&
-          sendRequestEngine())
-         {
-         goto next;
-         }
+loop: if (UClient_Base::isOpen() == false) UClient_Base::socket->_socket();
 
-      if (++num_attempts < U_MAX_ATTEMPTS)
+      if (((UClient_Base::isConnected() == false  &&
+            UClient_Base::connect()     == false) ||
+           sendRequestEngine() == false)          &&
+          ++num_attempts < U_MAX_ATTEMPTS)
          {
          to_sleep.nanosleep();
 
          goto loop;
          }
 
-next:
-      if (log_msg)
-         {
-         const char* str = (num_attempts < U_MAX_ATTEMPTS ? "success" : "FAILED");
-
-         if (log_fd == -1) ULog::log(        log_msg, strlen(log_msg), str, num_attempts);
-         else              ULog::log(log_fd, log_msg, strlen(log_msg), str, num_attempts);
-         }
+#  ifndef U_LOG_DISABLE
+      if (log_msg_len) ULog::log(log_fd, log_msg, log_msg_len, (num_attempts < U_MAX_ATTEMPTS ? "success" : "FAILED"), num_attempts);
+#  endif
       }
 
    // QUEUE MODE
@@ -690,7 +704,7 @@ next:
    U_RETURN(0);
 }
 
-//=============================================================================
+//================================================================================
 // Send the http request to the remote host.
 //
 // The request is made up of a request line followed by request header fields. Ex:
@@ -703,7 +717,7 @@ next:
 // fields followed by the requested data.
 //
 // Note: HTTP Redirection
-// ----------------------
+// ----------------------------------------------------------------------------
 // By default we will follow HTTP redirects. These are communicated
 // to us by a 3xx HTTP response code and the presence of a "Location" header
 // field. A 3xx response code without a Location header is an error.
@@ -711,9 +725,9 @@ next:
 // we receive a 200 OK response or the maximum number of redirects is exceeded.
 //
 // We do not process Location headers when accompanying a 200 OK response
-//=============================================================================
+//================================================================================
 
-void UHttpClient_Base::parseRequest(uint32_t n)
+bool UHttpClient_Base::parseRequest(uint32_t n)
 {
    U_TRACE(0, "UHttpClient_Base::parseRequest(%u)", n)
 
@@ -721,20 +735,27 @@ void UHttpClient_Base::parseRequest(uint32_t n)
 
    U_INTERNAL_ASSERT(last_request)
 
-   uint32_t startHeader = last_request.find(U_CRLF, 0, 2) + 2;
+   uint32_t sz = last_request.size(), 
+            startHeader = last_request.find(U_CRLF, 0, 2) + 2;
 
-   U_ASSERT_RANGE(11, startHeader, last_request.size())
+   if (startHeader <= sz &&
+       startHeader >= U_CONSTANT_SIZE("GET / HTTP/1.0\r\n"))
+      {
+      UClient_Base::iovcnt = n;
 
-   const char* ptr = last_request.data();
+      const char* ptr = last_request.data();
 
-   UClient_Base::iovcnt = n;
+      UClient_Base::iov[0].iov_base = (caddr_t)ptr;
+      UClient_Base::iov[0].iov_len  = startHeader;
+      UClient_Base::iov[1].iov_base = U_NULLPTR;
+      UClient_Base::iov[1].iov_len  = 0;
+      UClient_Base::iov[2].iov_base = (caddr_t)ptr + startHeader;
+      UClient_Base::iov[2].iov_len  =           sz - startHeader;
 
-   UClient_Base::iov[0].iov_base = (caddr_t)ptr;
-   UClient_Base::iov[0].iov_len  = startHeader;
-   UClient_Base::iov[1].iov_base = 0;
-   UClient_Base::iov[1].iov_len  = 0;
-   UClient_Base::iov[2].iov_base = (caddr_t)ptr        + startHeader;
-   UClient_Base::iov[2].iov_len  = last_request.size() - startHeader;
+      U_RETURN(true);
+      }
+
+   U_RETURN(false);
 }
 
 UString UHttpClient_Base::wrapRequest(UString* req, const UString& host_port, uint32_t method_num, const char* _uri,
@@ -789,15 +810,17 @@ void UHttpClient_Base::composeRequest(const char* content_type, uint32_t content
 {
    U_TRACE(0, "UHttpClient_Base::composeRequest(%.*S,%u)", content_type_len, content_type, content_type_len)
 
+   U_INTERNAL_DUMP("UClient_Base::uri = %V", UClient_Base::uri.rep)
+
    U_INTERNAL_ASSERT(UClient_Base::uri)
 
    U_INTERNAL_DUMP("method_num = %u", method_num)
 
-   if (method_num == 0) // GET
+   if (method_num <= 1) // GET/HEAD
       {
-      last_request = wrapRequest(0, UClient_Base::host_port, method_num, U_STRING_TO_PARAM(UClient_Base::uri), "\r\n");
+      last_request = wrapRequest(U_NULLPTR, UClient_Base::host_port, method_num, U_STRING_TO_PARAM(UClient_Base::uri), "\r\n");
 
-      parseRequest(3);
+      (void) parseRequest(3);
       }
    else
       {
@@ -806,8 +829,6 @@ void UHttpClient_Base::composeRequest(const char* content_type, uint32_t content
 
       uint32_t sz = body.size();
 
-      U_INTERNAL_ASSERT_MAJOR(sz, 0)
-
       UClient_Base::iov[3].iov_base = (caddr_t)body.data();
       UClient_Base::iov[3].iov_len  = sz;
 
@@ -815,14 +836,14 @@ void UHttpClient_Base::composeRequest(const char* content_type, uint32_t content
 
       last_request.snprintf(U_CONSTANT_TO_PARAM("%.*s %v HTTP/1.1\r\n"
                             "Host: %v:%u\r\n"
-                            "User-Agent: ULib/1.4.2\r\n"
-                            "Content-Length: %d\r\n"
+                            "User-Agent: ULib/" ULIB_VERSION "\r\n"
+                            "Content-Length: %u\r\n"
                             "Content-Type: %.*s\r\n"
                             "\r\n"),
                             U_HTTP_METHOD_NUM_TO_TRACE(method_num),
                             UClient_Base::uri.rep, UClient_Base::server.rep, UClient_Base::port, sz, content_type_len, content_type);
 
-      parseRequest(4);
+      (void) parseRequest(4);
       }
 }
 
@@ -832,8 +853,12 @@ bool UHttpClient_Base::sendRequestEngine()
 
    U_INTERNAL_ASSERT_RANGE(1,UClient_Base::iovcnt,6)
 
-   UString headers;
+   UString headers, _uri;
    int result = -1, redirectCount = 0, sendCount = 0;
+
+   if (isPasswordAuthentication()) _uri = UClient_Base::url.getPath();
+
+   U_INTERNAL_DUMP("_uri = %V", _uri.rep)
 
    while (true)
       {
@@ -856,33 +881,31 @@ bool UHttpClient_Base::sendRequestEngine()
                  body.clear();
       responseHeader->clear();
 
-      UClient_Base::response.setEmpty();
-
       result = (UClient_Base::sendRequestAndReadResponse() &&
-                responseHeader->readHeader(UClient_Base::socket, UClient_Base::response) // read the HTTP response header
-                     ? checkResponse(redirectCount)
+                UClient_Base::processHeader(responseHeader)
+                     ? checkResponse(redirectCount, _uri)
                      : -1);
 
-      if (result ==  1) continue;       // redirection, use the same socket connection...
-      if (result == -2) U_RETURN(true); // pass HTTP_UNAUTHORISED response to the HTTP client...
-      if (result ==  2)                 // no redirection, read body...
+      if (result ==  1) continue;       // redirection, we use the same socket connection...
+      if (result == -2) U_RETURN(true); // we must pass HTTP_UNAUTHORISED response to the HTTP client...
+      if (result ==  2)                 // no redirection, we must read body...
          {
-         U_DUMP("SERVER RETURNED HTTP RESPONSE: %d", U_http_info.nResponseCode)
+         U_INTERNAL_DUMP("SERVER RETURNED HTTP RESPONSE: %d", U_http_info.nResponseCode)
 
-         U_http_info.clength = responseHeader->getHeader(U_CONSTANT_TO_PARAM("Content-Length")).strtol(10);
+         U_http_info.clength = responseHeader->getHeader(U_CONSTANT_TO_PARAM("Content-Length")).strtoul();
 
          U_INTERNAL_DUMP("U_http_info.clength = %u", U_http_info.clength)
 
          if (U_http_info.clength == 0)
             {
-            bool is_chunked = responseHeader->isChunked();
+            data_chunked = responseHeader->isChunked();
 
-            if (is_chunked) U_http_flag |=  HTTP_IS_DATA_CHUNKED;
-            else            U_http_flag &= ~HTTP_IS_DATA_CHUNKED;
+            if (data_chunked) U_http_flag |=  HTTP_IS_DATA_CHUNKED;
+            else              U_http_flag &= ~HTTP_IS_DATA_CHUNKED;
 
-            U_INTERNAL_DUMP("is_chunked = %b U_http_data_chunked = %b", is_chunked, U_http_data_chunked)
+            U_INTERNAL_DUMP("data_chunked = %b U_http_data_chunked = %b", data_chunked, U_http_data_chunked)
 
-            if (is_chunked == false) U_RETURN(true);
+            if (data_chunked == false) U_RETURN(true);
             }
 
          if (UHTTP::readBodyResponse(UClient_Base::socket, &response, body)) U_RETURN(true);
@@ -913,15 +936,16 @@ bool UHttpClient_Base::sendRequest()
 
    U_INTERNAL_ASSERT_RANGE(0,UClient_Base::iovcnt,6)
 
-   U_INTERNAL_DUMP("server_context_flag = %b U_ClientImage_close = %b", server_context_flag, U_ClientImage_close)
+   U_INTERNAL_DUMP("server_context_flag = %b U_ClientImage_close = %b U_http_info.startHeader = %u", server_context_flag, U_ClientImage_close, U_http_info.startHeader)
 
    bool ok;
    uint64_t flag_save = 0;
+   struct uhttpinfo http_info_save;
 
    if (server_context_flag)
       {
-      u_http_info_save = U_http_info;
-             flag_save = u_clientimage_info.flag.u;
+           flag_save = u_clientimage_info.flag.u;
+      http_info_save = u_clientimage_info.http_info;
       }
 
    if (UClient_Base::iovcnt == 0)
@@ -947,11 +971,11 @@ bool UHttpClient_Base::sendRequest()
       {
       u_clientimage_info.flag.u = flag_save;
 
-                    u_http_info_save.nResponseCode = U_http_info.nResponseCode;
-      U_http_info = u_http_info_save;
+                    http_info_save.nResponseCode = U_http_info.nResponseCode;
+      U_http_info = http_info_save;
       }
 
-   U_INTERNAL_DUMP("server_context_flag = %b U_ClientImage_close = %b", server_context_flag, U_ClientImage_close)
+   U_INTERNAL_DUMP("server_context_flag = %b U_ClientImage_close = %b U_http_info.startHeader = %u", server_context_flag, U_ClientImage_close, U_http_info.startHeader)
 
    U_RETURN(ok);
 }
@@ -964,28 +988,33 @@ bool UHttpClient_Base::sendRequest(const UString& req)
 
    last_request = req;
 
-   parseRequest();
-
-   bool result = false;
-   char http_method_num_save = U_http_method_num;
-                               U_http_method_num = 0;
-
-   if (UHTTP::scanfHeaderRequest((const char*)UClient_Base::iov[0].iov_base, UClient_Base::iov[0].iov_len))
+   if (parseRequest(3))
       {
-      U_INTERNAL_DUMP("U_http_method_type = %B", U_http_method_type)
+      bool result = false;
+      char http_method_num_save = U_http_method_num;
+                                  U_http_method_num = 0;
 
-      U_INTERNAL_ASSERT(UHTTP::isGETorPOST())
+      if (UHTTP::scanfHeaderRequest((const char*)UClient_Base::iov[0].iov_base, UClient_Base::iov[0].iov_len))
+         {
+         U_INTERNAL_DUMP("U_http_method_type = %B U_http_method_num = %u", U_http_method_type, U_http_method_num)
 
-      method_num = (U_http_method_type == HTTP_GET ? 0 : 2); // GET|POST
+         method_num = U_http_method_num;
 
-      (void) UClient_Base::uri.assign(U_HTTP_URI_QUERY_TO_PARAM);
+         (void) UClient_Base::uri.assign(U_HTTP_URI_QUERY_TO_PARAM);
 
-      if (sendRequest()) result = true;
+         U_INTERNAL_DUMP("UClient_Base::uri = %V", UClient_Base::uri.rep)
+
+         U_http_info.startHeader += U_CONSTANT_SIZE(U_CRLF);
+
+         if (sendRequest()) result = true;
+         }
+
+      U_http_method_num = http_method_num_save;
+
+      U_RETURN(result);
       }
 
-   U_http_method_num = http_method_num_save;
-
-   U_RETURN(result);
+   U_RETURN(false);
 }
 
 bool UHttpClient_Base::sendRequest(int method, const char* content_type, uint32_t content_type_len, const char* data, uint32_t data_len, const char* _uri, uint32_t uri_len)
@@ -1013,9 +1042,9 @@ bool UHttpClient_Base::sendRequest(int method, const char* content_type, uint32_
    U_RETURN(ok);
 }
 
-bool UHttpClient_Base::sendPost(const UString& _url, const UString& _body, const char* content_type, uint32_t content_type_len)
+bool UHttpClient_Base::sendPOST(const UString& _url, const UString& _body, const char* content_type, uint32_t content_type_len)
 {
-   U_TRACE(0, "UHttpClient_Base::sendPost(%V,%V,%.*S,%u)", _url.rep, _body.rep, content_type_len, content_type, content_type_len)
+   U_TRACE(0, "UHttpClient_Base::sendPOST(%V,%V,%.*S,%u)", _url.rep, _body.rep, content_type_len, content_type, content_type_len)
 
    if (UClient_Base::connectServer(_url) == false)
       {
@@ -1026,14 +1055,14 @@ bool UHttpClient_Base::sendPost(const UString& _url, const UString& _body, const
 
    // send POST(2) request to server and get response
 
-   if (sendRequest(2, content_type, content_type_len, U_STRING_TO_PARAM(_body), 0, 0)) U_RETURN(true);
+   if (sendRequest(2, content_type, content_type_len, U_STRING_TO_PARAM(_body), U_NULLPTR, 0)) U_RETURN(true);
 
    U_RETURN(false);
 }
 
-bool UHttpClient_Base::upload(const UString& _url, UFile& file, const char* filename, uint32_t filename_len, int method)
+bool UHttpClient_Base::uploadByPOST(const UString& _url, UFile& file, const char* filename, uint32_t filename_len)
 {
-   U_TRACE(0, "UHttpClient_Base::upload(%V,%.*S,%.*S,%u,%d)", _url.rep, U_FILE_TO_TRACE(file), filename_len, filename, filename_len, method)
+   U_TRACE(0, "UHttpClient_Base::uploadByPOST(%V,%.*S,%.*S,%u)", _url.rep, U_FILE_TO_TRACE(file), filename_len, filename, filename_len)
 
    if (UClient_Base::connectServer(_url) == false) body = UClient_Base::response; // NB: it contains the error message...
    else
@@ -1047,8 +1076,70 @@ bool UHttpClient_Base::upload(const UString& _url, UFile& file, const char* file
          U_INTERNAL_ASSERT(UClient_Base::uri)
 
 #     ifdef USE_LIBMAGIC
-         if (UMagic::magic == 0) (void) UMagic::init();
+         if (UMagic::magic == U_NULLPTR) (void) UMagic::init();
 #     endif
+
+         if (filename_len == 0)
+            {
+            filename     = file.getPathRelativ();
+            filename_len = file.getPathRelativLen();
+            }
+
+         UString _body(filename_len + 300U);
+
+         _body.snprintf(U_CONSTANT_TO_PARAM("------------------------------b34551106891\r\n"
+                        "Content-Disposition: form-data; name=\"file\"; filename=\"%.*s\"\r\n"
+                        "Content-Type: %s\r\n"
+                        "\r\n"),
+                        filename_len, filename,
+                        file.getMimeType());
+
+         UClient_Base::iov[3].iov_base = (caddr_t)_body.data();
+         UClient_Base::iov[3].iov_len  = _body.size();
+         UClient_Base::iov[4].iov_base = (caddr_t)content.data();
+         UClient_Base::iov[4].iov_len  = sz;
+         UClient_Base::iov[5].iov_base = (caddr_t)       "\r\n"
+                                                         "------------------------------b34551106891--\r\n";
+         UClient_Base::iov[5].iov_len  = U_CONSTANT_SIZE("\r\n"
+                                                         "------------------------------b34551106891--\r\n");
+
+         (void) last_request.reserve(UClient_Base::uri.size() + UClient_Base::server.size() + 300U);
+
+         last_request.snprintf(U_CONSTANT_TO_PARAM("POST %v HTTP/1.1\r\n"
+                               "Host: %v:%u\r\n"
+                               "User-Agent: ULib/" ULIB_VERSION "\r\n"
+                               "Content-Length: %u\r\n"
+                               "Content-Type: multipart/form-data; boundary=----------------------------b34551106891\r\n"
+                               "\r\n"),
+                               UClient_Base::uri.rep, UClient_Base::server.rep, UClient_Base::port, _body.size() + sz + UClient_Base::iov[5].iov_len);
+
+         (void) parseRequest(6);
+
+         // send upload request to server and get response
+
+         if (sendRequest()) U_RETURN(true);
+         }
+      }
+
+   U_RETURN(false);
+}
+
+bool UHttpClient_Base::uploadByPUT(const UString& _url, UFile& file, bool bresume)
+{
+   U_TRACE(0, "UHttpClient_Base::uploadByPUT(%V,%.*S,%b)", _url.rep, U_FILE_TO_TRACE(file), bresume)
+
+   if (UClient_Base::connectServer(_url) == false) body = UClient_Base::response; // NB: it contains the error message...
+   else
+      {
+      UString content = file.getContent();
+
+      uint32_t sz = content.size();
+
+      if (sz)
+         {
+         char _buffer[U_PATH_MAX];
+
+         U_INTERNAL_ASSERT(UClient_Base::uri)
 
          /**
           * The PUT method, though not as widely used as the POST method is perhaps the more efficient way of uploading files to a server.
@@ -1066,75 +1157,124 @@ bool UHttpClient_Base::upload(const UString& _url, UFile& file, const char* file
           * enclosed with the request
           */
 
-         if (method == 3) // 3 => PUT
-            {
-            uint32_t nup = (filename_len == 0 ? 0
-                                              : U_CONSTANT_SIZE("/upload/"));
+         char*    pathname = UClient_Base::uri.data();
+         uint32_t pathlen  = UClient_Base::uri.size();
 
-            if (nup == 0)
+         if (pathlen == 0 ||
+             u_get_unalignedp64(pathname) != U_MULTICHAR_CONSTANT64('/','u','p','l','o','a','d','/'))
+            {
+            pathlen = u__snprintf(pathname = _buffer, U_PATH_MAX, U_CONSTANT_TO_PARAM("/upload/%v"), UStringExt::basename(file.getPath()).rep);
+            }
+
+         (void) last_request.reserve(pathlen + UClient_Base::server.size() + 300U);
+
+         if (bresume)
+            {
+            // ---------------------------------------------------------------------------------------------------------------------------------------------------
+            // To check how much of a file has transferred, perform the exact same PUT request without the file data and with the header: Content-Range: bytes */*
+            //
+            // An example request:
+            //
+            // PUT /upload/video.mp4
+            // Host: 1.2.li3.4:8080
+            // Content-Length: 0
+            // Content-Range: bytes */*
+            //
+            // If this file exists, this will return a response with a HTTP 308 status code and a Range header with the number of bytes on the server.
+            //
+            // HTTP/1.1 308
+            // Content-Length: 0
+            // Range: bytes=0-1000
+            // ---------------------------------------------------------------------------------------------------------------------------------------------------
+
+            last_request.snprintf(U_CONSTANT_TO_PARAM("PUT %.*s HTTP/1.1\r\n"
+                                  "Host: %v:%u\r\n"
+                                  "Content-Length: 0\r\n"
+                                  "Content-Range: bytes */*\r\n"
+                                  "\r\n"),
+                                  pathlen, pathname,
+                                  UClient_Base::server.rep, UClient_Base::port);
+
+            (void) parseRequest(3);
+
+            if (UClient_Base::sendRequestAndReadResponse())
                {
-               filename     = UClient_Base::uri.data();
-               filename_len = UClient_Base::uri.size();
+               responseHeader->clear();
+
+               if (UClient_Base::processHeader(responseHeader))
+                  {
+                  U_DUMP("HTTP status = (%d, %S)", U_http_info.nResponseCode, UHTTP::getStatusDescription())
+
+                  if (U_http_info.nResponseCode == HTTP_PERMANENT_REDIRECT)
+                     {
+                     UString range   = responseHeader->getRange();
+                     const char* ptr = range.c_pointer(U_CONSTANT_SIZE("bytes=0-")); 
+                     uint32_t rsz    = (*ptr == '0' ? 0 : u_strtol(ptr, range.pend()));
+
+                     U_INTERNAL_DUMP("ptr = %.8S rsz = %u sz = %u", ptr, rsz, sz)
+
+                     if (rsz == sz) U_RETURN(true);
+
+                     if (rsz == 0) goto next;
+
+                     // ---------------------------------------------------------------------------------------------------------------------------------------------------
+                     // If you perform a request like above and find that the returned number is NOT the size of your uploaded file, then it is a good idea to
+                     // resume where you left off. To resume, perform the same PUT you did before but with an additional header:
+                     // Content-Range: bytes (last byte on server + 1)-(last byte I will be sending)/(total filesize) 
+                     //
+                     // As shown before our uploaded file was 339108 total bytes in size but our "Content-Range: bytes */*" verification call
+                     // returned a value of 1000. To resume, we would send the following headers with the binary data of our file starting at byte 1001:
+                     //
+                     // PUT /upload/video.mp4
+                     // Host: 1.2.3.4:8080
+                     // Content-Length: 338108
+                     // Content-Type: video/mp4
+                     // Content-Range: bytes 1001-339108/339108
+                     //
+                     // .... binary data of your file here ....
+                     //
+                     // If all goes well, you will receive a 200 status code. A 400 code means the Content-Range header did not resume from the last byte on the server
+                     // ---------------------------------------------------------------------------------------------------------------------------------------------------
+
+                     last_request.snprintf(U_CONSTANT_TO_PARAM("PUT %.*s HTTP/1.1\r\n"
+                               "Host: %v:%u\r\n"
+                               "User-Agent: ULib/" ULIB_VERSION "\r\n"
+                               "Content-Length: %u\r\n"
+                               "Content-Range: bytes %u-%u/%u\r\n"
+                               "\r\n"),
+                               pathlen, pathname,
+                               UClient_Base::server.rep, UClient_Base::port,
+                               sz-rsz,
+                               rsz+1,sz,sz);
+
+                     UClient_Base::iov[3].iov_base = (caddr_t)content.c_pointer(rsz);
+                     UClient_Base::iov[3].iov_len  = sz-rsz;
+
+                     (void) parseRequest(4);
+
+                     // send upload request to server and get response
+
+                     if (sendRequest()) U_RETURN(true);
+                     }
+                  }
                }
 
-            (void) last_request.reserve(filename_len + UClient_Base::server.size() + 300U);
-
-            last_request.snprintf(U_CONSTANT_TO_PARAM("PUT %.*s%.*s HTTP/1.1\r\n"
-                                  "Host: %v:%u\r\n"
-                                  "User-Agent: ULib/1.4.2\r\n"
-                                  "Content-Length: %u\r\n"
-                                  "Content-Type: %s\r\n"
-                                  "\r\n"),
-                                  nup, "/upload/",
-                                  filename_len, filename,
-                                  UClient_Base::server.rep, UClient_Base::port,
-                                  sz, file.getMimeType());
-
-            UClient_Base::iov[3].iov_base = (caddr_t)content.data();
-            UClient_Base::iov[3].iov_len  = sz;
-
-            parseRequest(4);
+            U_RETURN(false);
             }
-         else
-            {
-            U_INTERNAL_ASSERT_EQUALS(method, 2) // 2 => POST
 
-            if (filename_len == 0)
-               {
-               filename     = file.getPathRelativ();
-               filename_len = file.getPathRelativLen();
-               }
+next:    last_request.snprintf(U_CONSTANT_TO_PARAM("PUT %.*s HTTP/1.1\r\n"
+                               "Host: %v:%u\r\n"
+                               "User-Agent: ULib/" ULIB_VERSION "\r\n"
+                               "Content-Length: %u\r\n"
+                               "\r\n"),
+                               pathlen, pathname,
+                               UClient_Base::server.rep, UClient_Base::port,
+                               sz);
 
-            UString _body(filename_len + 300U);
+         UClient_Base::iov[3].iov_base = (caddr_t)content.data();
+         UClient_Base::iov[3].iov_len  = sz;
 
-            _body.snprintf(U_CONSTANT_TO_PARAM("------------------------------b34551106891\r\n"
-                           "Content-Disposition: form-data; name=\"file\"; filename=\"%.*s\"\r\n"
-                           "Content-Type: %s\r\n"
-                           "\r\n"),
-                           filename_len, filename,
-                           file.getMimeType());
-
-            UClient_Base::iov[3].iov_base = (caddr_t)_body.data();
-            UClient_Base::iov[3].iov_len  = _body.size();
-            UClient_Base::iov[4].iov_base = (caddr_t)content.data();
-            UClient_Base::iov[4].iov_len  = sz;
-            UClient_Base::iov[5].iov_base = (caddr_t)       "\r\n"
-                                                            "------------------------------b34551106891--\r\n";
-            UClient_Base::iov[5].iov_len  = U_CONSTANT_SIZE("\r\n"
-                                                            "------------------------------b34551106891--\r\n");
-
-            (void) last_request.reserve(UClient_Base::uri.size() + UClient_Base::server.size() + 300U);
-
-            last_request.snprintf(U_CONSTANT_TO_PARAM("POST %v HTTP/1.1\r\n"
-                                  "Host: %v:%u\r\n"
-                                  "User-Agent: ULib/1.4.2\r\n"
-                                  "Content-Length: %u\r\n"
-                                  "Content-Type: multipart/form-data; boundary=----------------------------b34551106891\r\n"
-                                  "\r\n"),
-                                  UClient_Base::uri.rep, UClient_Base::server.rep, UClient_Base::port, _body.size() + sz + UClient_Base::iov[5].iov_len);
-
-            parseRequest(6);
-            }
+         (void) parseRequest(4);
 
          // send upload request to server and get response
 
@@ -1171,6 +1311,6 @@ const char* UHttpClient_Base::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

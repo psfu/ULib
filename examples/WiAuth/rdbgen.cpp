@@ -1,6 +1,7 @@
 // rdbgen.cpp
 
 #include <ulib/db/rdb.h>
+#include <ulib/net/server/server.h>
 
 #undef  PACKAGE
 #define PACKAGE "rdbgen"
@@ -43,29 +44,62 @@ public:
 
       UApplication::run(argc, argv, env);
 
-      UString path_of_db_file(argv[optind++]); 
+      uint32_t plen;
+      const char* p = argv[optind++];
 
-      if (path_of_db_file.empty()) U_ERROR("missing <path_of_db_file> argument");
-
-      URDB x(path_of_db_file, false);
-
-      if (x.UFile::getSuffix().equal(U_CONSTANT_TO_PARAM("jnl")))
+      if (p == U_NULLPTR ||
+          (plen = u__strlen(p, __PRETTY_FUNCTION__)) == 0)
          {
-         U_ERROR("you must avoid the jnl suffix, exiting");
+         U_ERROR("missing <path_of_db_file> argument");
          }
+
+      U_INTERNAL_DUMP("optind = %d argv[optind] = %S", optind, argv[optind])
 
       const char* method = argv[optind++];
 
-      if (method == 0) U_ERROR("<number_of_command> argument is missing");
+      if (method == U_NULLPTR) U_ERROR("<number_of_command> argument is missing");
 
       if (u__isdigit(*method) == false) U_ERROR("<number_of_command> argument is not numeric");
 
       int op = method[0] - '0';
+      bool bjournal2remove = false;
+      const char* suffix = u_getsuffix(p, plen);
 
-      if (x.open(10 * 1024 * 1024, false, op == 6, true)) // bool open(uint32_t log_size, bool btruncate, bool cdb_brdonly, bool breference)
+      if (suffix)
          {
-         if (method[1] == 's') x.setShared(0,0); // POSIX shared memory object (interprocess - can be used by unrelated processes)
-         else                  x.resetReference();
+         U_INTERNAL_DUMP("suffix = %S", suffix)
+
+         if (memcmp(suffix+1, U_CONSTANT_TO_PARAM("cdb")) == 0)
+            {
+            char buffer[U_PATH_MAX];
+
+            (void) memcpy(buffer, p, plen);
+            (void) memcpy(buffer+plen, ".jnl", sizeof(".jnl"));
+
+            if (UFile::access(buffer, R_OK) == false) bjournal2remove = true;
+            }
+         else if (memcmp(suffix+1, U_CONSTANT_TO_PARAM("jnl")) == 0)
+            {
+            plen -= U_CONSTANT_SIZE(".jnl");
+
+            U_WARNING("you must avoid the jnl suffix");
+            }
+         }
+
+      URDB x(UString(p, plen), false);
+
+      bool bshm  = (method[1] == 's'),
+           bopen = (bshm ? x.open(10 * 1024 * 1024, false, (op == 6), true, U_NULLPTR)
+                         : x.open(10 * 1024 * 1024, false, (op == 6), true));
+
+      if (bopen)
+         {
+         if (bjournal2remove) (void) x.getJournal()._unlink(); // NB: we have only the constant db
+         if (x.UFile::st_size == 0) (void) x.UFile::_unlink(); // NB: we have only the journal
+
+         if (bshm == false) x.resetReference();
+
+         U_INTERNAL_DUMP("optind = %d argv[optind] = %S op = %d", optind, argv[optind], op)
 
          switch (op)
             {
@@ -73,7 +107,7 @@ public:
                {
                UString key(argv[optind]), value = x[key]; 
 
-               (void) UFile::writeToTmp(U_STRING_TO_PARAM(value), O_RDWR | O_TRUNC, U_CONSTANT_TO_PARAM(U_FILE_OUTPUT), 0);
+               U_FILE_WRITE_TO_TMP(value, U_FILE_OUTPUT);
                }
             break;
 
@@ -95,9 +129,18 @@ public:
 
             case 3: // store
                {
-               UString key(argv[optind]), value(argv[++optind]);
+               UString key(argv[optind]);
 
-               if (value.equal(U_CONSTANT_TO_PARAM(U_DIR_OUTPUT U_FILE_OUTPUT))) value = UStringExt::trim(UFile::contentOf(UString(U_DIR_OUTPUT U_FILE_OUTPUT)));
+               p = argv[optind++]; 
+
+               UString value(p, strlen(p));
+
+               if (value.equal(U_CONSTANT_TO_PARAM(U_DIR_OUTPUT U_FILE_OUTPUT)))
+                  {
+                  p = U_DIR_OUTPUT U_FILE_OUTPUT;
+
+                  value = UStringExt::trim(UFile::contentOf(UString(p, strlen(p))));
+                  }
 
                UApplication::exit_value = x.store(key, value, RDB_REPLACE);
                }
@@ -105,10 +148,11 @@ public:
 
             case 4: // size, capacity
                {
-               char buffer[64];
-               uint32_t sz = x.getCapacity(),
-                        n  = u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("%u record(s) - capacity: %.2fM (%u bytes)\n"),
-                                         x.size(), (double)sz / (1024.0 * 1024.0), sz);
+               char buffer[128];
+               uint32_t sz  = x.getCapacity(),
+                        jsz = x.getJournalSize(),
+                        n   = u__snprintf(buffer, sizeof(buffer), U_CONSTANT_TO_PARAM("journal.size() =  %.2fM (%u bytes) - %u record(s) - capacity: %.2fM (%u bytes)\n"),
+                                         (double)jsz / (1024.0 * 1024.0), jsz, x.size(), (double)sz / (1024.0 * 1024.0), sz);
 
                (void) write(1, buffer, n);
                }
@@ -116,10 +160,21 @@ public:
 
             case 5: // dump
                {
-               UString value = x.print();
+               UString y = x.UFile::getName();
 
-               if (value.empty()) (void) UFile::_unlink(U_DIR_OUTPUT U_FILE_OUTPUT);
-               else               (void) UFile::writeToTmp(U_STRING_TO_PARAM(value), O_RDWR | O_TRUNC, U_CONSTANT_TO_PARAM(U_FILE_OUTPUT), 0);
+               p = y.data();
+
+#           ifdef U_EVASIVE_SUPPORT
+               if (memcmp(p, U_CONSTANT_TO_PARAM("Evasive")) == 0) UString::printValueToBuffer = UServer_Base::printEvasiveRecToBuffer;
+#           endif
+#           ifdef U_THROTTLING_SUPPORT
+               if (memcmp(p, U_CONSTANT_TO_PARAM("BandWidthThrottling")) == 0) UString::printValueToBuffer = UServer_Base::printThrottlingRecToBuffer;
+#           endif
+
+               y = x.print();
+
+               if (y.empty()) (void) UFile::_unlink(U_DIR_OUTPUT U_FILE_OUTPUT);
+               else                       U_FILE_WRITE_TO_TMP(y, U_FILE_OUTPUT);
                }
             break;
 

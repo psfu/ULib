@@ -35,17 +35,17 @@ public:
    U_MEMORY_ALLOCATOR
    U_MEMORY_DEALLOCATOR
 
-    URPCParser(UVector<UString>* arg = 0);
+    URPCParser(UVector<UString>* arg = U_NULLPTR);
 
    ~URPCParser()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, URPCParser)
+      U_TRACE_DTOR(0, URPCParser)
 
       clearData();
 
       U_INTERNAL_ASSERT_POINTER(envelope.arg)
 
-      delete envelope.arg;
+      U_DELETE(envelope.arg)
       }
 
    // SERVICES

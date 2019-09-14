@@ -21,6 +21,10 @@
 #  include <ulib/magic/magic.h>
 #endif
 
+#ifdef HAVE_NUMA
+#  include <numaif.h>
+#endif
+
 char*    UFile::cwd_save;
 char*    UFile::pfree;
 long     UFile::nr_hugepages;
@@ -51,17 +55,8 @@ void UFile::inc_num_file_object(UFile* pthis)
    U_INTERNAL_ASSERT_EQUALS((void*)pthis, (void*)&(pthis->st_dev))
 }
 
-void UFile::dec_num_file_object(int fd)
-{
-   --num_file_object;
-
-   if (fd != -1) U_WARNING("File descriptor %d not closed...", fd);
-}
-
-void UFile::chk_num_file_object()
-{
-   if (num_file_object) U_WARNING("UFile::chdir() with num file object = %d", num_file_object);
-}
+void UFile::chk_num_file_object()       { if (num_file_object) U_WARNING("UFile::chdir() with num file object = %d", num_file_object); }
+void UFile::dec_num_file_object(int fd) {   --num_file_object; if (fd != -1) U_WARNING("File descriptor %d not closed...", fd); }
 #endif
 
 #ifndef MREMAP_MAYMOVE
@@ -72,76 +67,19 @@ void UFile::setPathRelativ(const UString* environment)
 {
    U_TRACE(0, "UFile::setPathRelativ(%p)", environment)
 
-   U_CHECK_MEMORY
-
    U_INTERNAL_ASSERT(pathname)
 
-   reset();
-
-   const char* ptr = (pathname.isNullTerminated() ? pathname.data() : pathname.c_str());
-
-   char c = *ptr;
+   char c = pathname.first_char();
 
    if (c == '~' ||
        c == '$')
       {
       UString x = UStringExt::expandPath(pathname, environment);
 
-      if (x)
-         {
-         pathname = x;
-
-         ptr = pathname.data();
-         }
+      if (x) pathname = x;
       }
 
-   // NB: the string can be not writable...
-
-   path_relativ_len = pathname.size();
-   path_relativ     = u_getPathRelativ(ptr, &path_relativ_len);
-
-   U_INTERNAL_ASSERT_MAJOR(path_relativ_len, 0)
-
-   // we don't need this... (I think)
-
-   /*
-   if (pathname.writeable() &&
-       pathname.size() != path_relativ_len)
-      {
-      path_relativ[path_relativ_len] = '\0';
-      }
-   */
-
-   U_INTERNAL_DUMP("u_cwd(%u) = %S", u_cwd_len, u_cwd)
-   U_INTERNAL_DUMP("pathname(%u) = %V", pathname.size(), pathname.rep)
-   U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
-}
-
-void UFile::setRoot()
-{
-   U_TRACE_NO_PARAM(0, "UFile::setRoot()")
-
-   reset();
-
-   pathname.setConstant(U_CONSTANT_TO_PARAM("/"));
-
-   st_mode          = S_IFDIR|0755;
-   path_relativ     = pathname.data();
-   path_relativ_len = 1;
-
-   U_INTERNAL_DUMP("u_cwd(%u) = %S", u_cwd_len, u_cwd)
-   U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
-}
-
-// gcc - call is unlikely and code size would grow
-
-void UFile::setPath(const UString& path, const UString* environment)
-{
-   U_TRACE(0, "UFile::setPath(%V,%p)", path.rep, environment)
-
-   pathname = path;
-
-   setPathRelativ(environment);
+   setPathRelativ();
 }
 
 bool UFile::open(int flags)
@@ -151,30 +89,17 @@ bool UFile::open(int flags)
    U_CHECK_MEMORY
 
    U_INTERNAL_ASSERT_EQUALS(fd, -1)
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-   U_INTERNAL_ASSERT_MAJOR(path_relativ_len, 0)
 
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
+   U_INTERNAL_ASSERT_MAJOR(path_relativ_len, 0)
 
    fd = UFile::open(path_relativ, flags, PERM_FILE);
 
    if (fd != -1) U_RETURN(true);
 
    U_RETURN(false);
-}
-
-int UFile::open(const char* _pathname, int flags, mode_t mode)
-{
-   U_TRACE(1, "UFile::open(%S,%d,%d)", _pathname, flags, mode)
-
-   U_INTERNAL_ASSERT_POINTER(_pathname)
-   U_INTERNAL_ASSERT_MAJOR(u__strlen(_pathname, __PRETTY_FUNCTION__), 0)
-
-   // NB: we centralize here O_BINARY...
-
-   int _fd = U_SYSCALL(open, "%S,%d,%d", U_PATH_CONV(_pathname), flags | O_CLOEXEC | O_BINARY, mode);
-
-   U_RETURN(_fd);
 }
 
 bool UFile::creat(int flags, mode_t mode)
@@ -184,9 +109,10 @@ bool UFile::creat(int flags, mode_t mode)
    U_CHECK_MEMORY
 
    U_INTERNAL_ASSERT_EQUALS(fd, -1)
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
 
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 
    fd = UFile::open(path_relativ, O_CREAT | flags, mode);
 
@@ -195,30 +121,47 @@ bool UFile::creat(int flags, mode_t mode)
    U_RETURN(false);
 }
 
-bool UFile::creat(const UString& path, int flags, mode_t mode)
-{
-   U_TRACE(0, "UFile::creat(%V,%d,%d)", path.rep, flags, mode)
-
-   setPath(path);
-
-   return creat(flags, mode);
-}
-
 bool UFile::stat()
 {
    U_TRACE_NO_PARAM(1, "UFile::stat()")
 
    U_CHECK_MEMORY
 
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 
    st_ino = 0;
 
-   bool result = (U_SYSCALL(stat, "%S,%p", U_PATH_CONV(path_relativ), (struct stat*)this) == 0);
+   if (U_SYSCALL(stat, "%S,%p", U_PATH_CONV(path_relativ), (struct stat*)this) == 0) U_RETURN(true);
 
-   U_RETURN(result);
+   st_mode = 0;
+
+   U_RETURN(false);
+}
+
+bool UFile::isRunningInChroot()
+{
+   U_TRACE_NO_PARAM(1, "UFile::isRunningInChroot()")
+
+#ifdef U_LINUX
+   struct stat st;
+
+   if (U_SYSCALL(stat, "%S,%p", "/proc/1/root", &st) == 0)
+      {
+      dev_t st_dev = st.st_dev;
+      ino_t st_ino = st.st_ino;
+
+      if (U_SYSCALL(stat, "%S,%p", "/", &st) == 0 &&
+          (st_dev != st.st_dev                    ||
+           st_ino != st.st_ino))
+         {
+         U_RETURN(true);
+         }
+      }
+#endif
+
+   U_RETURN(false);
 }
 
 bool UFile::chdir(const char* path, bool flag_save)
@@ -319,7 +262,7 @@ void UFile::setPath(const UFile& file, char* buffer_path, const char* suffix, ui
 
    path_relativ_len = file.path_relativ_len + len;
 
-   if (buffer_path == 0)
+   if (buffer_path == U_NULLPTR)
       {
       pathname.setBuffer(path_relativ_len);
       pathname.size_adjust(path_relativ_len);
@@ -345,7 +288,7 @@ UString UFile::getName() const
 
    uint32_t pos;
    UString result;
-   const char* base = 0;
+   const char* base = U_NULLPTR;
    ptrdiff_t name_len = path_relativ_len;
 
    for (const char* ptr = path_relativ, *end = path_relativ + path_relativ_len; ptr < end; ++ptr) if (*ptr == '/') base = ptr + 1;
@@ -369,9 +312,9 @@ bool UFile::isNameDosMatch(const char* mask, uint32_t mask_len) const
 
    UString basename = getName();
 
-   bool result = UServices::dosMatchWithOR(U_STRING_TO_PARAM(basename), mask, mask_len, 0);
+   if (UServices::dosMatchWithOR(U_STRING_TO_PARAM(basename), mask, mask_len, 0)) U_RETURN(true);
 
-   U_RETURN(result);
+   U_RETURN(false);
 }
 
 UString UFile::getDirName() const
@@ -384,8 +327,6 @@ UString UFile::getDirName() const
    U_INTERNAL_ASSERT_MAJOR(path_relativ_len, 0)
 
    UString result = UStringExt::dirname(path_relativ, path_relativ_len);
-
-   U_INTERNAL_ASSERT(result.isNullTerminated())
 
    U_RETURN_STRING(result);
 }
@@ -442,14 +383,14 @@ char* UFile::shm_open(const char* name, uint32_t length)
       {
       (void) U_SYSCALL(ftruncate, "%d,%u", _fd, length); // set the size of the shared memory object
 
-      char* _ptr = (char*) U_SYSCALL(mmap, "%d,%u,%d,%d,%d,%u", 0, length, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
+      char* _ptr = (char*) U_SYSCALL(mmap, "%p,%u,%d,%d,%d,%I", U_NULLPTR, length, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
 
       (void) U_SYSCALL(close, "%d", _fd);
 
       return _ptr;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 
 // unlink POSIX shared memory object
@@ -471,6 +412,8 @@ char* UFile::mmap_anon_huge(uint32_t* plength, int flags)
 {
    U_TRACE(1, "UFile::mmap_anon_huge(%p,%d,%u)", plength, flags)
 
+   char* ptr;
+
 #ifdef U_LINUX
    if (nr_hugepages)
       {
@@ -487,11 +430,19 @@ char* UFile::mmap_anon_huge(uint32_t* plength, int flags)
 
          U_DEBUG("We are going to allocate (%u GB - %u bytes) MAP_HUGE_1GB - nfree = %u flags = %B", length / U_1G, length, nfree, flags | U_MAP_ANON_HUGE | MAP_HUGE_1GB)
 
-         char* ptr = (char*) U_SYSCALL(mmap, "%d,%u,%d,%d,%d,%u", U_MAP_ANON_HUGE_ADDR, length, PROT_READ | PROT_WRITE, flags | U_MAP_ANON_HUGE | MAP_HUGE_1GB, -1, 0);
+         ptr = (char*) U_SYSCALL(mmap, "%p,%u,%d,%d,%d,%I", U_MAP_ANON_HUGE_ADDR, length, PROT_READ | PROT_WRITE, flags | U_MAP_ANON_HUGE | MAP_HUGE_1GB, -1, 0);
 
          if (ptr != (char*)MAP_FAILED)
             {
             *plength = length;
+
+#        ifdef HAVE_NUMA
+            if ((flags & MAP_SHARED) == 0 &&
+                U_SYSCALL(mbind, "%p,%lu,%d,%p,%lu,%u", ptr, length, MPOL_PREFERRED, U_NULLPTR, 0UL, MPOL_MF_MOVE) == -1)
+              {
+              WARNING("unable to mbind memory; performance may suffer");
+              }
+#        endif
 
             return ptr;
             }
@@ -504,11 +455,19 @@ char* UFile::mmap_anon_huge(uint32_t* plength, int flags)
 
       U_DEBUG("We are going to allocate (%u MB - %u bytes) MAP_HUGE_2MB - nfree = %u flags = %B", length / (1024U*1024U), length, nfree, flags | U_MAP_ANON_HUGE | MAP_HUGE_2MB)
 
-      char* ptr = (char*) U_SYSCALL(mmap, "%d,%u,%d,%d,%d,%u", U_MAP_ANON_HUGE_ADDR, length, PROT_READ | PROT_WRITE, flags | U_MAP_ANON_HUGE | MAP_HUGE_2MB, -1, 0);
+      ptr = (char*) U_SYSCALL(mmap, "%p,%u,%d,%d,%d,%I", U_MAP_ANON_HUGE_ADDR, length, PROT_READ | PROT_WRITE, flags | U_MAP_ANON_HUGE | MAP_HUGE_2MB, -1, 0);
 
       if (ptr != (char*)MAP_FAILED)
          {
          *plength = length;
+
+#     ifdef HAVE_NUMA
+         if ((flags & MAP_SHARED) == 0 &&
+             U_SYSCALL(mbind, "%p,%lu,%d,%p,%lu,%u", ptr, length, MPOL_PREFERRED, U_NULLPTR, 0UL, MPOL_MF_MOVE) == -1)
+           {
+           WARNING("unable to mbind memory; performance may suffer");
+           }
+#     endif
 
          return ptr;
          }
@@ -537,7 +496,17 @@ char* UFile::mmap_anon_huge(uint32_t* plength, int flags)
 
    U_DEBUG("We are going to allocate (%u KB - %u bytes) - nfree = %u flags = %B", *plength / 1024U, *plength, nfree, flags)
 
-   return (char*) U_SYSCALL(mmap, "%d,%u,%d,%d,%d,%u", 0, *plength, PROT_READ | PROT_WRITE, flags, -1, 0);
+   ptr = (char*) U_SYSCALL(mmap, "%p,%u,%d,%d,%d,%I", U_NULLPTR, *plength, PROT_READ | PROT_WRITE, flags,  -1, 0);
+
+#ifdef HAVE_NUMA
+   if ((flags & MAP_SHARED) == 0 &&
+       U_SYSCALL(mbind, "%p,%lu,%d,%p,%lu,%u", ptr, *plength, MPOL_PREFERRED, U_NULLPTR, 0UL, MPOL_MF_MOVE) == -1)
+     {
+     WARNING("unable to mbind memory; performance may suffer");
+     }
+#endif
+
+   return ptr;
 }
 
 char* UFile::mmap(uint32_t* plength, int _fd, int prot, int flags, uint32_t offset)
@@ -552,7 +521,7 @@ char* UFile::mmap(uint32_t* plength, int _fd, int prot, int flags, uint32_t offs
 # endif
    if (_fd != -1)
 #endif
-   return (char*) U_SYSCALL(mmap, "%d,%u,%d,%d,%d,%u", 0, *plength, prot, flags, _fd, offset);
+   return (char*) U_SYSCALL(mmap, "%p,%u,%d,%d,%d,%I", U_NULLPTR, *plength, prot, flags, _fd, offset);
 
    U_INTERNAL_ASSERT_EQUALS(prot, PROT_READ | PROT_WRITE)
 
@@ -570,7 +539,7 @@ char* UFile::mmap(uint32_t* plength, int _fd, int prot, int flags, uint32_t offs
 
    if (*plength >= rlimit_memalloc) // NB: we try to avoid strong swap pressure...
       {
-#ifndef U_SERVER_CAPTIVE_PORTAL
+#if defined(U_LINUX) && (!defined(U_SERVER_CAPTIVE_PORTAL) || defined(ENABLE_THREAD))
 try_from_file_system:
 #endif
       *plength = (*plength + U_PAGEMASK) & ~U_PAGEMASK;
@@ -584,7 +553,7 @@ try_from_file_system:
          U_DEBUG("We are going to allocate from file system (%u KB - %u bytes)", *plength / 1024, *plength)
 
          _ptr = (fallocate(fd, *plength)
-                     ? (char*)U_SYSCALL(mmap, "%d,%u,%d,%d,%d,%u", 0, *plength, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_NORESERVE, fd, 0)
+                     ? (char*)U_SYSCALL(mmap, "%p,%u,%d,%d,%d,%I", U_NULLPTR, *plength, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_NORESERVE, fd, 0)
                      : (char*)MAP_FAILED);
 
          close(fd);
@@ -606,14 +575,14 @@ try_from_file_system:
          }
       }
 
-#ifdef U_SERVER_CAPTIVE_PORTAL
+#if !defined(U_LINUX) || (defined(U_SERVER_CAPTIVE_PORTAL) && !defined(ENABLE_THREAD))
    _ptr = (char*) U_SYSCALL(malloc, "%u", *plength);
 
    return _ptr;
 #else
    U_INTERNAL_DUMP("plength = %u nfree = %u pfree = %p", *plength, nfree, pfree)
 
-   if (pfree == 0)
+   if (pfree == U_NULLPTR)
       {
 #  ifdef DEBUG
       unsigned long vsz, rss;
@@ -632,13 +601,13 @@ try_from_file_system:
 #  ifdef U_MEMALLOC_WITH_HUGE_PAGE
       pfree = mmap_anon_huge(&nfree, MAP_PRIVATE | U_MAP_ANON);
 #  else
-      pfree = (char*) U_SYSCALL(mmap, "%d,%u,%d,%d,%d,%u", 0, nfree, PROT_READ | PROT_WRITE, MAP_PRIVATE | U_MAP_ANON, -1, 0);
+      pfree = (char*) U_SYSCALL(mmap, "%p,%u,%d,%d,%d,%I", U_NULLPTR, nfree, PROT_READ | PROT_WRITE, MAP_PRIVATE | U_MAP_ANON, -1, 0);
 #  endif
 
       if (pfree == (char*)MAP_FAILED)
          {
          nfree = 0;
-         pfree = 0;
+         pfree = U_NULLPTR;
          }
       }
 
@@ -690,7 +659,7 @@ try_from_file_system:
    if (nfree > rlimit_memfree) pfree += *plength;
    else
       {
-      pfree     = 0;
+      pfree     = U_NULLPTR;
       *plength += nfree;
       }
 
@@ -700,49 +669,43 @@ try_from_file_system:
 #endif
 }
 
-bool UFile::memmap(int prot, UString* str, uint32_t offset, uint32_t length)
+// A file is mapped in multiples of the page size. For a file that is not a multiple of the page size,
+// the remaining memory is zeroed when mapped, and writes to that region are not written out to the file
+
+bool UFile::memmap(int prot, UString* str, off_t start, off_t count)
 {
-   U_TRACE(0, "UFile::memmap(%d,%p,%u,%u)", prot, str, offset, length)
+   U_TRACE(0, "UFile::memmap(%d,%p,%I,%I)", prot, str, start, count)
 
    U_CHECK_MEMORY
 
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 
    U_INTERNAL_ASSERT_DIFFERS(fd, -1)
    U_INTERNAL_ASSERT_MAJOR(st_size, 0)
 
 #ifdef _MSWINDOWS_
-   U_INTERNAL_ASSERT((off_t)length <= st_size) // NB: don't allow mappings beyond EOF since Windows can't handle that POSIX like...
+   U_INTERNAL_ASSERT(count <= st_size) // NB: don't allow mappings beyond EOF since Windows can't handle that POSIX like...
 #endif
-
-   if (length == 0) length = st_size;
 
    uint32_t resto = 0;
 
-   if (offset)
-      {
-      resto = offset % PAGESIZE;
+   if (count == 0) count = st_size;
 
-      offset -= resto;
-      length += resto;
+   if (start)
+      {
+      resto = start & U_PAGEMASK;
+
+      U_INTERNAL_DUMP("resto = %u", resto)
+
+      U_INTERNAL_ASSERT_EQUALS(resto, start % PAGESIZE)
+
+      start -= resto;
+      count += resto;
       }
 
-   U_INTERNAL_DUMP("resto = %u", resto)
-
-#ifdef HAVE_ARCH64
-   U_INTERNAL_ASSERT_MINOR_MSG(length, U_STRING_MAX_SIZE, "we can't manage file size bigger than 4G...") // limit of UString
-#endif
-
-   U_INTERNAL_ASSERT_EQUALS((offset % PAGESIZE), 0) // offset should be a multiple of the page size as returned by getpagesize(2)
-
-   if (map != (char*)MAP_FAILED)
-      {
-      munmap(map, map_size);
-
-      map_size = 0;
-      }
+   U_INTERNAL_ASSERT_EQUALS(start % PAGESIZE, 0) // offset should be a multiple of the page size as returned by getpagesize(2)
 
    int flags = MAP_SHARED;
 
@@ -750,48 +713,37 @@ bool UFile::memmap(int prot, UString* str, uint32_t offset, uint32_t length)
    if (prot == PROT_READ) flags |= MAP_POPULATE;
 #endif
 
-   map = (char*) U_SYSCALL(mmap, "%d,%u,%d,%d,%d,%u", 0, length, prot, flags, fd, offset);
+   if (map != (char*)MAP_FAILED)
+      {
+      munmap(map, map_size);
+                  map_size = 0;
+      }
+
+   map = (char*) U_SYSCALL(mmap, "%p,%I,%d,%d,%d,%I", U_NULLPTR, count, prot, flags, fd, start);
 
    if (map != (char*)MAP_FAILED)
       {
-      map_size = length;
+      map_size = count;
 
-      if (str)
+      if (str == U_NULLPTR) U_RETURN(true);
+
+      count -= resto;
+
+      U_INTERNAL_DUMP("count = %I U_STRING_MAX_SIZE = %u", count, U_STRING_MAX_SIZE)
+
+      if ((uint64_t)count < U_STRING_MAX_SIZE)
          {
-         str->mmap(map + resto, length - resto);
+         str->mmap(map+resto, count);
 
-#     if defined(U_LINUX) && defined(MADV_SEQUENTIAL)
-         if (prot == PROT_READ &&
-             length > (32 * PAGESIZE))
-            {
-            (void) U_SYSCALL(madvise, "%p,%u,%d", (void*)map, length, MADV_SEQUENTIAL);
-            }
-#     endif
+         map = (char*)MAP_FAILED; // transfer the ownership to string
+
+         U_RETURN(true);
          }
 
-      U_RETURN(true);
+      U_WARNING("Sorry, I  can't manage string size bigger than 4G...") // limit of UString
       }
 
    U_RETURN(false);
-}
-
-void UFile::munmap()
-{
-   U_TRACE_NO_PARAM(0, "UFile::munmap()")
-
-   U_CHECK_MEMORY
-
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
-   U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
-
-   U_INTERNAL_ASSERT_MAJOR(map_size,0UL)
-   U_INTERNAL_ASSERT_DIFFERS(map,(char*)MAP_FAILED)
-
-   UFile::munmap(map, map_size);
-
-   map      = (char*)MAP_FAILED;
-   map_size = 0;
 }
 
 void UFile::msync(char* ptr, char* page, int flags)
@@ -803,6 +755,8 @@ void UFile::msync(char* ptr, char* page, int flags)
    uint32_t resto = (long)page & U_PAGEMASK;
 
    U_INTERNAL_DUMP("resto = %u", resto)
+
+   U_INTERNAL_ASSERT_EQUALS(resto, (long)page % PAGESIZE)
 
    char* addr      = page - resto;
    uint32_t length =  ptr - addr;
@@ -816,14 +770,14 @@ UString UFile::_getContent(bool bsize, bool brdonly, bool bmap)
 {
    U_TRACE(0, "UFile::_getContent(%b,%b,%b)", bsize, brdonly, bmap)
 
-   U_INTERNAL_DUMP("fd = %d map = %p map_size = %u st_size = %I", fd, map, map_size, st_size)
+   U_INTERNAL_DUMP("fd = %d map = %p map_size = %I st_size = %I", fd, map, map_size, st_size)
 
    U_INTERNAL_ASSERT_DIFFERS(fd, -1)
 
 #if defined(DEBUG) && !defined(U_LINUX) && !defined(O_TMPFILE)
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 #endif
 
 # ifdef U_COVERITY_FALSE_POSITIVE
@@ -835,7 +789,7 @@ UString UFile::_getContent(bool bsize, bool brdonly, bool bmap)
    if (st_size)
       {
       if (bmap ||
-          st_size > (off_t)(4L * PAGESIZE))
+          st_size >= (off_t)(4L * PAGESIZE))
          {
          int                   prot  = PROT_READ;
          if (brdonly == false) prot |= PROT_WRITE;
@@ -888,21 +842,28 @@ UString UFile::getContent(bool brdonly, bool bstat, bool bmap)
    U_RETURN_STRING(fileContent);
 }
 
-UString UFile::contentOf(const UString& _pathname, int flags, bool bstat, const UString* environment)
+UString UFile::contentOf(const UString& pathname, const UString& pinclude)
 {
-   U_TRACE(0, "UFile::contentOf(%V,%d,%b,%p)", _pathname.rep, flags, bstat, environment)
+   U_TRACE(0, "UFile::contentOf(%V,%V)", pathname.rep, pinclude.rep)
 
-   U_INTERNAL_ASSERT(_pathname)
+   UFile file(pathname);
 
-   UFile file;
-   UString content;
+   if (file.open()) return file.getContent();
 
-   file.reset();
-   file.setPath(_pathname, environment);
+   if (pinclude)
+      {
+      UString x(U_CAPACITY);
 
-   if (file.open(flags)) content = file.getContent((((flags & O_RDWR) | (flags & O_WRONLY)) == 0), bstat);
+      (void) x.append(pinclude);
+             x.push_back('/');
+      (void) x.append(UStringExt::basename(pathname));
 
-   U_RETURN_STRING(content);
+      file.setPath(x);
+
+      if (file.open()) return file.getContent();
+      }
+
+   return UString::getStringNull();
 }
 
 void UFile::printf(const char* format, uint32_t fmt_size, ...)
@@ -915,7 +876,7 @@ void UFile::printf(const char* format, uint32_t fmt_size, ...)
    va_list argp;
    va_start(argp, fmt_size);
 
-   bytes_to_write = u__vsnprintf(buffer, sizeof(buffer)-1, format, fmt_size, argp);
+   bytes_to_write = u__vsnprintf(buffer, U_CONSTANT_SIZE(buffer), format, fmt_size, argp);
 
    va_end(argp);
 
@@ -933,9 +894,9 @@ bool UFile::creatForWrite(int flags, bool bmkdirs)
 {
    U_TRACE(1, "UFile::creatForWrite(%d,%b)", flags, bmkdirs)
 
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 
    bool esito = isOpen();
 
@@ -996,7 +957,7 @@ bool UFile::write(const char* data, uint32_t sz, int flags, bool bmkdirs)
             }
 
          if (sz &&
-             memmap(PROT_READ | PROT_WRITE, 0, offset, st_size))
+             memmap(PROT_READ | PROT_WRITE, U_NULLPTR, offset, st_size))
             {
             U_MEMCPY(map + offset, data, sz);
 
@@ -1047,6 +1008,24 @@ bool UFile::writeTo(const UString& path, const struct iovec* iov, int n, int fla
    U_RETURN(result);
 }
 
+bool UFile::writeToTmp(const UString& data, int flags, const char* format, uint32_t fmt_size, ...)
+{
+   U_TRACE(0+256, "UFile::writeToTmp(%V,%d,%.*S,%u)", data.rep, flags, fmt_size, format, fmt_size)
+
+   U_INTERNAL_ASSERT(data)
+
+   UString path((unsigned char*)U_CONSTANT_TO_PARAM("/tmp/"), 200U);
+
+   va_list argp;
+   va_start(argp, fmt_size);
+
+   path.vsnprintf_add(format, fmt_size, argp);
+
+   va_end(argp);
+
+   return writeTo(path, data, flags, false);
+}
+
 bool UFile::writeToTmp(const char* data, uint32_t sz, int flags, const char* format, uint32_t fmt_size, ...)
 {
    U_TRACE(0+256, "UFile::writeToTmp(%.*S,%u,%d,%.*S,%u)", sz, data, sz, flags, fmt_size, format, fmt_size)
@@ -1091,6 +1070,25 @@ bool UFile::writeToTmp(const struct iovec* iov, int n, int flags, const char* fo
       }
 
    U_RETURN(result);
+}
+
+UString UFile::contentToWrite(const UString& _pathname, uint32_t sz)
+{
+   U_TRACE(0, "UFile::contentToWrite(%V,%u)", _pathname.rep, sz)
+
+   setPath(_pathname);
+
+   if (creat(O_RDWR) &&
+       fallocate(sz))
+      {
+      UString fileContent;
+
+      (void) memmap(PROT_READ | PROT_WRITE, &fileContent, 0, sz);
+
+      U_RETURN_STRING(fileContent);
+      }
+
+   return UString::getStringNull();
 }
 
 bool UFile::lock(int fd, short l_type, uint32_t start, uint32_t len)
@@ -1155,15 +1153,15 @@ bool UFile::lock(int fd, short l_type, uint32_t start, uint32_t len)
    U_RETURN(false);
 }
 
-bool UFile::ftruncate(uint32_t n)
+bool UFile::ftruncate(off_t n)
 {
-   U_TRACE(1, "UFile::ftruncate(%u)", n)
+   U_TRACE(1, "UFile::ftruncate(%I)", n)
 
    U_CHECK_MEMORY
 
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 
    U_INTERNAL_ASSERT_DIFFERS(fd, -1)
 #if defined(__CYGWIN__) || defined(_MSWINDOWS_)
@@ -1175,10 +1173,10 @@ bool UFile::ftruncate(uint32_t n)
 #endif
 
    if (map != (char*)MAP_FAILED &&
-       map_size < (uint32_t)n)
+       map_size < n)
       {
-      uint32_t _map_size = n * 2;
-         char* _map      = UFile::mremap(map, map_size, _map_size, MREMAP_MAYMOVE);
+      off_t _map_size = n * 2;
+      char* _map      = UFile::mremap(map, map_size, _map_size, MREMAP_MAYMOVE);
 
       if (_map == (char*)MAP_FAILED) U_RETURN(false);
 
@@ -1186,7 +1184,7 @@ bool UFile::ftruncate(uint32_t n)
       map_size = _map_size;
       }
 
-   if (U_SYSCALL(ftruncate, "%d,%u", fd, n) == 0)
+   if (U_SYSCALL(ftruncate, "%d,%I", fd, n) == 0)
       {
       st_size = n;
 
@@ -1250,7 +1248,7 @@ long UFile::getSysParam(const char* name)
       {
       char buffer[32];
 
-      ssize_t bytes_read = U_SYSCALL(read, "%d,%p,%u", fd, buffer, sizeof(buffer)-1);
+      ssize_t bytes_read = U_SYSCALL(read, "%d,%p,%u", fd, buffer, U_CONSTANT_SIZE(buffer));
 
       if (bytes_read > 0)
          {
@@ -1258,7 +1256,7 @@ long UFile::getSysParam(const char* name)
 
          buffer[bytes_read] = '\0';
 
-         value = strtol(buffer, 0, 10);
+         value = strtol(buffer, U_NULLPTR, 10);
          }
 
       close(fd);
@@ -1278,7 +1276,7 @@ long UFile::setSysParam(const char* name, long value, bool force)
       {
       char buffer[32];
 
-      ssize_t bytes_read = U_SYSCALL(read, "%d,%p,%u", fd, buffer, sizeof(buffer)-1);
+      ssize_t bytes_read = U_SYSCALL(read, "%d,%p,%u", fd, buffer, U_CONSTANT_SIZE(buffer));
 
       if (bytes_read > 0)
          {
@@ -1286,7 +1284,7 @@ long UFile::setSysParam(const char* name, long value, bool force)
 
          buffer[bytes_read] = '\0';
 
-         old_value = strtol(buffer, 0, 10);
+         old_value = strtol(buffer, U_NULLPTR, 10);
 
          if (force ||
              old_value < value)
@@ -1294,9 +1292,9 @@ long UFile::setSysParam(const char* name, long value, bool force)
             char* ptr = buffer;
 
 #        if SIZEOF_LONG == 4
-            if (pwrite(fd, buffer, u_num2str32s(value, ptr), 0) > 0) old_value = value;
-#        else
-            if (pwrite(fd, buffer, u_num2str64s(value, ptr), 0) > 0) old_value = value;
+            if (pwrite(fd, buffer, u_num2str32s(value, ptr) - ptr, 0) > 0) old_value = value;
+#        elif !defined(U_COVERITY_FALSE_POSITIVE) // (INTEGER_OVERFLOW)
+            if (pwrite(fd, buffer, u_num2str64s(value, ptr) - ptr, 0) > 0) old_value = value;
 #        endif
             }
          }
@@ -1316,9 +1314,9 @@ bool UFile::pread(void* buf, uint32_t count, uint32_t offset)
    U_INTERNAL_ASSERT_DIFFERS(fd, -1)
 
 #if defined(DEBUG) && !defined(U_LINUX) && !defined(O_TMPFILE)
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 #endif
 
 #ifdef U_COVERITY_FALSE_POSITIVE
@@ -1339,9 +1337,9 @@ bool UFile::pwrite(const void* _buf, uint32_t count, uint32_t offset)
    U_INTERNAL_ASSERT_DIFFERS(fd, -1)
 
 #if defined(DEBUG) && !defined(U_LINUX) && !defined(O_TMPFILE)
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 #endif
 
 #ifdef U_COVERITY_FALSE_POSITIVE
@@ -1448,11 +1446,11 @@ int UFile::mkTemp()
 #if defined(U_LINUX) && defined(O_TMPFILE)
    int fd = U_SYSCALL(open, "%S,%d,%d", u_tmpdir, O_TMPFILE | O_RDWR, PERM_FILE);
 #else
-   char _pathname[U_PATH_MAX];
+   char _pathname[U_PATH_MAX+1];
 
    // The last six characters of template must be XXXXXX and these are replaced with a string that makes the filename unique
 
-   (void) u__snprintf(_pathname, sizeof(_pathname), U_CONSTANT_TO_PARAM("%s/tmpXXXXXX"), u_tmpdir);
+   (void) u__snprintf(_pathname, U_PATH_MAX, U_CONSTANT_TO_PARAM("%s/tmpXXXXXX"), u_tmpdir);
 
    mode_t old_mode = U_SYSCALL(umask, "%d", 077);  // Create file with restrictive permissions
 
@@ -1611,9 +1609,9 @@ bool UFile::_rename(const char* newpath)
 
    U_CHECK_MEMORY
 
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
    U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
+
+   U_INTERNAL_ASSERT_POINTER(path_relativ)
 
    bool result = UFile::_rename(path_relativ, newpath);
 
@@ -1660,31 +1658,9 @@ void UFile::substitute(UFile& file)
 
    file.reset();
 
-   U_INTERNAL_DUMP("fd = %d map = %p map_size = %u st_size = %I", fd, map, map_size, st_size)
+   U_INTERNAL_DUMP("fd = %d map = %p map_size = %I st_size = %I", fd, map, map_size, st_size)
 
    if (fd != -1) UFile::fsync();
-}
-
-UString UFile::getSuffix() const
-{
-   U_TRACE_NO_PARAM(0, "UFile::getSuffix()")
-
-   U_INTERNAL_ASSERT_POINTER(path_relativ)
-
-   U_INTERNAL_DUMP("path_relativ(%u) = %.*S", path_relativ_len, path_relativ_len, path_relativ)
-
-   UString suffix;
-   const char* ptr = u_getsuffix(path_relativ, path_relativ_len);
-
-   if (ptr)
-      {
-      U_INTERNAL_ASSERT_EQUALS(ptr[0], '.')
-      U_INTERNAL_ASSERT_EQUALS(strchr(ptr, '/'), 0)
-
-      (void) suffix.assign(ptr+1, (path_relativ + path_relativ_len) - (1 + ptr)); // 1 => '.'
-      }
-
-   U_RETURN_STRING(suffix);
 }
 
 // MIME TYPE
@@ -1702,7 +1678,7 @@ const char* UFile::getMimeType(const char* suffix, int* pmime_index)
 
       U_INTERNAL_DUMP("suffix = %.*S", suffix ? (path_relativ_len-(suffix-path_relativ)-1) : 0, suffix+1)
 
-      content_type = (suffix ? u_get_mimetype(suffix+1, pmime_index) : 0);
+      content_type = (suffix ? u_get_mimetype(suffix+1, pmime_index) : U_NULLPTR);
       }
 
 #ifdef DEBUG
@@ -1722,12 +1698,12 @@ const char* UFile::getMimeType(const char* suffix, int* pmime_index)
       }
 #endif
 
-   if (content_type == 0)
+   if (content_type == U_NULLPTR)
       {
 #  ifdef USE_LIBMAGIC
       if (map != (char*)MAP_FAILED) content_type = UMagic::getType(map, map_size).data();
 
-      if (content_type == 0)
+      if (content_type == U_NULLPTR)
 #  endif
           content_type = "application/octet-stream";
       }
@@ -1763,6 +1739,6 @@ const char* UFile::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

@@ -340,12 +340,12 @@ int UPop3Client::getUIDL(UVector<UString>& vec)
             continue;
             }
 
-         s = u_delimit_token(s, &p, _end, 0, 0); // n-esimo
-         s = u_delimit_token(s, &p, _end, 0, 0); // uidl
+         s = u_delimit_token(s, &p, _end, U_NULLPTR, 0); // n-esimo
+         s = u_delimit_token(s, &p, _end, U_NULLPTR, 0); // uidl
 
          r = UString((void*)p, s - p);
 
-         vec.push(r);
+         vec.push_back(r);
 
          ++s;
          }
@@ -374,7 +374,7 @@ int UPop3Client::getSizeMessage(uint32_t n)
          char* ptr = buffer.c_pointer(sizeof(U_POP3_OK));
 
          num_msg      = strtol(ptr, (char**)&ptr, 10);
-         int size_msg = atoi(ptr);
+         int size_msg = u_atoi(ptr);
 
          U_INTERNAL_DUMP("num_msg = %d size_msg = %d", num_msg, size_msg)
 
@@ -486,7 +486,7 @@ int UPop3Client::getAllHeader(UVector<UString>& vec)
             {
             str = UString((void*)buffer.c_pointer(vpos[i]), vend[i] - vpos[i]);
 
-            vec.push(str);
+            vec.push_back(str);
             }
 
          U_RETURN(num_msg);
@@ -525,7 +525,7 @@ int UPop3Client::getAllMessage(UVector<UString>& vec)
             {
             str = UString((void*)buffer.c_pointer(vpos[i]), vend[i] - vpos[i]);
 
-            vec.push(str);
+            vec.push_back(str);
             }
 
          U_RETURN(num_msg);
@@ -556,7 +556,7 @@ bool UPop3Client::deleteAllMessage()
 
       (void) buffer.reserve(size);
 
-      if (syncCommandML(req, 0, 0)) U_RETURN(true);
+      if (syncCommandML(req, U_NULLPTR, U_NULLPTR)) U_RETURN(true);
       }
 
    U_RETURN(false); 
@@ -611,6 +611,6 @@ const char* UPop3Client::dump(bool _reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

@@ -18,8 +18,8 @@ cat <<EOF >inp/server.cf
 userver {
  PORT 10001
  WELCOME_MSG "generic server ready."
- ALLOWED_IP localhost 
-#ALLOWED_IP localhost,10.30.0.0/16
+ ALLOWED_IP 127.0.0.1 
+#ALLOWED_IP 127.0.0.1,10.30.0.0/16
  LOG_FILE server.log
  LOG_FILE_SZ 1M
  PLUGIN echo
@@ -43,14 +43,14 @@ EOF
 
 DIR_CMD="../../examples/simple_client_server"
 
-pkill -9 test_
+start_prg_background server inp/server.cf
 
-start_prg_background server											  inp/server.cf
-start_prg 				client --log client.log --max_length 256 inp/client.cf
+wait_server_ready localhost 10001
+
+start_prg client --log client.log --max_length 256 inp/client.cf
 $SLEEP
-kill_prg server TERM
+kill_proc $PID
 $SLEEP
-$SYNC
 cat client.log server.log > out/client_server.out
 
 # Test against expected output

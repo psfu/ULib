@@ -16,15 +16,51 @@
 
 /* Manage the header files to include */
 
-#ifdef HAVE_CONFIG_H
-#  include <ulib/internal/config.h>
-#  include <ulib/base/replace/replace.h>
-#else
-#  include <ulib/internal/platform.h>
-#  ifndef U_LIBEXECDIR
-#  define U_LIBEXECDIR "/usr/libexec/ulib"
-#  endif
+#include <ulib/internal/config.h>
+#include <ulib/base/replace/replace.h>
+
+#ifndef U_PREFIXDIR
+#define U_PREFIXDIR "/usr/local"
 #endif
+#ifndef U_LIBEXECDIR
+#define U_LIBEXECDIR "/usr/local/libexec/ulib"
+#endif
+#ifndef U_SYSCONFDIR
+#define U_SYSCONFDIR "/usr/local/etc"
+#endif
+
+/*
+#ifndef HAVE_CONFIG_H
+#  define HAVE_CXX11 1
+#  define HAVE_CXX14 1
+#  define ENABLE_LFS 1
+#  define HAVE_ARCH64 1
+#  define DISABLE_ZIP 1
+#  define HAVE_DLFCN_H 1
+#  define DISABLE_IPV6 1
+#  define HAVE_DIRENT_H 1
+#  define U_LOG_DISABLE 1
+#  define RETSIGTYPE void
+#  define ENABLE_MEMPOOL 1
+#  define HAVE_SIGINFO_T 1
+#  define U_STDCPP_ENABLE 1
+#  define U_HTTP2_DISABLE 1
+#  define HAVE_SYS_IOCTL_H 1
+#  define PACKAGE_NAME "ULib"
+#  define HAVE_NETINET_IN_H 1
+#  define ULIB_VERSION "2.4.2"
+#  define HAVE_SYS_SENDFILE_H 1
+#  define PACKAGE_VERSION "2.4.2"
+#  define HAVE_NETPACKET_PACKET_H 1
+#  define FNM_PATHNAME (1 << 0)
+#  define FNM_NOESCAPE (1 << 1)
+#  define FNM_PERIOD   (1 << 2)
+#  define U_CACHE_REQUEST_DISABLE 1
+#  define U_PIPELINE_HOMOGENEOUS_DISABLE 1
+#  define restrict
+#  include <ulib/internal/platform.h>
+#endif
+*/
 
 #ifdef U_LINUX
 # ifdef HAVE__USR_SRC_LINUX_INCLUDE_GENERATED_UAPI_LINUX_VERSION_H
@@ -51,20 +87,46 @@
 #  endif
 #endif
 
-#ifdef __clang__
-#  ifdef  NULL
-#  undef  NULL
+/* Checks define */
+
+#ifdef USE_LOAD_BALANCE
+#  ifdef _MSWINDOWS_
+#     undef USE_LOAD_BALANCE
+U_DO_PRAGMA(message ("Sorry I was compiled on Windows so I cannot use load balance"))
+#  elif !defined(ENABLE_THREAD)
+#     undef USE_LOAD_BALANCE
+U_DO_PRAGMA(message ("Sorry I was compiled without thread enabled so I cannot use load balance"))
 #  endif
-#  define NULL 0
-#  include <wchar.h>
-#  ifdef ENABLE_THREAD
-/*typedef pthread_t        __gthread_t;*/
-/*typedef pthread_key_t    __gthread_key_t;*/
-/*typedef pthread_once_t   __gthread_once_t;*/
-  typedef pthread_mutex_t  __gthread_mutex_t;
-/*typedef pthread_mutex_t  __gthread_recursive_mutex_t;*/
-/*typedef pthread_cond_t   __gthread_cond_t;*/
-/*typedef struct timespec  __gthread_time_t;*/
+#endif
+#if defined(U_THROTTLING_SUPPORT) && !defined(U_HTTP2_DISABLE)
+#  undef U_THROTTLING_SUPPORT
+U_DO_PRAGMA(message ("Sorry I was compiled with http2 enabled so I cannot support bandwidth throttling"))
+#endif
+#if defined(U_SERVER_CHECK_TIME_BETWEEN_REQUEST) && !defined(U_HTTP2_DISABLE)
+#  undef U_SERVER_CHECK_TIME_BETWEEN_REQUEST
+U_DO_PRAGMA(message ("Sorry I was compiled with http2 enabled so I cannot support check time between request"))
+#endif
+#if !defined(U_CACHE_REQUEST_DISABLE) && !defined(U_HTTP2_DISABLE)
+#  define U_CACHE_REQUEST_DISABLE
+U_DO_PRAGMA(message ("Sorry I was compiled with http2 enabled so I cannot support cache request"))
+#endif
+#if defined(U_HTTP_INOTIFY_SUPPORT) && defined(U_SERVER_CAPTIVE_PORTAL)
+#  undef U_HTTP_INOTIFY_SUPPORT
+U_DO_PRAGMA(message ("Sorry I was compiled with server captive portal mode enabled so I cannot support http inotify"))
+#endif
+#if defined(HAVE_CXX17) && defined(__GNUC__) && !defined(HAVE_CONFIG_H)
+U_DO_PRAGMA(message ("ULib is configured with C++17 support, so you must use the -std=gnu++17 g++ option for compilation"))
+#endif
+#if defined(USE_HARDWARE_CRC32) && defined(__GNUC__) && !defined(HAVE_CONFIG_H) /* The built-in functions __builtin_ia32_crc32 are available when -mcrc32 is used */
+U_DO_PRAGMA(message ("ULib is configured with crc32 intrinsics support, so you must use the -mcrc32 g++ option for compilation"))
+#endif
+#ifdef U_SSE_ENABLE // SERVER SENT EVENTS (SSE)
+#  ifndef U_LINUX
+#     undef U_SSE_ENABLE
+U_DO_PRAGMA(message ("Sorry I was not compiled on Linux so I cannot use SSE"))
+#  elif !defined(ENABLE_THREAD)
+#     undef U_SSE_ENABLE
+U_DO_PRAGMA(message ("Sorry I was compiled without thread enabled so I cannot use SSE"))
 #  endif
 #endif
 
@@ -77,6 +139,7 @@
 #include <limits.h>
 
 /* Defs */
+
 #include <ulib/base/color.h>
 #include <ulib/base/macro.h>
 
@@ -85,12 +148,6 @@
 #endif
 #ifndef KERNEL_VERSION
 #define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
-#endif
-#ifdef __clang__
-#  define U_DUMP_KERNEL_VERSION(x)
-#else
-#  define U_DO_PRAGMA(x) _Pragma (#x)
-#  define U_DUMP_KERNEL_VERSION(x) U_DO_PRAGMA(message (#x " = " U_STRINGIFY(x)))
 #endif
 
 #ifdef USE_LIBZ /* check for crc32 */
@@ -121,41 +178,54 @@
 #  endif
 #endif
 
-#define U_BUFFER_SIZE 8192
+#define U_BUFFER_SIZE (8192-1) // NB: -1 because we want space for null-terminator...
+
+/* C++11 keywords and expressions */
+
+#ifdef U_COMPILER_NULLPTR
+# define U_NULLPTR nullptr
+#else
+# define U_NULLPTR 0
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef int   (*iPF)     (void);
-typedef bool  (*bPF)     (void);
-typedef void  (*vPF)     (void);
-typedef void* (*pvPF)    (void);
-typedef bool  (*bPFi)    (int);
-typedef void  (*vPFi)    (int);
-typedef void  (*vPFpv)   (void*);
-typedef bool  (*bPFpv)   (void*);
-typedef int   (*iPFpv)   (void*);
-typedef bool  (*bPFpc)   (const char*);
-typedef void  (*vPFpc)   (const char*);
-typedef void* (*pvPFpv)  (void*);
-typedef bool  (*bPFpcu)  (const char*,uint32_t);
-typedef void  (*vPFpvu)  (void*,uint32_t);
-typedef int   (*iPFpvpv) (void*,void*);
-typedef bool  (*bPFpvpv) (void*,void*);
-typedef bool  (*bPFpcpc) (const char*,const char*);
-typedef bool  (*bPFpcpv) (const char*,const void*);
-typedef void  (*vPFpvpc) (void*,char*);
-typedef void  (*vPFpvpv) (void*,void*);
+typedef int   (*iPF)      (void);
+typedef bool  (*bPF)      (void);
+typedef void  (*vPF)      (void);
+typedef void* (*pvPF)     (void);
+typedef bool  (*bPFi)     (int);
+typedef void  (*vPFi)     (int);
+typedef void  (*vPFu)     (uint32_t);
+typedef void  (*vPFpv)    (void*);
+typedef bool  (*bPFpv)    (void*);
+typedef int   (*iPFpv)    (void*);
+typedef bool  (*bPFpc)    (const char*);
+typedef void  (*vPFpc)    (const char*);
+typedef void* (*pvPFpv)   (void*);
+typedef void  (*vpFpcu)   (const char*,uint32_t);
+typedef bool  (*bPFpcu)   (const char*,uint32_t);
+typedef void  (*vPFpvu)   (void*,uint32_t);
+typedef int   (*iPFpvpv)  (void*,void*);
+typedef bool  (*bPFpvpv)  (void*,void*);
+typedef bool  (*bPFpcpv)  (const char*,void*);
+typedef bool  (*bPFpcpc)  (const char*,const char*);
+typedef void  (*vPFpvpc)  (void*,char*);
+typedef void  (*vPFpvpv)  (void*,void*);
+typedef void  (*vPFpvpvu) (void*,void*,uint32_t);
 
-typedef uint32_t (*uPFdpc)   (double,char*);
-typedef uint32_t (*uPFu32pc) (uint32_t,char*);
-typedef uint32_t (*uPFu64pc) (uint64_t,char*);
+typedef char* (*pcPFdpc)   (double,char*);
+typedef char* (*pcPFu32pc) (uint32_t,char*);
+typedef char* (*pcPFu64pc) (uint64_t,char*);
 
 typedef void* (*pvPFpvpb)  (void*,bool*);
 typedef int   (*qcompare)  (const void*,const void*);
 typedef void  (*vPFpvpcpc) (void*,char*,char*);
 typedef void* (*pvPFpvpvs) (void*,const void*,size_t);
+
+typedef uint32_t (*uPFpcu) (const char*,uint32_t);
 
 typedef struct U_DATA {
    unsigned char* dptr;
@@ -165,6 +235,8 @@ typedef struct U_DATA {
 /**
  * #define U_SUBSTR_INC_REF // NB: be aware that in this way we don't capture the event 'DEAD OF SOURCE STRING WITH CHILD ALIVE'...
  */
+
+/* String representation */
 
 typedef struct ustringrep {
 #ifdef DEBUG
@@ -180,27 +252,31 @@ typedef struct ustringrep {
    const char* str;
 } ustringrep;
 
-/* String representation */
-extern U_EXPORT struct ustringrep u_empty_string_rep_storage;
+typedef struct ustring { struct ustringrep* rep; } ustring;
+
+#define U_PATH_MAX (1024U - (1 + sizeof(ustringrep)))
 
 /* Internal buffer */
+
 extern U_EXPORT char* u_buffer;
-extern U_EXPORT char* u_err_buffer;
+extern U_EXPORT char u_err_buffer[256];
 extern U_EXPORT uint32_t u_buffer_len; /* assert that u_buffer is busy if u_buffer_len != 0 */
 
 /* Startup */
-extern U_EXPORT pid_t u_pid;
-extern U_EXPORT bool u_is_tty;
+
+extern U_EXPORT pid_t    u_pid;
+extern U_EXPORT char     u_pid_str[10];
 extern U_EXPORT uint32_t u_pid_str_len;
 extern U_EXPORT uint32_t u_progname_len;
+extern U_EXPORT bool u_is_tty, u_ulib_init;
 
-extern U_EXPORT       char* restrict u_pid_str;
 extern U_EXPORT const char* restrict u_progpath;
 extern U_EXPORT const char* restrict u_progname;
 
 U_EXPORT void u_init_ulib(char** restrict argv);
 
 /* At Exit */
+
 extern U_EXPORT vPF u_fns[32];
 extern U_EXPORT int u_fns_index;
 
@@ -209,31 +285,35 @@ U_EXPORT void u_atexit(vPF function);
 U_EXPORT void u_unatexit(vPF function);
 
 /* Current working directory */
+
 extern U_EXPORT char* u_cwd;
 extern U_EXPORT uint32_t u_cwd_len;
 
 U_EXPORT void u_getcwd(void);
 
 /* Time services */
-extern U_EXPORT bool u_daylight;
-extern U_EXPORT int u_now_adjust;   /* GMT based time */
+
+extern U_EXPORT bool* u_pdaylight;
+extern U_EXPORT int* u_pnow_adjust;
 extern U_EXPORT time_t u_start_time;
 extern U_EXPORT void* u_pthread_time; /* pthread clock */
-
 extern U_EXPORT struct timeval* u_now;
 extern U_EXPORT struct tm u_strftime_tm;
-extern U_EXPORT struct timeval u_timeval;
-
-extern U_EXPORT const char* u_months[12];    /* "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec" */
-extern U_EXPORT const char* u_months_it[12]; /* "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic" */
-
 extern U_EXPORT const char* u_day_name[7];    /* "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" */
 extern U_EXPORT const char* u_month_name[12]; /* "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" */
 
 U_EXPORT bool     u_setStartTime(void);
+U_EXPORT time_t   u_getLocalNow(time_t sec);
 U_EXPORT unsigned u_getMonth(const char* buf) __pure;
 
+static inline bool     u_is_daylight(void)           { return *u_pdaylight; }
+static inline uint32_t u_get_localtime(uint32_t sec) { return (sec + *u_pnow_adjust); }
+static inline uint32_t u_getLocalTime(void)          { return u_get_localtime(u_now->tv_sec); }
+
+/* Services */
+
 extern U_EXPORT int u_errno; /* An errno value */
+extern U_EXPORT int u_num_cpu;
 extern U_EXPORT int u_flag_exit;
 extern U_EXPORT int u_flag_test;
 extern U_EXPORT bool u_recursion;
@@ -241,40 +321,35 @@ extern U_EXPORT bool u_fork_called;
 extern U_EXPORT bool u_exec_failed;
 extern U_EXPORT char u_user_name[32];
 extern U_EXPORT uint32_t u_flag_sse; /* detect SSE2, SSSE3, SSE4.2 */
+extern U_EXPORT uint32_t u_m_w, u_m_z;
+extern U_EXPORT const char* u_trace_folder;
+extern U_EXPORT const char* u_short_units[6]; /* { "B", "KB", "MB", "GB", "TB", 0 } */
 extern U_EXPORT const char* restrict u_tmpdir;
 extern U_EXPORT char u_hostname[HOST_NAME_MAX+1];
-extern U_EXPORT const int MultiplyDeBruijnBitPosition2[32];
 extern U_EXPORT uint32_t u_hostname_len, u_user_name_len, u_seed_hash;
 
-extern U_EXPORT const unsigned char u_b64[64];    /* "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" */
-extern U_EXPORT const unsigned char u_b64url[64]; /* "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" */
-
-extern U_EXPORT const unsigned char u_hex_upper[16]; /* "0123456789ABCDEF" */
-extern U_EXPORT const unsigned char u_hex_lower[16]; /* "0123456789abcdef" */
-
-U_EXPORT void u_setPid(void);
 U_EXPORT void u_initRandom(void);
 U_EXPORT void u_init_ulib_username(void);
 U_EXPORT void u_init_ulib_hostname(void);
 U_EXPORT void u_init_http_method_list(void);
 
-U_EXPORT const char* u_basename(const char* restrict path) __pure;
-U_EXPORT const char* u_getsuffix(const char* restrict path, uint32_t len) __pure;
-U_EXPORT bool u_is_overlap(const char* restrict dst, const char* restrict src, size_t n);
-
 /* Location info */
+
 extern U_EXPORT uint32_t u_num_line;
 extern U_EXPORT const char* restrict u_name_file;
 extern U_EXPORT const char* restrict u_name_function;
 
 /* MIME type identification */
+
 static inline bool u_is_gz(int mime_index)     { return (mime_index == U_gz); }
+static inline bool u_is_br(int mime_index)     { return (mime_index == U_br); }
 static inline bool u_is_js(int mime_index)     { return (mime_index == U_js); }
 static inline bool u_is_css(int mime_index)    { return (mime_index == U_css); }
 static inline bool u_is_gif(int mime_index)    { return (mime_index == U_gif); }
 static inline bool u_is_jpg(int mime_index)    { return (mime_index == U_jpg); }
 static inline bool u_is_png(int mime_index)    { return (mime_index == U_png); }
 static inline bool u_is_flv(int mime_index)    { return (mime_index == U_flv); }
+static inline bool u_is_svg(int mime_index)    { return (mime_index == U_svg); }
 static inline bool u_is_html(int mime_index)   { return (mime_index == U_html); }
 
 static inline bool u_is_usp(int mime_index)    { return (mime_index == U_usp); }
@@ -297,7 +372,13 @@ static inline bool u_is_cacheable(int mime_index) { return (u_is_js(mime_index) 
                                                             u_is_css(mime_index) ||
                                                             u_is_img(mime_index) ||
                                                             u_is_ssi(mime_index) ||
+                                                            u_is_svg(mime_index) ||
                                                             u_is_html(mime_index)); }
+
+static inline bool u_is_compressable(int mime_index) { return (u_is_ssi(mime_index) == false &&
+                                                               u_is_gz( mime_index) == false &&
+                                                               u_is_br( mime_index) == false); }
+
 
 /**
  * Print with format extension: bBCDHMNOPQrRSvVUYwW
@@ -344,7 +425,7 @@ extern U_EXPORT int32_t u_printf_string_max_length;
 /* NB: we use u__printf(), u__snprintf(), u__vsnprintf(), ... cause of conflit with /usr/include/unicode/urename.h */
 
 U_EXPORT void u__printf(int fd,           const char* restrict format, uint32_t fmt_size, ...);
-U_EXPORT void u_internal_print(bool abrt, const char* restrict format,                    ...);
+U_EXPORT void u_internal_print(bool abrt, const char* restrict format,                    ...) PRINTF_ATTRIBUTE(2,3);
 
 U_EXPORT uint32_t u_sprintc(   char* restrict buffer, unsigned char c);
 U_EXPORT uint32_t u_sprintcrtl(char* restrict buffer, unsigned char c);
@@ -403,14 +484,14 @@ static inline void u_gettimenow(void)
 {
    U_INTERNAL_TRACE("u_gettimenow()")
 
-   (void) gettimeofday(u_now, 0);
+   (void) gettimeofday(u_now, U_NULLPTR);
 }
 
 static inline void u_gettimeofday(struct timeval* tv)
 {
    U_INTERNAL_TRACE("u_gettimeofday(%p)", tv)
 
-   (void) gettimeofday(tv, 0);
+   (void) gettimeofday(tv, U_NULLPTR);
 }
 
 /**
@@ -440,10 +521,12 @@ static inline void u_gettimenow(void)
 #endif
 */
 
+U_EXPORT uint32_t u_isDayOfWeek(const char* restrict str) __pure;
+
 U_EXPORT      uint32_t u_strftime1(char* restrict buffer, uint32_t buffer_size, const char* restrict fmt, uint32_t fmt_size);
 static inline uint32_t u_strftime2(char* restrict buffer, uint32_t buffer_size, const char* restrict fmt, uint32_t fmt_size, time_t when)
 {
-   U_INTERNAL_TRACE("u_strftime2(%u,%.*s,%u,%ld)", buffer, buffer_size, fmt, fmt_size, when)
+   U_INTERNAL_TRACE("u_strftime2(%.*s,%u,%.*s,%u,%ld)", buffer_size, buffer, buffer_size, fmt_size, fmt, fmt_size, when)
 
    U_INTERNAL_ASSERT_POINTER(fmt)
    U_INTERNAL_ASSERT_MAJOR(buffer_size, 0)
@@ -455,68 +538,124 @@ static inline uint32_t u_strftime2(char* restrict buffer, uint32_t buffer_size, 
    return u_strftime1(buffer, buffer_size, fmt, fmt_size);
 }
 
-/* Services */
 /* conversion number to string */
-extern U_EXPORT uPFdpc   u_dbl2str;
-extern U_EXPORT uPFu32pc u_num2str32;
-extern U_EXPORT uPFu64pc u_num2str64;
-extern U_EXPORT const char u_ctn2s[200];
 
-static inline uint32_t u_num2str32s(int32_t num, char* restrict cp)
+extern U_EXPORT const char* u_ctn2s;
+
+extern U_EXPORT pcPFdpc   u_dbl2str;
+extern U_EXPORT pcPFu32pc u_num2str32;
+extern U_EXPORT pcPFu64pc u_num2str64;
+
+static inline char* u_num2str32s(int32_t num, char* restrict cp)
 {
-   uint32_t bsign = (num < 0);
-
    U_INTERNAL_TRACE("u_num2str32s(%u,%p)", num, cp)
 
-   if (bsign)
+   if (num < 0)
       {
       num = -num;
 
       *cp++ = '-';
       }
 
-   return bsign + u_num2str32(num, cp);
+   return u_num2str32(num, cp);
 }
 
-static inline uint32_t u_num2str64s(int64_t num, char* restrict cp)
+static inline char* u_num2str64s(int64_t num, char* restrict cp)
 {
-   uint32_t bsign = (num < 0);
-
    U_INTERNAL_TRACE("u_num2str64s(%lld,%p)", num, cp)
 
-   if (bsign)
+   if (num < 0)
       {
       num = -num;
 
       *cp++ = '-';
       }
 
-   return bsign + u_num2str64(num, cp);
+   return u_num2str64(num, cp);
 }
 
-static inline uint32_t u_dtoa(double num, char* restrict cp)
+static inline char* u_dtoa(double num, char* restrict cp)
 {
-   uint32_t bsign;
-
    U_INTERNAL_TRACE("u_dtoa(%g,%p)", num, cp)
 
-   if (num == 0)
-      {
-      u_put_unalignedp32(cp, U_MULTICHAR_CONSTANT32('0','.','0','\0'));
-
-      return 3;
-      }
-
-   bsign = (num < 0);
-
-   if (bsign)
+   if (num < 0)
       {
       num = -num;
 
       *cp++ = '-';
       }
 
-   return bsign + u_dbl2str(num, cp);
+   return u_dbl2str(num, cp);
+}
+
+static inline bool u_is_overlap(const char* restrict dst, const char* restrict src, size_t n)
+{
+   U_INTERNAL_TRACE("u_is_overlap(%p,%p,%lu)", dst, src, n)
+
+   U_INTERNAL_ASSERT_MAJOR(n, 0)
+
+        if (src < dst) return ((src + n - 1) >= dst);
+   else if (dst < src) return ((dst + n - 1) >= src);
+
+   /* They start at same place. Since we know neither of them has zero length, they must overlap */
+
+   U_INTERNAL_ASSERT_EQUALS(dst, src)
+
+   return true;
+}
+
+static inline __pure const char* u_basename(const char* restrict path, uint32_t len)
+{
+   const char* restrict ptr;
+
+   U_INTERNAL_TRACE("u_basename(%.*s,%u)", U_min(len,128), path, len)
+
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
+   U_INTERNAL_ASSERT_POINTER(path)
+
+   /**
+    * NB: we can have something like 'www.sito1.com/tmp'...
+    *
+    * for (ptr = path+len-2; ptr > path; --ptr) if (IS_DIR_SEPARATOR(*ptr)) return ptr+1;
+    */
+
+   ptr = (const char* restrict) memrchr(path, PATH_SEPARATOR, len);
+
+   return (ptr ? ptr+1 : path);
+}
+
+static inline const char* u_getsuffix(const char* restrict path, uint32_t len)
+{
+   char c;
+   const char* restrict ptr;
+
+   U_INTERNAL_TRACE("u_getsuffix(%.*s,%u)", U_min(len,128), path, len)
+
+   U_INTERNAL_ASSERT_MAJOR(len, 0)
+   U_INTERNAL_ASSERT_POINTER(path)
+
+   /**
+    * NB: we can have something like 'www.sito1.com/tmp'...
+    *
+    * ptr = (const char*) memrchr(path, '.', len);
+    *
+    * return (ptr && memrchr(ptr+1, '/', len-(ptr+1-path)) == 0 ? ptr : 0);
+    */
+
+   for (ptr = path+len-2; ptr >= path; --ptr)
+      {
+      c = *ptr;
+
+      if (c == '.' ||
+          IS_DIR_SEPARATOR(c))
+         {
+         if (c == '.') return ptr;
+
+         return U_NULLPTR;
+         }
+      }
+
+   return U_NULLPTR;
 }
 
 #ifdef __cplusplus

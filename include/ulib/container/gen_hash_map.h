@@ -16,6 +16,8 @@
 
 #include <ulib/internal/common.h>
 
+class UNotifier;
+
 /**
  * Functor used by UGenericHashMap class to generate a hashcode for an object of type T. It must be specialized for your own class
  */
@@ -57,6 +59,9 @@ public:
          hash = _hash;
          next = _next;
          }
+#  ifdef DEBUG
+      const char* dump(bool reset) const { return ""; }
+#  endif
       };
 
    E equals;
@@ -94,42 +99,17 @@ protected:
 public:
    UGenericHashMap()
       {
-      U_TRACE_REGISTER_OBJECT(0, UGenericHashMap, "", 0)
+      U_TRACE_CTOR(0, UGenericHashMap, "")
 
-      node  = 0;
-      table = 0;
+      node  = U_NULLPTR;
+      table = U_NULLPTR;
 
       _length = _capacity = index = hash = 0;
       }
 
    ~UGenericHashMap()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UGenericHashMap)
-      }
-
-   // Allocate and deallocate methods
-
-   void allocate(uint32_t n = 53)
-      {
-      U_TRACE(0, "UGenericHashMap<K,I>::allocate(%u)", n)
-
-      U_CHECK_MEMORY
-
-      table     = (UGenericHashMapNode**) UMemoryPool::_malloc(&n, sizeof(UGenericHashMapNode*), true);
-      _capacity = n;
-      }
-
-   void deallocate()
-      {
-      U_TRACE_NO_PARAM(0, "UGenericHashMap<K,I>::deallocate()")
-
-      U_CHECK_MEMORY
-
-      U_INTERNAL_ASSERT_MAJOR(_capacity,0)
-
-      UMemoryPool::_free(table, _capacity, sizeof(UGenericHashMapNode*));
-
-      _capacity = 0;
+      U_TRACE_DTOR(0, UGenericHashMap)
       }
 
    // Size and capacity
@@ -165,7 +145,7 @@ public:
 
       lookup(_key);
 
-      if (node != 0) U_RETURN(true);
+      if (node != U_NULLPTR) U_RETURN(true);
 
       U_RETURN(false);
       }
@@ -197,7 +177,7 @@ public:
 
       U_INTERNAL_DUMP("node = %p", node)
 
-      UGenericHashMapNode* prev = 0;
+      UGenericHashMapNode* prev = U_NULLPTR;
 
       for (UGenericHashMapNode* pnode = table[index]; pnode; pnode = pnode->next)
          {
@@ -234,7 +214,7 @@ public:
 
       table[index] = node->next;
 
-      delete node;
+      U_DELETE(node)
 
       --_length;
 
@@ -247,14 +227,14 @@ public:
 
       U_CHECK_MEMORY
 
-      U_INTERNAL_ASSERT_EQUALS(node, 0)
+      U_INTERNAL_ASSERT_EQUALS(node, U_NULLPTR)
 
       /**
        * list self-organizing (move-to-front), we place before
        * the element at the beginning of the list of collisions
        */
 
-      U_NEW(UGenericHashMapNode, table[index], UGenericHashMapNode(_key, _elem, table[index], hash));
+      U_NEW_WITHOUT_CHECK_MEMORY(UGenericHashMapNode, table[index], UGenericHashMapNode(_key, _elem, table[index], hash));
 
       node = table[index];
 
@@ -373,7 +353,7 @@ public:
 
                _next = node->next;
 
-               delete node;
+               U_DELETE(node)
                }
             while ((node = _next));
 
@@ -382,7 +362,7 @@ public:
             if (min > width) min = width;
 #        endif
 
-            table[index] = 0;
+            table[index] = U_NULLPTR;
             }
          }
 
@@ -409,7 +389,7 @@ public:
             }
          }
 
-      U_RETURN_POINTER(0, UGenericHashMapNode);
+      U_RETURN_POINTER(U_NULLPTR, UGenericHashMapNode);
       }
 
    bool next()
@@ -453,7 +433,7 @@ public:
             }
          }
 
-      U_RETURN_POINTER(0, UGenericHashMapNode);
+      U_RETURN_POINTER(U_NULLPTR, UGenericHashMapNode);
       }
 
    // Call function for all entry
@@ -500,9 +480,36 @@ public:
          return UObjectIO::buffer_output;
          }
 
-      return 0;
+      return U_NULLPTR;
       }
 #endif
+
+protected:
+   // allocate and deallocate methods
+
+   void allocate(uint32_t n = 53)
+      {
+      U_TRACE(0, "UGenericHashMap<K,I>::allocate(%u)", n)
+
+      U_CHECK_MEMORY
+
+      table     = (UGenericHashMapNode**) UMemoryPool::_malloc(&n, sizeof(UGenericHashMapNode*), true);
+      _capacity = n;
+      }
+
+   void deallocate()
+      {
+      U_TRACE_NO_PARAM(0, "UGenericHashMap<K,I>::deallocate()")
+
+      U_CHECK_MEMORY
+
+      U_INTERNAL_ASSERT_MAJOR(_capacity, 0)
+
+      UMemoryPool::_free(table, _capacity, sizeof(UGenericHashMapNode*));
+
+      _capacity = 0;
+      }
+
 
 private:
 #ifdef U_COMPILER_DELETE_MEMBERS
@@ -516,25 +523,27 @@ private:
    template<typename A, typename B, typename C, typename D> UGenericHashMap(const UGenericHashMap<A,B,C,D>&)            {}
    template<typename A, typename B, typename C, typename D> UGenericHashMap& operator=(const UGenericHashMap<A,B,C,D>&) { return *this; }
 #endif
+
+   friend class UNotifier;
 };
 
-// Functor used by UGenericHashMap class to generate a hashcode for an object of type <int>
+// Functor used by UGenericHashMap class to generate a hashcode for an object of type <unsigned int>
 
-template <> struct UHashCodeFunctor<int> {
-   uint32_t operator()(const int& value) const
-      {
-      // http://www.concentric.net/~Ttwang/tech/inthash.htm
-
-      uint32_t key = value, c2 = 0x27d4eb2d; // a prime or an odd constant
-
-      key = (key ^ 61) ^ (key >> 16);
-      key += key << 3;
-      key ^= key >> 4;
-      key *= c2;
-      key ^= key >> 15;
-
-      return key;
-      }
+template <> struct UHashCodeFunctor<unsigned int> {
+   uint32_t operator()(const unsigned int& value) const { return u_integerHash(value); } // http://www.concentric.net/~Ttwang/tech/inthash.htm
 };
 
+/**
+ * from code.google.com/p/smhasher/wiki/MurmurHash3
+ *
+ * uint32_t integerHash(uint32_t h)
+ * {
+ * h ^= h >> 16;
+ * h *= 0x85ebca6b;
+ * h ^= h >> 13;
+ * h *= 0xc2b2ae35;
+ * h ^= h >> 16;
+ * return h;
+ * }
+ */
 #endif

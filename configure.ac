@@ -1,4 +1,4 @@
-# configure.in -- Process this file with autoconf to produce configure
+# configure.ac -- Process this file with autoconf to produce configure
 #
 # An autoconf script to automatically configure ULib.
 #
@@ -25,7 +25,7 @@
 # This macro must be the very first invoked
 
 AC_PREREQ([2.69])
-AC_INIT([ULib],[1.4.2],[stefano.casazza@gmail.com],[ULib],[http://stefanocasazza.github.io/ULib/])
+AC_INIT([ULib],[2.4.2],[stefano.casazza@gmail.com],[ULib],[http://stefanocasazza.github.io/ULib/])
 AC_CONFIG_SRCDIR([src/ulib/string.cpp])
 AC_CONFIG_MACRO_DIR([m4])
 
@@ -37,12 +37,12 @@ AC_MSG_RESULT(${T_MD}$1:${T_ME})
 
 # Scary shtool stuff... borowed from pth-1.0
 if test ".`echo dummy $@ | grep help`" = .; then
-    ac_shtool="$srcdir/shtool"
-    PLATFORM=`$ac_shtool platform`
-    T_MD="`$ac_shtool echo -n -e %B 2>/dev/null`"
-    T_ME="`$ac_shtool echo -n -e %b 2>/dev/null`"
-    echo "Platform: ${T_MD}${PLATFORM}${T_ME}"
-    echo "Configuring ${T_MD}ULib${T_ME} (C++ Library)"
+  ac_shtool="$srcdir/shtool"
+  PLATFORM=`$ac_shtool platform`
+  T_MD="`$ac_shtool echo -n -e %B 2>/dev/null`"
+  T_ME="`$ac_shtool echo -n -e %b 2>/dev/null`"
+  echo "Platform: ${T_MD}${PLATFORM}${T_ME}"
+  echo "Configuring ${T_MD}ULib${T_ME} (C++ Library)"
 fi
 
 TWOCAN_CONF_MSG(Initial phase)
@@ -156,7 +156,7 @@ AC_MSG_CHECKING([which architecture the target is])
 
 TARGET_ARCH=
 case $target in
-	x86_64)				TARGET_ARCH=x86_64 ;;
+	x86_64*)				TARGET_ARCH=x86_64 ;;
 	i*86)					TARGET_ARCH=i386 ;;
 	sh*)					TARGET_ARCH=sh ;;
 	mips*)				TARGET_ARCH=mips ;;
@@ -241,6 +241,25 @@ AC_C_VOLATILE
 AC_C_INLINE
 
 # clang is mostly GCC-compatible, but its version is much lower, so we have to check for it
+AC_MSG_CHECKING([if compiling with Intel C++])
+
+AC_COMPILE_IFELSE(
+[AC_LANG_PROGRAM([], [[
+#ifndef __INTEL_COMPILER 
+not intel
+#endif
+]])],
+[GCC_IS_INTEL=yes], [GCC_IS_INTEL=no])
+
+AC_MSG_RESULT([$GCC_IS_INTEL])
+#AC_SUBST(GCC_IS_INTEL)
+
+AM_CONDITIONAL(INTEL, false)
+if test "$GCC_IS_INTEL" = "yes"; then
+AM_CONDITIONAL(INTEL, true)
+gcc_version=`icc -dumpversion`
+fi
+
 AC_MSG_CHECKING([if compiling with clang])
 
 AC_COMPILE_IFELSE(
@@ -253,6 +272,12 @@ not clang
 
 AC_MSG_RESULT([$GCC_IS_CLANG])
 #AC_SUBST(GCC_IS_CLANG)
+
+AM_CONDITIONAL(CLANG, false)
+if test "$GCC_IS_CLANG" = "yes"; then
+AM_CONDITIONAL(CLANG, true)
+gcc_version=`clang -dumpversion`
+fi
 
 ULIB_LIBS=
 MODULE_LIBTOOL_OPTIONS="-shared -export-dynamic -avoid-version"
@@ -270,34 +295,69 @@ case "$target_os" in
 		kernel=`uname -r`
 
 		case "$kernel" in
-			5.*)
-				AC_MSG_RESULT([5 family ($kernel)])
-#				AC_DEFINE([KERNEL_5], 1, [Define to 1 if you're using Linux 5.x])
+			0.*)
+				AC_MSG_RESULT([unsupported ($kernel)])
+				AC_MSG_ERROR([ULib works on kernels 2.\[4,6\].x,\[3,5\].x.x])
 			;;
-
-			4.*)
-				AC_MSG_RESULT([4 family ($kernel)])
-#				AC_DEFINE([KERNEL_4], 1, [Define to 1 if you're using Linux 4.x])
+			1.*)
+				AC_MSG_RESULT([unsupported ($kernel)])
+				AC_MSG_ERROR([ULib works on kernels 2.\[4,6\].x,\[3,5\].x.x])
 			;;
-
-			3.*)
-				AC_MSG_RESULT([3 family ($kernel)])
-#				AC_DEFINE([KERNEL_3], 1, [Define to 1 if you're using Linux 3.x])
+			2.1.*)
+				AC_MSG_RESULT([unsupported ($kernel)])
+				AC_MSG_ERROR([ULib works on kernels 2.\[4,6\].x,\[3,5\].x.x])
 			;;
-
-			2.6.*)
-				AC_MSG_RESULT([2.6 family ($kernel)])
-#				AC_DEFINE([KERNEL_2_6], 1, [Define to 1 if you're using Linux 2.6.x])
+			2.2.*)
+				AC_MSG_RESULT([unsupported ($kernel)])
+				AC_MSG_ERROR([ULib works on kernels 2.\[4,6\].x,\[3,5\].x.x])
 			;;
-
+			2.3.*)
+				AC_MSG_RESULT([unsupported ($kernel)])
+				AC_MSG_ERROR([ULib works on kernels 2.\[4,6\].x,\[3,5\].x.x])
+			;;
+			2.5.*)
+				AC_MSG_RESULT([unsupported ($kernel)])
+				AC_MSG_ERROR([ULib works on kernels 2.\[4,6\].x,\[3,5\].x.x])
+			;;
 			2.4.*)
 				AC_MSG_RESULT([2.4 family ($kernel)])
 #				AC_DEFINE([KERNEL_2_4], 1, [Define to 1 if you're using Linux 2.4.x])
 			;;
-
+			2.6.*)
+				AC_MSG_RESULT([2.6 family ($kernel)])
+#				AC_DEFINE([KERNEL_2_6], 1, [Define to 1 if you're using Linux 2.6.x])
+			;;
+			3.*)
+				AC_MSG_RESULT([3 family ($kernel)])
+#				AC_DEFINE([KERNEL_3], 1, [Define to 1 if you're using Linux 3.x])
+			;;
+			4.*)
+				AC_MSG_RESULT([4 family ($kernel)])
+#				AC_DEFINE([KERNEL_4], 1, [Define to 1 if you're using Linux 4.x])
+			;;
+			5.*)
+				AC_MSG_RESULT([5 family ($kernel)])
+#				AC_DEFINE([KERNEL_5], 1, [Define to 1 if you're using Linux 5.x])
+			;;
+			6.*)
+				AC_MSG_RESULT([6 family ($kernel)])
+#				AC_DEFINE([KERNEL_6], 1, [Define to 1 if you're using Linux 6.x])
+			;;
+			7.*)
+				AC_MSG_RESULT([7 family ($kernel)])
+#				AC_DEFINE([KERNEL_7], 1, [Define to 1 if you're using Linux 7.x])
+			;;
+			8.*)
+				AC_MSG_RESULT([8 family ($kernel)])
+#				AC_DEFINE([KERNEL_8], 1, [Define to 1 if you're using Linux 8.x])
+			;;
+			9.*)
+				AC_MSG_RESULT([9 family ($kernel)])
+#				AC_DEFINE([KERNEL_9], 1, [Define to 1 if you're using Linux 9.x])
+			;;
 			*)
-				AC_MSG_RESULT([unsupported ($kernel)])
-				AC_MSG_ERROR([ULib works on kernels 2.\[4,6\].x,\[3-4\].x.x])
+				AC_MSG_RESULT([1x family ($kernel)])
+#				AC_DEFINE([KERNEL_1x], 1, [Define to 1 if you're using Linux 1x.x])
 			;;
 		esac
 
@@ -451,7 +511,7 @@ AM_CONDITIONAL(MS_LIB_AVAILABLE, test x$ms_librarian = xyes)
 
 # Check for the compiler support
 gcc_major_4_1="no"
-if test "$ac_cv_c_compiler_gnu" = "yes" -a "x$GCC_IS_CLANG" = xno; then
+if test "$ac_cv_c_compiler_gnu" = "yes" -a "x$GCC_IS_CLANG" = xno -a "x$GCC_IS_INTEL" = xno; then
 	# We don't want gcc 2.7
 	AC_MSG_CHECKING([for a supported version of gcc])
 	gcc_version=`$CC -dumpversion`
@@ -589,15 +649,6 @@ if test "$enable_static" = "yes" -a "$enable_shared" = "no"; then
 	if test -z "$enable_stdcpp"; then
 		enable_stdcpp="no"
 	fi
-	if test "$ac_cv_c_compiler_gnu" = "yes" -a "x$GCC_IS_CLANG" = xno -a "$target_os" != "netbsd"; then
-		if test "$enable_stdcpp" != "yes"; then
-			ULIB_LIBS="$ULIB_LIBS -lgcc"
-		else
-			gcc_lib=`gcc -print-libgcc-file-name`
-			gcc_dir=`dirname $gcc_lib`
-			ULIB_LIBS="$ULIB_LIBS $gcc_dir/libstdc++.a $gcc_lib"
-		fi
-	fi
 else
 	AM_CONDITIONAL(STATIC_ONLY, false)
 fi
@@ -622,6 +673,7 @@ if test "$enable_stdcpp" = "yes"; then
 
 	AX_CXX_COMPILE_STDCXX_11([ext], [optional])
 	AX_CXX_COMPILE_STDCXX_14([ext], [optional])
+	AX_CXX_COMPILE_STDCXX_17([ext], [optional])
 else
    AC_MSG_RESULT(no)
 	AM_CONDITIONAL(STDCPP, false)
@@ -827,7 +879,7 @@ PTHREAD_FLAGS=""
 
 AC_MSG_CHECKING(if you want to enable build of thread support)
 AC_ARG_ENABLE(thread, [  --enable-thread           enable build of thread support [[default=yes]]])
-if test -z "$enable_thread"; then
+if test -z "$enable_thread" -a "$enable_shared" = "yes"; then
 	enable_thread="yes"
 fi
 AC_MSG_RESULT([$enable_thread])
@@ -977,7 +1029,7 @@ AC_FUNC_CLOSEDIR_VOID
 rlib=""
 posix4_lib=""
 
-for func in accept4 atexit clock_gettime daemon dup3 epoll_create1 epoll_wait epoll_ctl_batch fallocate fallocate64 fnmatch getaddrinfo getnameinfo getopt_long getpriority inet_ntop kqueue kqueue1 memmem memrchr mkdtemp mremap pipe2 posix_spawn pread sched_getcpu sched_getaffinity sem_init sem_getvalue sem_timedwait sendfile sendfile64 strndup strptime strsignal strtof strtold strtoull gmtime_r timegm nanosleep strerror shm_open; do
+for func in accept4 atexit clock_gettime daemon dup3 epoll_create1 epoll_wait epoll_ctl_batch fallocate fallocate64 fnmatch getaddrinfo getnameinfo getopt_long getpriority gettid inet_ntop kqueue kqueue1 lrintl memmem memrchr mkdtemp mremap pipe2 posix_spawn pread sched_getcpu sched_getaffinity sem_init sem_getvalue sem_timedwait sendfile sendfile64 strndup strptime strsignal strtof strtold strtoull gmtime_r timegm nanosleep strerror shm_open; do
     found="no"
     AC_CHECK_FUNC($func,[
         found=$func
@@ -1049,6 +1101,9 @@ for func in accept4 atexit clock_gettime daemon dup3 epoll_create1 epoll_wait ep
     getpriority)
         AC_DEFINE(HAVE_GETPRIORITY, [1], [has getpriority])
         ;;
+    gettid)
+        AC_DEFINE(HAVE_GETTID, [1], [has gettid])
+        ;;
     inet_ntop)
         AC_DEFINE(HAVE_INET_NTOP, [1], [has inet_ntop])
         ;;
@@ -1057,6 +1112,9 @@ for func in accept4 atexit clock_gettime daemon dup3 epoll_create1 epoll_wait ep
         ;;
     kqueue1)
         AC_DEFINE(HAVE_KQUEUE1, [1], [has kqueue1])
+        ;;
+    lrintl)
+        AC_DEFINE(HAVE_LRINTL, [1], [has lrintl])
         ;;
     memmem)
 		  AM_CONDITIONAL(MEMMEM, true)
@@ -1177,6 +1235,7 @@ dnl initialize all the info variables to 'no'
      ulib_ldap_msg="no (--with-ldap)"
      ulib_libz_msg="no (--with-libz)"
 ulib_libzopfli_msg="no (--with-libzopfli)"
+ulib_libbrotli_msg="no (--with-libbrotli)"
    ulib_libtdb_msg="no (--with-libtdb)"
      ulib_curl_msg="no (--with-curl)"
     ulib_expat_msg="no (--with-expat)"
@@ -1200,6 +1259,7 @@ ulib_pagespeed_msg="no (--with-page-speed)"
       ulib_zip_msg="no (--enable-zip)"
      ulib_memp_msg="no (--enable-memory-pool)"
     ulib_cares_msg="no (--enable-libares)"
+	   ulib_plugins="no (--enable-plugins)"
 	  ulib_examples="no (--enable-examples)"
 #  ulib_manual_msg="no (--enable-manual)"
 
@@ -1221,17 +1281,69 @@ fi
 AC_MSG_CHECKING(if you want to enable build of examples)
 AC_ARG_ENABLE(examples,[  --enable-examples         enable building of examples [[default=yes]]])
 
-if test -z "$enable_examples"; then
+if test -z "$enable_examples" -a "$enable_shared" = "yes"; then
 	enable_examples="yes"
-	ulib_examples="enabled"
 fi
+
+AM_CONDITIONAL(USERVER_IPC, false)
+AM_CONDITIONAL(USERVER_UDP, false)
 
 if test "$enable_examples" = "yes"; then
    AC_MSG_RESULT(yes)
+	ulib_examples="enabled"
 	AM_CONDITIONAL(ENABLE_EXAMPLES, true)
+
+	AC_MSG_CHECKING(if you want to build userver_ipc)
+	AC_ARG_WITH(userver-ipc,
+	[  --with-userver-ipc      Enable building of userver_ipc, default is disabled],
+	[use_userver_ipc=$withval],
+	[use_userver_ipc=no])
+	AC_MSG_RESULT($use_userver_ipc)
+
+	if test "$use_userver_ipc" = "yes" ; then
+		AM_CONDITIONAL(USERVER_IPC, true)
+		AC_DEFINE(USERVER_IPC, 1, [Define if use userver_ipc])
+	fi
+
+	AC_MSG_CHECKING(if you want to build userver_udp)
+	AC_ARG_WITH(userver-udp,
+	[  --with-userver-udp      Enable building of userver_udp, default is disabled],
+	[use_userver_udp=$withval],
+	[use_userver_udp=no])
+	AC_MSG_RESULT($use_userver_udp)
+
+	if test "$use_userver_udp" = "yes" ; then
+		AM_CONDITIONAL(USERVER_UDP, true)
+		AC_DEFINE(USERVER_UDP, 1, [Define if use userver_udp])
+	fi
 else
    AC_MSG_RESULT(no)
 	AM_CONDITIONAL(ENABLE_EXAMPLES, false)
+fi
+
+AM_CONDITIONAL(ENABLE_SHARED, false)
+AM_CONDITIONAL(ENABLE_PLUGINS, false)
+
+if test "$enable_shared" = "yes"; then # NB: if not don't build .so object...
+	AM_CONDITIONAL(ENABLE_SHARED, true)
+	AC_MSG_CHECKING(if you want to enable build of plugins)
+	AC_ARG_ENABLE(plugins,[  --enable-plugins          enable building of plugins for userver [[default=yes]]])
+
+	if test -z "$enable_plugins"; then
+      if test "$USP_FLAGS" = "-DAS_cpoll_cppsp_DO"; then
+         enable_plugins="no"
+      else
+         enable_plugins="yes"
+      fi
+   fi
+
+	if test "$enable_plugins" != "yes"; then
+		AC_MSG_RESULT(no)
+	else
+		AC_MSG_RESULT(yes)
+		ulib_plugins="enabled"
+		AM_CONDITIONAL(ENABLE_PLUGINS, true)
+	fi
 fi
 
 AC_COMPILATION_OPTIONS
@@ -1246,6 +1358,7 @@ AC_ARG_WITH(parser,
 	[use_parser=$withval],
 	[use_parser=no])
 AC_MSG_RESULT($use_parser)
+
 if test "$use_parser" = "yes" ; then
 	AC_PROG_YACC
 	AC_PROG_LEX
@@ -1302,6 +1415,7 @@ AC_MSG_RESULT($use_distcc)
 
 libz_version="unknow"
 libzopfli_version="unknown"
+libbrotli_version="unknown"
 libtdb_version="unknown"
 pcre_version="unknown"
 ldap_version="unknown"
@@ -1327,9 +1441,44 @@ TWOCAN_CONF_MSG(Checking for libraries to link against)
 
 AC_CHECK_PACKAGE
 
+AC_DEFUN([AC_SEARCH_LIBS_VAR],
+[AC_PREREQ([2.13])
+AC_CACHE_CHECK([for library containing $1], [ac_cv_search_$1],
+[ac_func_search_save_LIBS="$LIBS"
+ac_cv_search_$1="no"
+AC_TRY_LINK_FUNC([$1], [ac_cv_search_$1="none required"])
+test "$ac_cv_search_$1" = "no" && for i in $2; do
+LIBS="-l$i $5 $ac_func_search_save_LIBS"
+AC_TRY_LINK_FUNC([$1],
+[ac_cv_search_$1="-l$i"
+break])
+done
+LIBS="$ac_func_search_save_LIBS"])
+if test "$ac_cv_search_$1" != "no"; then
+  test "$ac_cv_search_$1" = "none required" || $6="$$6 $ac_cv_search_$1"
+  $3
+else :
+  $4
+fi])
+
 AC_CHECK_SQLITE3
 AC_CHECK_MYSQL
-AC_CHECK_PGSQL
+AX_LIB_POSTGRESQL
+
+AM_CONDITIONAL(HAVE_PGSQL, false)
+AM_CONDITIONAL(POSTGRESQL_USE_OPENSSL, false)
+
+if test "$found_postgresql" = "yes"; then
+   AM_CONDITIONAL(HAVE_PGSQL, true)
+	AC_DEFINE(USE_PGSQL, 1, [Define if enable PostgreSQL database support])
+	AC_MSG_CHECKING([whether PostgreSQL use openssl])
+	if test -n "`pg_config --configure | grep openssl`"; then
+		AC_MSG_RESULT([yes])
+		AM_CONDITIONAL(POSTGRESQL_USE_OPENSSL, true)
+	else
+		AC_MSG_RESULT([no])
+   fi
+fi
 
 AC_SUBST(PRG_LDFLAGS)
 
@@ -1348,6 +1497,10 @@ fi
 
 if test "$USE_LIBZOPFLI" = "yes"; then
 	ulib_libzopfli_msg="yes ( $libzopfli_version )"
+fi
+
+if test "$USE_LIBBROTLI" = "yes"; then
+	ulib_libbrotli_msg="yes ( $libbrotli_version )"
 fi
 
 if test "$USE_LIBTDB" = "yes"; then
@@ -1515,18 +1668,18 @@ if test "$use_php" = "yes" ; then
 	AC_SUBST(PHPCONFIG)
 
 	USE_PHP=yes
-	php_prefix=`$PHPCONFIG --prefix`
+   php_prefix=`$PHPCONFIG --prefix`
 	php_version=$(php-config --version)
 	AC_DEFINE(USE_PHP, 1, [Define if enable php support])
 
 	# List of php-config include paths
 	AC_ARG_WITH(php-includes,
-		 [  --with-php-includes=PATHS  php-config include locations],
+		 [  --with-php-includes=PATHS  php-config includes list],
 		 [PHPCONFIGINCLUDES="$withval"],
 		 [PHPCONFIGINCLUDES=""])
 
 	if test -z "$PHPCONFIGINCLUDES"; then
-		PHPCONFIGINCLUDES="-I${php_prefix}/include/php5/sapi/embed `$PHPCONFIG --includes`"
+		PHPCONFIGINCLUDES="`$PHPCONFIG --includes`"
 	fi
 
 	AC_SUBST(PHPCONFIGINCLUDES)
@@ -1537,7 +1690,7 @@ if test "$use_php" = "yes" ; then
 	CPPFLAGS="$CPPFLAGS $PHPCONFIGINCLUDES"
 
 	AC_MSG_CHECKING([whether php_embed.h actually works])
-	AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <php_embed.h>]], [[return 0;]])],
+	AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <sapi/embed/php_embed.h>]], [[return 0;]])],
 						 [AC_MSG_RESULT([php_embed.h exists and works correctly])],
 						 [AC_MSG_ERROR([Cannot find php_embed.h. Check if php was compiled with the --enable-embed option.])])
 
@@ -1551,19 +1704,27 @@ if test "$use_php" = "yes" ; then
 		 [PHPCONFIGLDFLAGS=""])
 
 	if test -z "$PHPCONFIGLDFLAGS"; then
-		PHPCONFIGLDFLAGS="-L${php_prefix}/lib -L${php_prefix}/lib32 -L${php_prefix}/lib64 `$PHPCONFIG --ldflags`"
+		PHPCONFIGLDFLAGS="`$PHPCONFIG --ldflags`"
 	fi
 
 	AC_SUBST(PHPCONFIGLDFLAGS)
 
 	# List of php-config lib paths
 	AC_ARG_WITH(php-libs,
-		 [  --with-php-libs=LIBS       php-config lib locations],
+		 [  --with-php-libs=LIBS       php-config libs list],
 		 [PHPCONFIGLIBS="$withval"],
 		 [PHPCONFIGLIBS=""])
 
 	if test -z "$PHPCONFIGLIBS"; then
-		PHPCONFIGLIBS="-lphp5 `$PHPCONFIG --libs`"
+		PHPCONFIGLIBS="`$PHPCONFIG --libs`"
+
+		if test -f "${php_prefix}/lib/libphp5.so"; then
+			PHPCONFIGLIBS="-lphp5 $PHPCONFIGLIBS"
+		elif test -f "${php_prefix}/lib/libphp7.so"; then
+			PHPCONFIGLIBS="-lphp7 $PHPCONFIGLIBS"
+		else
+			AC_MSG_ERROR([libphp[5/7] not found. Required for further processing. Use --with-php-libs=list to specify the libs dependencies.])
+		fi
 	fi
 
 	AC_SUBST(PHPCONFIGLIBS)
@@ -1734,6 +1895,79 @@ if test "$use_python" = "yes"; then
   fi
 fi
 
+TWOCAN_CONF_MSG(Checking for f-stack support)
+# ---------------------------------------------------------------------------------------------------
+# Check for F-STACK (http://www.f-stack.org/?from=github)
+# ---------------------------------------------------------------------------------------------------
+AC_MSG_CHECKING(if you want to use f-stack)
+AC_ARG_WITH(f-stack,
+	[  --with-f-stack             use f-stack (experimental)],
+	[use_fstack=$withval],
+	[use_fstack=no])
+AC_MSG_RESULT($use_fstack)
+
+if test "$use_fstack" = "yes"; then
+  TWOCAN_CONF_MSG(Checking for f-stack package specific)
+
+  # List of f-stack include paths
+  AC_ARG_WITH(f-stack-includes,
+		 [  --with-f-stack-includes=PATHS  f-stack includes list],
+		 [FSTACKINCLUDES="$withval"],
+		 [FSTACKINCLUDES=""])
+
+  if test -z "$FSTACKINCLUDES"; then
+	FSTACKINCLUDES="-I/opt/f-stack/lib"
+  fi
+
+  AC_SUBST(FSTACKINCLUDES)
+
+  # Check for ff_api.h
+  AC_LANG([C])
+  save_CPPFLAGS="$CPPFLAGS"
+  CPPFLAGS="$CPPFLAGS $FSTACKINCLUDES"
+
+  AC_MSG_CHECKING([whether ff_api.h actually works])
+  AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <ff_api.h>]], [[return 0;]])],
+						 [AC_MSG_RESULT([ff_api.h exists and works correctly])],
+						 [AC_MSG_ERROR([Cannot find ff_api.h])])
+
+  CPPFLAGS=$save_CPPFLAGS
+  AC_LANG([C++])
+
+  CXXFLAGS="$CXXFLAGS $FSTACKINCLUDES"
+
+  # List of f-stack ldflags
+  AC_ARG_WITH(f-stack-ldflags,
+		 [  --with-f-stack-ldflags=LDFLAGS f-stack ldflags list],
+		 [FSTACKLDFLAGS="$withval"],
+		 [FSTACKLDFLAGS=""])
+
+  if test -z "$FSTACKLDFLAGS"; then
+	FSTACKLDFLAGS="-L/opt/f-stack/lib -L/opt/f-stack/dpdk/x86_64-native-linuxapp-gcc/lib"
+  fi
+
+##LDFLAGS="$LDFLAGS $FSTACKLDFLAGS"
+
+  AC_SUBST(FSTACKLDFLAGS)
+
+  # List of f-stack lib paths
+  AC_ARG_WITH(f-stack-libs,
+		 [  --with-f-stack-libs=LIBS       f-stack libs list],
+		 [FSTACKLIBS="$withval"],
+		 [FSTACKLIBS=""])
+
+  if test -z "$FSTACKLIBS"; then
+	FSTACKLIBS="-lfstack -lrte_eal -lrte_kni -lrte_port -lrte_cryptodev -lrte_ethdev -lrte_gso -lrte_ip_frag -lrte_mempool -lrte_pdump -lrte_pipeline -lrte_pmd_af_packet -lrte_reorder -lrte_sched -lrte_ring -lrte_timer -lrte_mbuf"
+  fi
+
+##ULIB_LIBS="$ULIB_LIBS $FSTACKLIBS"
+
+  AC_SUBST(FSTACKLIBS)
+
+  USE_FSTACK=yes
+  AC_DEFINE(USE_FSTACK, 1, [Define if enable f-stack support])
+fi
+
 TWOCAN_CONF_MSG(Checking for typedefs)
 
 AM_CONDITIONAL(SSL,			test "$USE_LIBSSL"		= "yes")
@@ -1763,6 +1997,7 @@ AC_DEFINE_UNQUOTED(_LDAP_VERSION,		 "$ldap_version",			[Ldap version])
 AC_DEFINE_UNQUOTED(_EXPAT_VERSION,		 "$expat_version",		[Expat version])
 AC_DEFINE_UNQUOTED(_LIBZ_VERSION,		 "$libz_version",			[libz - general purpose compression library version])
 AC_DEFINE_UNQUOTED(_LIBZOPFLI_VERSION,	 "$libzopfli_version",	[libzopfli - google compression library version])
+AC_DEFINE_UNQUOTED(_LIBBROTLI_VERSION,	 "$libbrotli_version",	[libbrotli - google compression library version])
 AC_DEFINE_UNQUOTED(_LIBTDB_VERSION,		 "$libtdb_version",		[libtdb - samba Trivial DB library version])
 AC_DEFINE_UNQUOTED(_LIBSSH_VERSION,		 "$libssh_version",		[libSSH version])
 AC_DEFINE_UNQUOTED(_SSL_VERSION,			 "$ssl_version",			[SSL version])
@@ -1770,7 +2005,7 @@ AC_DEFINE_UNQUOTED(_CURL_VERSION,		 "$libcurl_version",		[libcURL - multiprotoco
 AC_DEFINE_UNQUOTED(_MAGIC_VERSION,		 "$libmagic_version",	[libmagic - magic number recognition library version])
 AC_DEFINE_UNQUOTED(_SQLITE_VERSION,		 "$libsqlite_version",	[libsqlite - SQLITE Database System library version])
 AC_DEFINE_UNQUOTED(_MYSQL_VERSION,		 "$libmysql_version",	[libmysql - MySQL Database System library version])
-AC_DEFINE_UNQUOTED(_PGSQL_VERSION,		 "$pgsql_version",		[version of PostgreSQL database support])
+AC_DEFINE_UNQUOTED(_PGSQL_VERSION,		 "$POSTGRESQL_VERSION",	[version of PostgreSQL database support])
 AC_DEFINE_UNQUOTED(_DBI_VERSION,			 "$libdbi_version",		[libdbi - Database Independent Abstraction Layer version])
 AC_DEFINE_UNQUOTED(_LIBUUID_VERSION,	 "$libuuid_version",		[libuuid - version library to create a new UUID value])
 AC_DEFINE_UNQUOTED(_LIBEVENT_VERSION,	 "$libevent_version",	[libevent - event notification library version])
@@ -1809,7 +2044,6 @@ AC_TYPE_UINT8_T
 AC_CHECK_TYPES([ptrdiff_t])
 
 AC_DEFINE_UNQUOTED([RETSIGTYPE],[void],[Define as the return type of signal handlers (`int' or `void').])
-
 
 # SECTION 7: Checks for structures
 
@@ -1865,11 +2099,7 @@ fi
 
 # SECTION 14: Checks for aggregated features
 
-# UServer plugin
-
-AM_CONDITIONAL(PLUGIN, test "$enable_shared"	= "yes") # NB: if not don't build .so object...
-
-modules="rpc shib stream nocat socket scgi fcgi geoip proxy soap ssi tsa http echo"
+modules="rpc shib stream nocat nodog socket scgi fcgi geoip proxy soap ssi tsa http echo"
 
 if test "$USE_LIBPCRE" = "yes"; then
 	ulib_pcre_msg="yes ( $pcre_version )"
@@ -1911,8 +2141,8 @@ if test "$USE_MYSQL" = "yes"; then
    ulib_mysql_msg="yes ( $libmysql_version )"
 fi
 
-if test "$USE_PGSQL" = "yes"; then
-   ulib_pgsql_msg="yes ( $pgsql_version )"
+if test "$found_postgresql" = "yes"; then
+   ulib_pgsql_msg="yes ( $POSTGRESQL_VERSION )"
 fi
 
 if test "$USE_LIBDBI" = "yes"; then
@@ -1983,19 +2213,20 @@ static_handler_soap=""
 static_handler_ssi=""
 static_handler_tsa=""
 static_handler_nocat=""
+static_handler_nodog=""
 static_handler_http=""
 static_handler_echo=""
 
 AC_ARG_ENABLE(static-server-plugin,
-				  AS_HELP_STRING([--enable-static-server-plugin=MODULES],[ rpc shib stream socket scgi fcgi geoip proxy soap ssi tsa nocat http echo ]),
+				  AS_HELP_STRING([--enable-static-server-plugin=MODULES],[ rpc shib stream socket scgi fcgi geoip proxy soap ssi tsa nocat nodog http echo ]),
 				  [use_static_module="$enableval"])
 
-for mod in $modules; do
+for mod in $use_static_module; do
 	AC_MSG_CHECKING([server plugin "$mod"])
 
 	if echo $use_static_module | grep -w $mod >/dev/null || echo $use_static_module | grep all >/dev/null; then
 
-		add_calls1="$add_calls1 \n loadStaticLinkedModules(\"$mod\");"
+		add_calls1="$add_calls1 \n loadStaticLinkedModules(U_STRING_FROM_CONSTANT(\"$mod\"));"
 
 		if test "$mod" = "rpc"; then
 			static_handler_rpc="yes"
@@ -2035,6 +2266,9 @@ for mod in $modules; do
 		elif test "$mod" = "nocat"; then
 			static_handler_nocat="yes"
 			AC_DEFINE(U_STATIC_HANDLER_NOCAT,, [STATIC_HANDLER_NOCAT])
+		elif test "$mod" = "nodog"; then
+			static_handler_nodog="yes"
+			AC_DEFINE(U_STATIC_HANDLER_NODOG,, [STATIC_HANDLER_NODOG])
 		elif test "$mod" = "http"; then
 			static_handler_http="yes"
 			AC_DEFINE(U_STATIC_HANDLER_HTTP,, [STATIC_HANDLER_HTTP])
@@ -2065,6 +2299,7 @@ AM_CONDITIONAL(STATIC_HANDLER_SOAP,   test "$static_handler_soap"   = "yes")
 AM_CONDITIONAL(STATIC_HANDLER_SSI,    test "$static_handler_ssi"    = "yes")
 AM_CONDITIONAL(STATIC_HANDLER_TSA,    test "$static_handler_tsa"    = "yes")
 AM_CONDITIONAL(STATIC_HANDLER_NOCAT,  test "$static_handler_nocat"  = "yes")
+AM_CONDITIONAL(STATIC_HANDLER_NODOG,  test "$static_handler_nodog"  = "yes")
 AM_CONDITIONAL(STATIC_HANDLER_HTTP,   test "$static_handler_http"	  = "yes")
 AM_CONDITIONAL(STATIC_HANDLER_ECHO,	  test "$static_handler_echo"   = "yes")
 
@@ -2082,7 +2317,7 @@ if test "$USE_MYSQL" != "yes"; then
 	drivers=`echo $drivers | sed s/mysql//`
 fi
 
-if test "$USE_PGSQL" != "yes"; then
+if test "$HAVE_POSTGRESQL" != "yes"; then
 	drivers=`echo $drivers | sed s/pgsql//`
 fi
 
@@ -2092,34 +2327,33 @@ static_handler_mysql=""
 static_handler_sqlite=""
 static_handler_pgsql=""
 
-AC_ARG_ENABLE(static-orm-driver, AS_HELP_STRING([--enable-static-orm-driver=DRIVERS],[ sqlite mysql pgsql ]),
+AC_ARG_ENABLE(static-orm-driver,
+				  AS_HELP_STRING([--enable-static-orm-driver=DRIVERS],[ sqlite mysql pgsql ]),
 				  [use_static_driver="$enableval"])
 
-for drv in $drivers; do
+for drv in $use_static_driver; do
 	AC_MSG_CHECKING([ORM driver "$drv"])
 
 	if echo $use_static_driver | grep -w $drv >/dev/null || echo $use_static_driver | grep all >/dev/null; then
 
-		add_calls2="$add_calls2 \n loadStaticLinkedModules(\"$drv\");"
+		add_calls2="$add_calls2 \n loadStaticLinkedModules(U_STRING_FROM_CONSTANT(\"$drv\"));"
 
 		if test "$drv" = "sqlite"; then
 			static_handler_sqlite="yes"
          ULIB_LIBS="$ULIB_LIBS $SQLITE3_LIBS"
 			LDFLAGS="$SQLITE3_LDFLAGS $LDFLAGS"
-			CPPFLAGS="$SQLITE3_INCLUDE $CPPFLAGS"
+			CXXFLAGS="$SQLITE3_INCLUDE $CXXFLAGS"
 			AC_DEFINE(U_STATIC_ORM_DRIVER_SQLITE,, [STATIC_ORM_DRIVER_SQLITE])
+		elif test "$drv" = "pgsql"; then
+			static_handler_pgsql="yes"
+         CPPFLAGS="$POSTGRESQL_CPPFLAGS $CPPFLAGS"
+			AC_DEFINE(U_STATIC_ORM_DRIVER_PGSQL,, [STATIC_ORM_DRIVER_PGSQL])
 		elif test "$drv" = "mysql"; then
 			static_handler_mysql="yes"
          ULIB_LIBS="$ULIB_LIBS $MYSQL_LIBS"
 			LDFLAGS="$MYSQL_LDFLAGS $LDFLAGS"
-			CPPFLAGS="$MYSQL_INCLUDE $CPPFLAGS"
+			CXXFLAGS="$MYSQL_INCLUDE $CXXFLAGS"
 			AC_DEFINE(U_STATIC_ORM_DRIVER_MYSQL,, [STATIC_ORM_DRIVER_MYSQL])
-		elif test "$drv" = "pgsql"; then
-			static_handler_pgsql="yes"
-         ULIB_LIBS="$ULIB_LIBS $PGSQL_LIBS"
-			LDFLAGS="$PGSQL_LDFLAGS $LDFLAGS"
-			CPPFLAGS="$PGSQL_INCLUDE $CPPFLAGS"
-			AC_DEFINE(U_STATIC_ORM_DRIVER_PGSQL,, [STATIC_ORM_DRIVER_PGSQL])
 		fi
 
 	   AC_MSG_RESULT([static])
@@ -2165,8 +2399,8 @@ if test "$enable_static" = "yes" -a "$enable_shared" = "no"; then
 
 			AC_MSG_CHECKING([servlet "$srv"])
 
-			add_calls3="$add_calls3 \n extern \"C\" { int runDynamicPage_${srv}(UClientImage_Base*); }"
-			add_calls4="$add_calls4 \n loadStaticLinkedServlet(\"${srv}\",U_CONSTANT_SIZE(\"${srv}\"),(vPFi)::runDynamicPage_${srv});"
+			add_calls3="$add_calls3 \n extern \"C\" { void runDynamicPage_${srv}(); } \n extern \"C\" { void runDynamicPageParam_${srv}(uint32_t); }"
+			add_calls4="$add_calls4 \n loadStaticLinkedServlet(\"${srv}\",U_CONSTANT_SIZE(\"${srv}\"),(vPF)::runDynamicPage_${srv},(vPFu)::runDynamicPageParam_${srv});"
 
 			if test "$srv" = "wi_auth"; then
 				static_servlet_wi_auth="yes"
@@ -2236,93 +2470,131 @@ if test "$enable_http2" = "yes"; then
 	AM_CONDITIONAL(HTTP2, true)
 fi
 
-CXXFLAGS="$CXXFLAGS -fno-exceptions -fno-rtti"
+CXXFLAGS="$CXXFLAGS -fno-exceptions"
+
+if test "$enable_rtti" != "yes"; then
+   CXXFLAGS="$CXXFLAGS -fno-rtti"
+fi
 
 # If gcc compiler add values to *FLAGS...
 
-if test "$ac_cv_c_compiler_gnu" = "yes" -a "x$GCC_IS_CLANG" = xno -a "x$OPERATINGSYSTEM" = xlinux; then
+if test "$ac_cv_c_compiler_gnu" = "yes" -a "x$OPERATINGSYSTEM" = xlinux; then
 
-	TWOCAN_CONF_MSG(Checking for gcc compiler flags)
+	TWOCAN_CONF_MSG(Checking for $CC compiler flags)
 
-	AC_CC_TRY_FLAG
+	  if test "x$GCC_IS_INTEL" = xyes; then
+		MAYBE_FLAGS="-fno-check-new -fno-stack-protector -fno-stack-protector-all -Ofast -march=native -mtune=native"
+	elif test "x$GCC_IS_CLANG" = xyes; then
+		MAYBE_FLAGS="-fno-check-new -fno-stack-protector -fno-stack-protector-all -Ofast -march=native -mtune=native \
+						 -ffast-math -ftree-vectorize -fno-crossjumping -fpartial-inlining"
+	else
+		AC_MSG_CHECKING([whether to use libgcc])
+		AC_ARG_ENABLE(libgcc,
+		AC_HELP_STRING([--enable-libgcc],[use libgcc when linking]),
+			[ case "$enableval" in
+			  yes)
+				 LIBS="-lgcc $LIBS"
+				 AC_MSG_RESULT(yes)
+				 ;;
+			  *) AC_MSG_RESULT(no)
+				 ;;
+			  esac ],
+				 AC_MSG_RESULT(no)
+			)
 
-	MAYBE_FLAGS="-Wstrict-aliasing=2 -Wall -Wextra -Wsign-compare -Wpointer-arith -Wwrite-strings \
-					 -Wmissing-declarations -Wpacked -Wswitch-enum -Wmissing-format-attribute -Winit-self -Wformat \
-					 -Wformat-extra-args -Wenum-compare -Wlogical-not-parentheses -Wsizeof-array-argument -Wbool-compare"
+		MAYBE_FLAGS="-Wstrict-aliasing=2 -Wall -Wextra -Wsign-compare -Wpointer-arith -Wwrite-strings \
+						 -Wmissing-declarations -Wpacked -Wswitch-enum -Wmissing-format-attribute -Winit-self -Wformat \
+						 -Wformat-extra-args -Wenum-compare -Wlogical-not-parentheses -Wsizeof-array-argument -Wbool-compare -Wno-cast-function-type"
 
-	# -------------------------------------------------------------------------------------
-	# to turn various gcc/glibc-specific preprocessor checks
-	# -------------------------------------------------------------------------------------
-	# -Wno-format -Wno-format-extra-args
-	# -Wsuggest-final-methods -Wsuggest-final-types
-	# -------------------------------------------------------------------------------------
-	# -Wcast-qual
-	# -------------------------------------------------------------------------------------
+		# -------------------------------------------------------------------------------------
+		# to turn various gcc/glibc-specific preprocessor checks
+		# -------------------------------------------------------------------------------------
+		# -Wno-format -Wno-format-extra-args
+		# -Wsuggest-final-methods -Wsuggest-final-types
+		# -------------------------------------------------------------------------------------
+		# -Wcast-qual
+		# -------------------------------------------------------------------------------------
 
-	 CC_MAYBE_FLAGS="-Werror-implicit-function-declaration -Wstrict-prototypes -Wc++-compat \
-						  -Wmissing-prototypes -Wnested-externs -Wdeclaration-after-statement -Wold-style-definition -Wsizeof-pointer-memaccess"
-	CXX_MAYBE_FLAGS="-fno-check-new -fno-enforce-eh-specs -Wno-deprecated -Wdelete-non-virtual-dtor -Wodr"
+		 CC_MAYBE_FLAGS="-Werror-implicit-function-declaration -Wstrict-prototypes \
+							  -Wmissing-prototypes -Wnested-externs -Wdeclaration-after-statement -Wsizeof-pointer-memaccess"
 
-		 MAYBE_FLAGS_MODERN=""
-	CXX_MAYBE_FLAGS_MODERN=""
 
-	case "$gcc_version" in
-		2*|3*|4.0*|4.1*|4.2*)
-		;;
-		4.3*) # openWRT backfire: ... c++/4.3.3/tr1_impl/boost_shared_ptr.h:630: error: cannot use typeid with -fno-rtti
-		;;
-		4.4*) # centOS 64: ... c++/4.4.7/bits/shared_ptr.h:1005: error: cannot use typeid with -fno-rtti
-		;;
-		4.5*) # openwrt: SIGSEGV
-		;;
-		4.6*|4.7*|4.8*|4.9*|5*)
-			 MAYBE_FLAGS_MODERN="-Wno-unused-result -Wshadow -Wsuggest-attribute=pure -Wsuggest-attribute=noreturn" # -Wsuggest-attribute=const
-		;;
-		6.1.0|*)
-			 MAYBE_FLAGS_MODERN="-Wno-unused-result -Wshadow -Wsuggest-attribute=pure -Wsuggest-attribute=noreturn \
-									   -Wlogical-op -Wduplicated-cond -Wtautological-compare -Wswitch-bool -Wshift-negative-value \
-									   -Wshift-overflow -Wshift-overflow=2 -Wnull-dereference -Wnonnull"
-		CXX_MAYBE_FLAGS_MODERN="-Wterminate -Wlto-type-mismatch -Wsubobject-linkage -Wplacement-new -Woverride-init-side-effects \
-										-Wvirtual-inheritance -Wnamespaces" # -Wtemplates -Wmultiple-inheritance
-		;;
-	esac
 
-		 MAYBE_FLAGS="    $MAYBE_FLAGS     $MAYBE_FLAGS_MODERN"
-	CXX_MAYBE_FLAGS="$CXX_MAYBE_FLAGS $CXX_MAYBE_FLAGS_MODERN"
+		CXX_MAYBE_FLAGS="-fno-check-new -fno-enforce-eh-specs -Wno-deprecated -Wdelete-non-virtual-dtor -Wodr"
 
-	if test "$enable_gcc_optimized" = "yes" -a "$enable_coverage" != "yes"; then
-		## ----------------------------------------------------------------------------------------------------------------------------------
-		## -fgcse Perform a global common subexpression elimination pass. This pass also performs global constant and copy propagation. When
-		##			 compiling a program using computed gotos, a GCC extension, you may get better runtime performance if you disable the global
-		##			 common subexpression elimination pass by adding -fno-gcse to the command line
-		## ----------------------------------------------------------------------------------------------------------------------------------
-		MAYBE_FLAGS="$MAYBE_FLAGS -fno-stack-protector -fno-stack-protector-all -ffast-math -ftree-vectorize -fno-crossjumping -fno-gcse -Ofast" ## -ffunction-sections -fdata-sections
+			 MAYBE_FLAGS_MODERN=""
+		CXX_MAYBE_FLAGS_MODERN=""
 
-		if test "$use_distcc" != "yes" -a "$cross_compiling" != "yes"; then
-			MAYBE_FLAGS="$MAYBE_FLAGS -flto -ffat-lto-objects -fuse-linker-plugin -march=native -mtune=native" # NB: distcc don't work with this...
+		if test "$found_postgresql" = "yes"; then
+			if test "$static_handler_pgsql" != "yes"; then
+				CC_MAYBE_FLAGS="$CC_MAYBE_FLAGS -Wc++-compat -Wold-style-definition"
+			else
+				CC_MAYBE_FLAGS="$CC_MAYBE_FLAGS -Wno-discarded-qualifiers -Wno-switch-enum -Wno-missing-field-initializers -Wno-sign-compare -Wno-strict-aliasing \
+									 -Wno-packed -Wno-shadow -Wno-suggest-attribute=pure -Wno-strict-prototypes -Wno-stringop-truncation -Wno-format-truncation \
+									 -Wno-implicit-fallthrough -Wno-null-dereference"
+			fi
+		fi
+
+		case "$gcc_version" in
+			2*|3*|4.0*|4.1*|4.2*)
+			;;
+			4.3*) # openWRT backfire: ... c++/4.3.3/tr1_impl/boost_shared_ptr.h:630: error: cannot use typeid with -fno-rtti
+			;;
+			4.4*) # centOS 64: ... c++/4.4.7/bits/shared_ptr.h:1005: error: cannot use typeid with -fno-rtti
+			;;
+			4.5*) # openwrt: SIGSEGV
+			;;
+			4.6*|4.7*|4.8*|4.9*|5*)
+				 MAYBE_FLAGS_MODERN="-Wno-unused-result -Wshadow -Wsuggest-attribute=pure -Wsuggest-attribute=noreturn" # -Wsuggest-attribute=const
+			;;
+			6.1.0|*)
+				 MAYBE_FLAGS_MODERN="-Wno-unused-result -Wshadow -Wsuggest-attribute=pure -Wsuggest-attribute=noreturn \
+											-Wlogical-op -Wduplicated-cond -Wtautological-compare -Wswitch-bool -Wshift-negative-value \
+											-Wshift-overflow -Wshift-overflow=2 -Wnull-dereference -Wnonnull"
+			CXX_MAYBE_FLAGS_MODERN="-Wterminate -Wlto-type-mismatch -Wsubobject-linkage -Wplacement-new -Woverride-init-side-effects \
+											-Wvirtual-inheritance" # -Wnamespaces -Wtemplates -Wmultiple-inheritance
+			;;
+		esac
+
+			 MAYBE_FLAGS="    $MAYBE_FLAGS     $MAYBE_FLAGS_MODERN"
+		CXX_MAYBE_FLAGS="$CXX_MAYBE_FLAGS $CXX_MAYBE_FLAGS_MODERN"
+
+		if test "$enable_gcc_optimized" = "yes" -a "$enable_coverage" != "yes"; then
+			## ----------------------------------------------------------------------------------------------------------------------------------
+			## -fgcse Perform a global common subexpression elimination pass. This pass also performs global constant and copy propagation. When
+			##			 compiling a program using computed gotos, a GCC extension, you may get better runtime performance if you disable the global
+			##			 common subexpression elimination pass by adding -fno-gcse to the command line
+			## ----------------------------------------------------------------------------------------------------------------------------------
+			## -ffunction-sections -fdata-sections
+			## ----------------------------------------------------------------------------------------------------------------------------------
+			MAYBE_FLAGS="$MAYBE_FLAGS -fno-stack-protector -fno-stack-protector-all -ffast-math -ftree-vectorize -fno-crossjumping -fno-gcse -fpartial-inlining -Ofast"
+
+			if test "$use_distcc" != "yes" -a "$cross_compiling" != "yes"; then
+				MAYBE_FLAGS="$MAYBE_FLAGS -flto -ffat-lto-objects -fuse-linker-plugin -march=native -mtune=native" # NB: distcc don't work with this...
+			fi
+		fi
+
+		## -------------------------------------------------------------------------------------
+		##	-fno-common
+		## -Wno-missing-field-initializers -Wno-attributes -Wno-long-long
+		## -------------------------------------------------------------------------------------
+		##	-fwhole-program
+		## -------------------------------------------------------------------------------------
+		## Assume that the current compilation unit represents the whole program being compiled.
+		## All public functions and variables with the exception of main and those merged by attribute
+		## externally_visible become static functions
+		## -------------------------------------------------------------------------------------
+
+		if test "$enable_debug" != "yes"; then
+			MAYBE_FLAGS="$MAYBE_FLAGS -Wno-unused-parameter -Wno-unused-variable" # -Winline
+		else
+			## _FORTIFY_SOURCE is enabled by default from g++ 4.7.2
+			MAYBE_FLAGS="$MAYBE_FLAGS -Wunsafe-loop-optimizations -Wno-unused-parameter -rdynamic -fdiagnostics-color=auto -Wmisleading-indentation"
+			CXX_MAYBE_FLAGS="$CXX_MAYBE_FLAGS -Wc++11-compat -Wno-implicit-fallthrough" ## -Wzero-as-null-pointer-constant
 		fi
 	fi
 
-	## -------------------------------------------------------------------------------------
-	##	-fno-common
-	## -Wno-missing-field-initializers -Wno-attributes -Wno-long-long
-	## -------------------------------------------------------------------------------------
-	##	-fwhole-program
-	## -------------------------------------------------------------------------------------
-	## Assume that the current compilation unit represents the whole program being compiled.
-	## All public functions and variables with the exception of main and those merged by attribute
-	## externally_visible become static functions
-	## -------------------------------------------------------------------------------------
-
-	if test "$enable_debug" != "yes"; then
-		MAYBE_FLAGS="$MAYBE_FLAGS -Winline -Wno-unused-parameter -Wno-unused-variable"
-	else
-		## _FORTIFY_SOURCE is enabled by default from g++ 4.7.2
-		MAYBE_FLAGS="$MAYBE_FLAGS -Wunsafe-loop-optimizations -Wno-unused-parameter -rdynamic -fdiagnostics-color=auto -Wmisleading-indentation"
-		CXX_MAYBE_FLAGS="$CXX_MAYBE_FLAGS -Wc++11-compat" # -Wzero-as-null-pointer-constant"
-	fi
-
-	AC_CACHE_CHECK([for gcc supported flags], ulib_cv_flags, [
+	AC_CACHE_CHECK([for $CC supported flags], ulib_cv_flags, [
 		echo
 		FLAGS=""
 		CC_FLAGS=""
@@ -2363,57 +2635,62 @@ if test "$ac_cv_c_compiler_gnu" = "yes" -a "x$GCC_IS_CLANG" = xno -a "x$OPERATIN
 		ulib_cv_CXX_flags=$CXX_FLAGS
 		# ------------------------------------------------
 
-		AC_MSG_CHECKING([which gcc flags were supported])
+		AC_MSG_CHECKING([which $CC flags were supported])
 	])
 
 	SANITIZE_FLAGS=""
 	SANITIZE_THREAD=""
 	SANITIZE_ADDRESS=""
 
-	case "$gcc_version" in
-		2.9*|3*|4.0*|4.1*|4.2*|4.3*|4.4*|4.5*|4.6*|4.7*|4.8*)
-		;;
-		*)
-		## -------------------------------------------------------------------------------------------------------------------------
-		## FATAL: ThreadSanitizer can not mmap the shadow memory (something is mapped at 0x400000 < 0x7cf000000000)
-		## echo 2 >/proc/sys/kernel/randomize_va_space
-		## This may be fixed in future kernels, see https://bugzilla.kernel.org/show_bug.cgi?id=66721 
-		## -------------------------------------------------------------------------------------------------------------------------
-		##	if test "$enable_debug" = "yes"; then
-		##		AC_CC_TRY_FLAG(["-fsanitize=thread"], [SANITIZE_THREAD="-fsanitize=thread"])
-		##		if test "$SANITIZE_THREAD" != ""; then
-      ##			ULIB_LIBS="$ULIB_LIBS -ltsan"
-		##			SANITIZE_FLAGS="-fPIE -pie"
-		##		fi
-		## -------------------------------------------------------------------------------------------------------------------------
-	   ##		AC_CC_TRY_FLAG(["-fsanitize=address"], [SANITIZE_ADDRESS="-fsanitize=address"])
-		##		if test "$SANITIZE_ADDRESS" != ""; then
-      ##			ULIB_LIBS="$ULIB_LIBS -lasan"
-		##			SANITIZE_FLAGS="-fPIE -pie"
-		##		fi
-		##	fi
-		## -------------------------------------------------------------------------------------------------------------------------
+	if test "x$GCC_IS_CLANG" = xno -a "x$GCC_IS_INTEL" = xno; then
+		case "$gcc_version" in
+			2.9*|3*|4.0*|4.1*|4.2*|4.3*|4.4*|4.5*|4.6*|4.7*|4.8*)
+			;;
+			*)
+			## -------------------------------------------------------------------------------------------------------------------------
+			## FATAL: ThreadSanitizer can not mmap the shadow memory (something is mapped at 0x400000 < 0x7cf000000000)
+			## echo 2 >/proc/sys/kernel/randomize_va_space
+			## This may be fixed in future kernels, see https://bugzilla.kernel.org/show_bug.cgi?id=66721 
+			## -------------------------------------------------------------------------------------------------------------------------
+			##	if test "$enable_debug" = "yes"; then
+			##		AC_CC_TRY_FLAG(["-fsanitize=thread"], [SANITIZE_THREAD="-fsanitize=thread"])
+			##		if test "$SANITIZE_THREAD" != ""; then
+			##			ULIB_LIBS="$ULIB_LIBS -ltsan"
+			##			SANITIZE_FLAGS="-fPIE -pie"
+			##		fi
+			## -------------------------------------------------------------------------------------------------------------------------
+			##		AC_CC_TRY_FLAG(["-fsanitize=address"], [SANITIZE_ADDRESS="-fsanitize=address"])
+			##		if test "$SANITIZE_ADDRESS" != ""; then
+			##			ULIB_LIBS="$ULIB_LIBS -lasan"
+			##			SANITIZE_FLAGS="-fPIE -pie"
+			##		fi
+			##	fi
+			## -------------------------------------------------------------------------------------------------------------------------
 
-		AC_MSG_CHECKING([sanitize support request])
-		if echo $CPPFLAGS | grep fsanitize >/dev/null; then
-			AC_MSG_RESULT(yes)
-			AM_CONDITIONAL(SANITIZE, true)
-		else
-			AC_MSG_RESULT(no)
-		fi
+			AC_MSG_CHECKING([sanitize support request])
+			if echo $CPPFLAGS | grep fsanitize >/dev/null; then
+				AC_MSG_RESULT(yes)
+				AM_CONDITIONAL(SANITIZE, true)
+			else
+				AC_MSG_RESULT(no)
+			fi
 
-		# When using a linker plugin, compiling with the -flto option now generates slim object files (.o) which only contain intermediate
-		# language representation for LTO. Use -ffat-lto-objects to create files which contain additionally the object code. To generate
-		# static libraries suitable for LTO processing, use gcc-ar and gcc-ranlib; to list symbols from a slim object file use gcc-nm.
-		# (This requires that ar, ranlib and nm have been compiled with plugin support)
+			# When using a linker plugin, compiling with the -flto option now generates slim object files (.o) which only contain intermediate
+			# language representation for LTO. Use -ffat-lto-objects to create files which contain additionally the object code. To generate
+			# static libraries suitable for LTO processing, use gcc-ar and gcc-ranlib; to list symbols from a slim object file use gcc-nm.
+			# (This requires that ar, ranlib and nm have been compiled with plugin support)
 
-		if test "$cross_compiling" != "yes"; then
-			AR=gcc-ar
-			NM=gcc-nm
-			RANLIB=gcc-ranlib
-		fi
-		;;
-	esac
+			if test "$cross_compiling" != "yes"; then
+				AC_PATH_PROG(GCC_AR, gcc-ar, no)
+				if test "$GCC_AR" != "no"; then
+					AR=gcc-ar
+					NM=gcc-nm
+					RANLIB=gcc-ranlib
+				fi
+			fi
+			;;
+		esac
+	fi
 
 	CFLAGS="$CFLAGS $ulib_cv_CC_flags"
 	CXXFLAGS="$CXXFLAGS $ulib_cv_CXX_flags"
@@ -2482,7 +2759,11 @@ if test -n "$posix4_lib"; then
    ULIB_LIBS="$ULIB_LIBS $posix4_lib";
 fi
 if test -n "$plib"; then
-   ULIB_LIBS="$ULIB_LIBS $plib";
+	if test "$with_gnu_ld" = "yes" -a "$enable_new_ldflags" = "yes"; then
+		ULIB_LIBS="$ULIB_LIBS -Wl,--no-as-needed $plib";
+	else
+		ULIB_LIBS="$ULIB_LIBS $plib";
+	fi
 fi
 if test "$enable_coverage" = "yes"; then
 	ULIB_LIBS="$ULIB_LIBS -lgcov"
@@ -2514,13 +2795,41 @@ if test "x$ac_cv_crc32_intrinsics" = xyes; then
 		ULIB_LIBS="$ULIB_LIBS -lgcc_s -lgcc"
  	else
 		to_match='gcc (Ubuntu 5.*'
-
 		case `gcc --version | head -n 1` in
 			$to_match) ULIB_LIBS="$ULIB_LIBS -lgcc_s -lgcc" ;; # On Ubuntu 16.04 bug: [#65612](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=65612)
 		esac
 	fi
 fi
 ##########################
+
+if test "$ac_cv_c_compiler_gnu" = "yes" -a "x$GCC_IS_CLANG" = xno -a "x$GCC_IS_INTEL" = xno; then
+	if test "$enable_static" = "yes" -a "$enable_shared" = "no" -a "$enable_stdcpp" = "yes"; then
+
+##		if test -f "$gcc_dir/libstdc++.a"; then
+##			gcc_lib=`gcc -print-libgcc-file-name`
+##			gcc_dir=`dirname $gcc_lib`
+##			ULIB_LIBS="$ULIB_LIBS $gcc_dir/libstdc++.a $gcc_lib"
+##		else
+##			ULIB_LIBS="$ULIB_LIBS -lstdc++ -lgcc"
+##		fi
+
+		ULIB_LIBS="$ULIB_LIBS -lstdc++ -lgcc"
+	else
+		AC_MSG_CHECKING([whether to use libgcc])
+		AC_ARG_ENABLE(libgcc,
+		AC_HELP_STRING([--enable-libgcc],[use libgcc when linking]),
+			[ case "$enableval" in
+			  yes)
+				 ULIB_LIBS="$ULIB_LIBS -lgcc"
+				 AC_MSG_RESULT(yes)
+				 ;;
+			  *) AC_MSG_RESULT(no)
+				 ;;
+			  esac ],
+				 AC_MSG_RESULT(no)
+			)
+	fi
+fi
 
 # Check for availablity of "old style" C++ strstream header
 AC_CHECK_HEADERS([strstream.h])
@@ -2542,11 +2851,27 @@ AC_SUBST(USP_LIBS)
 AC_SUBST(USP_FLAGS)
 AC_SUBST(USP_LDFLAGS)
 
+STD_GNU11=
 if test "x$ax_cv_cxx_compile_cxx11" = xno -a "x$ax_cv_cxx_compile_cxx11__std_gnupp11" = xyes; then
 	CXXFLAGS="-std=gnu++11 $CXXFLAGS"
+
+	AC_MSG_CHECKING(for workaround to enable on Sabayon)
+	to_match='gcc (Gentoo Hardened 4.9.3*'
+	case `gcc --version | head -n 1` in
+		$to_match)
+			STD_GNU11="-std=gnu++11"
+
+			AC_MSG_RESULT(enabled)
+		;;
+		*)	AC_MSG_RESULT(no) ;;
+	esac
 fi
+AC_SUBST(STD_GNU11)
 if test "x$ax_cv_cxx_compile_cxx14" = xno -a "x$ax_cv_cxx_compile_cxx14__std_gnupp14" = xyes; then
 	CXXFLAGS="-std=gnu++14 $CXXFLAGS"
+fi
+if test "x$ax_cv_cxx_compile_cxx17" = xno -a "x$ax_cv_cxx_compile_cxx17__std_gnupp17" = xyes; then
+	CXXFLAGS="-std=gnu++17 $CXXFLAGS"
 fi
 
 CXX=$CXX_save
@@ -2598,11 +2923,13 @@ fi
 
 # Prefix dir
 AC_DEFINE_UNQUOTED(U_PREFIXDIR,	"$u_prefixdir", [install directory])
-# Plugin dir - program executables [EPREFIX/libexec]
+# Plugin dir - program executables [PREFIX/libexec]
 AC_DEFINE_UNQUOTED(U_LIBEXECDIR, "$u_libexecdir", [install directory for plugins])
 # Config dir - read-only single-machine data [PREFIX/etc]
 AC_DEFINE_UNQUOTED(U_SYSCONFDIR, "$u_sysconfdir", [install directory for configuration data])
 
+ULIB_PREFIXDIR="$u_prefixdir"
+AC_SUBST(ULIB_PREFIXDIR)
 ULIB_MODULEDIR="$u_libexecdir"
 AC_SUBST(ULIB_MODULEDIR)
 ULIB_SYSCONFDIR="$u_sysconfdir"
@@ -2640,6 +2967,7 @@ AC_MSG_NOTICE([Configured to build src/ulib/lib${ULIB}:
 
            LIBZ support: ${ulib_libz_msg}
       LIBZOPFLI support: ${ulib_libzopfli_msg}
+      LIBBROTLI support: ${ulib_libbrotli_msg}
          LIBTDB support: ${ulib_libtdb_msg}
            PCRE support: ${ulib_pcre_msg}
             SSL support: ${ulib_ssl_msg}
@@ -2653,7 +2981,7 @@ AC_MSG_NOTICE([Configured to build src/ulib/lib${ULIB}:
           PgSQL support: ${ulib_pgsql_msg}
             DBI support: ${ulib_dbi_msg}
         libuuid support: ${ulib_libuuid_msg}
-       libevent support: ${ulib_libevent_msg}
+       libevent support: ${ulib_libevent_msg} (deprecated)
         libxml2 support: ${ulib_libxml2_msg}
          c-ares support: ${ulib_cares_msg}
      Page-Speed support: ${ulib_pagespeed_msg}
@@ -2662,7 +2990,8 @@ AC_MSG_NOTICE([Configured to build src/ulib/lib${ULIB}:
   RUBY language support: ${ulib_ruby_msg}
 PYTHON language support: ${ulib_python_msg}
 
-       Examples:         ${ulib_examples}
+                Plugins: ${ulib_plugins}
+               Examples: ${ulib_examples}
        LEX/YACC support: ${ulib_parser_msg}
        Lexical analyzer: ${LEX} ( ${flex_version} )
        Parser generator: ${YACC} ( ${bison_version} )
@@ -2674,21 +3003,21 @@ See include/ulib/internal/config.h for further configuration information
 # SECTION 16: `AC_CONFIG_FILES([FILE...])
 
 AC_CONFIG_FILES([
-	Makefile rpm.sh ULib.spec m4/Makefile doc/Makefile include/Makefile contrib/Makefile
-	include/ulib/Makefile contrib/HCSP/Makefile contrib/RSIGN/Makefile contrib/signer/Makefile
-	src/ulib/Makefile src/ulib/ULib.rc src/ulib/ULib.pc src/ulib/orm/driver/Makefile src/ulib/net/server/plugin/Makefile
+	Makefile rpm.sh ULib.spec userver.service m4/Makefile doc/Makefile include/Makefile contrib/Makefile
+	include/ulib/Makefile contrib/HCSP/Makefile contrib/RSIGN/Makefile contrib/signer/Makefile fuzz/Makefile
 	src/ulib/net/server/plugin/v8/Makefile src/ulib/net/server/plugin/php/Makefile src/ulib/net/server/plugin/usp/Makefile
 	src/ulib/net/server/plugin/ruby/Makefile src/ulib/net/server/plugin/mod_shib/Makefile src/ulib/net/server/plugin/mod_geoip/Makefile
 	src/ulib/net/server/plugin/usp/usp_compile.sh src/ulib/net/server/plugin/page_speed/Makefile src/ulib/net/server/plugin/python/Makefile
-	examples/Makefile examples/IR/Makefile examples/csp/Makefile examples/lcsp/Makefile examples/rsign/Makefile
-	examples/hello/Makefile examples/WiAuth/Makefile examples/xml2txt/Makefile examples/uclient/Makefile examples/userver/Makefile
+	src/ulib/Makefile src/ulib/ULib.rc src/ulib/ULib.pc src/ulib/orm/driver/Makefile src/ulib/net/server/plugin/Makefile src/ulib/orm/driver/libpq/Makefile
+	examples/serialize/Makefile examples/WiAuth/Makefile examples/WiAuth/v2/Makefile examples/xml2txt/Makefile examples/uclient/Makefile examples/userver/Makefile
+	examples/Makefile examples/IR/Makefile examples/csp/Makefile examples/lcsp/Makefile examples/rsign/Makefile examples/hello/Makefile examples/loginCookie/Makefile
 	examples/PEC_log/Makefile examples/workflow/Makefile examples/doc_parse/Makefile examples/lrp_session/Makefile examples/http_header/Makefile
 	examples/test_manager/Makefile examples/doc_classifier/Makefile examples/form_completion/Makefile examples/simple_client_server/Makefile
 	examples/download_accelerator/Makefile examples/XAdES/Makefile examples/XAdES/XAdES.spec examples/xml2txt/xml2txt.spec examples/IR/searchengine-bin.spec
 	examples/lcsp/lcsp.spec examples/lcsp/lcsp_rpc.spec examples/csp/cspclient.spec examples/csp/cspclient_rpc.spec examples/rsign/rsignclient.spec
 	examples/rsign/rsignclient_rpc.spec examples/userver/web_server.spec examples/userver/wagsmserver.spec examples/workflow/workflow.spec 
 	examples/PEC_log/PEC_log.spec examples/userver/tsaserver.spec examples/userver/cspserver.spec examples/userver/rsignserver.spec examples/doc_parse/doc_parse.spec
-	tests/Makefile tests/base/Makefile tests/debug/Makefile tests/ulib/Makefile tests/examples/Makefile tests/contrib/Makefile])
+	tests/Makefile tests/base/Makefile tests/debug/Makefile tests/ulib/Makefile tests/ulib/http2/Makefile tests/examples/Makefile tests/contrib/Makefile])
 
 #	examples/parser/Makefile \
 #	src/ulib/base/Makefile src/ulib/debug/Makefile \
@@ -2697,7 +3026,7 @@ AC_CONFIG_FILES([
 AC_OUTPUT
 
 if test -n "$AWK"; then
-  $AWK -f configure_log.awk config.log							> include/ulib/internal/config1.h
+  $AWK -f configure_log.awk config.log							  > include/ulib/internal/config1.h
   $AWK -f configure_h.awk   include/ulib/internal/config.h > include/ulib/internal/config2.h
   cd include/ulib/internal
   cat   config2.h config1.h >> config.h
@@ -2705,27 +3034,31 @@ if test -n "$AWK"; then
   cd ../../..
 fi
 
-# Verify the integrity of the current configuration
-
 echo
-echo "***"
 
-CPPFLAGS="-DHAVE_CONFIG_H -I${srcdir}/include $CPPFLAGS"
+# Verify the integrity of the current configuration
+if test "$cross_compiling" != "yes"; then
+	CPPFLAGS="-DHAVE_CONFIG_H -I${srcdir}/include $CPPFLAGS"
 
-AC_CACHE_CHECK([if generated configuration is usable], ac_cv_configuration_is_usable,
+	AC_CACHE_CHECK([if generated configuration is usable], ac_cv_configuration_is_usable,
 [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include "src/ulib/internal/common.cpp"
 ]], [[int a = 0; a += 1;]])],[ac_cv_configuration_is_usable="yes"],[ac_cv_configuration_is_usable="no"])
 ])
 
-if test "$ac_cv_configuration_is_usable" = "no" ; then
-	# It appears that ulib/internal/common.cpp not compiled. If it didn't compile then there would be no chance that the rest would compile.
-	AC_MSG_ERROR([The generated configuration appears to be unusable.
-	Please verify that your system path and environment variables are correct.])
-	exit 1
+	if test "$ac_cv_configuration_is_usable" = "no" ; then
+		# It appears that ulib/internal/common.cpp not compiled. If it didn't compile then there would be no chance that the rest would compile.
+		TWOCAN_CONF_MSG(The generated configuration appears to be unusable. Please verify that your system path and environment variables are correct)
+		echo "***********************************************************************************************************************************"
+		NLINE=`grep -n 'checking if generated configuration is usable' config.log | cut -d':' -f1`
+		CFGLOG=`tail -n +$NLINE config.log`
+		echo "${CFGLOG}"
+		echo "***********************************************************************************************************************************"
+		exit 1
+	fi
 fi
 
 echo
 echo "You are now ready to build ULib"
 echo "Enter the following command: ${T_MD}make && make install${T_ME}"
-echo "***"
+echo "After on some environment you must run also the following command: ${T_MD}sudo ldconfig${T_ME}"

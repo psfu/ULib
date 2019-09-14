@@ -25,6 +25,13 @@
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 
+#if OPENSSL_VERSION_NUMBER   >= 0x10002000L
+#  define U_USE_NPN  1
+#  define U_USE_ALPN 1
+#elif OPENSSL_VERSION_NUMBER >= 0x10001000L
+#  define U_USE_NPN  1
+#endif
+
 #if !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
 #  include <openssl/ocsp.h>
 #  ifndef U_OCSP_MAX_RESPONSE_SIZE
@@ -49,8 +56,8 @@ class UClient_Base;
 class UServer_Base;
 class UClientImage_Base;
 
-template <class T> class UClient;
 template <class T> class UServer;
+template <class T> class UHttpClient;
 template <class T> class UClientImage;
 
 class U_EXPORT USSLSocket : public USocket {
@@ -64,19 +71,24 @@ public:
       Old          = 0x002
    };
 
-    USSLSocket(bool bSocketIsIPv6 = false, SSL_CTX* ctx = 0, bool server = false);
+    USSLSocket(bool bSocketIsIPv6 = false, SSL_CTX* ctx = U_NULLPTR, bool server = false, int fd = -1);
    ~USSLSocket();
 
    bool secureConnection();
    bool acceptSSL(USSLSocket* pcConnection);
 
-   const char* getProtocolList()       { return (ciphersuite_model == 1 ? "TLSv1.2,TLSv1.1" :
-                                                 ciphersuite_model == 2 ? "TLSv1.2,TLSv1.1,TLSv1.0,SSLv3" : "TLSv1.2,TLSv1.1,TLSv1.0"); }
+   static long getOptions(const UVector<UString>& vec);
 
    const char* getConfigurationModel() { return (ciphersuite_model == 1 ? "Modern" :
                                                  ciphersuite_model == 2 ? "Old"    : "Intermediate"); }
 
-   static long getOptions(const UVector<UString>& vec);
+#ifdef TLS1_3_VERSION
+   const char* getProtocolList()       { return (ciphersuite_model == 1 ? "TLSv1.3" :
+                                                 ciphersuite_model == 2 ? "TLSv1.3,TLSv1.2,TLSv1.1,TLSv1.0" : "TLSv1.3,TLSv1.2"); }
+#else
+   const char* getProtocolList()       { return (ciphersuite_model == 1 ? "TLSv1.2,TLSv1.1" :
+                                                 ciphersuite_model == 2 ? "TLSv1.2,TLSv1.1,TLSv1.0,SSLv3" : "TLSv1.2,TLSv1.1,TLSv1.0"); }
+#endif
 
    /**
     * Load Diffie-Hellman parameters from file. These are used to generate a DH key exchange.
@@ -84,7 +96,7 @@ public:
     * Should be called before accept() or connect() if used. Returns true on success
     */
 
-   bool useDHFile(const char* dh_file = 0);
+   bool useDHFile(const char* dh_file = U_NULLPTR);
 
    /**
     * Load a certificate. A socket used on the server side needs to have a certificate (but a temporary RSA session
@@ -170,7 +182,7 @@ public:
       {
       U_TRACE_NO_PARAM(1, "USSLSocket::getPeerCertificate()")
 
-      X509* peer = (X509*) (ssl ? U_SYSCALL(SSL_get_peer_certificate, "%p", ssl) : 0);
+      X509* peer = (X509*) (ssl ? U_SYSCALL(SSL_get_peer_certificate, "%p", ssl) : U_NULLPTR);
 
       U_RETURN_POINTER(peer, X509);
       }
@@ -226,27 +238,28 @@ public:
     * downloading OCSP responses
     */
 
-#if !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
+#if defined(ENABLE_THREAD) && !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
    typedef struct stapling {
       void* data;
-      char* path;
-      long valid;
       X509* cert;
       X509* issuer;
       UString* url;
       EVP_PKEY* pkey;
-      int len, verify;
       OCSP_CERTID* id;
+      UString* request;
       OCSP_REQUEST* req;
-      UClient<UTCPSocket>* client;
+      STACK_OF(X509)* chain;
+      UHttpClient<UTCPSocket>* client;
    } stapling;
 
+   static bool ocsp_nonce;
    static stapling staple;
-   static bool doStapling();
 
-   static void cleanupStapling();
+   static uint32_t     doStapling();
+   static void    cleanupStapling();
    static bool setDataForStapling();
-   static void certificate_status_callback(SSL* _ssl, void* data);
+
+   static int OCSP_resp_callback(SSL* _ssl, void* data);
 #endif
 
 #if defined(U_STDCPP_ENABLE) && defined(DEBUG)
@@ -258,7 +271,7 @@ protected:
    SSL_CTX* ctx;
    int ret, renegotiations, ciphersuite_model;
 
-   void closesocket();
+   void close_socket();
 
    static SSL_CTX* cctx; // client
    static SSL_CTX* sctx; // server
@@ -286,8 +299,8 @@ protected:
       }
 #endif
 
-   static SSL_CTX* getClientContext() { return getContext(0, false, 0); }
-   static SSL_CTX* getServerContext() { return getContext(0, true,  0); }
+   static SSL_CTX* getClientContext() { return getContext(U_NULLPTR, false, 0); }
+   static SSL_CTX* getServerContext() { return getContext(U_NULLPTR, true,  0); }
 
    static SSL_CTX* getContext(SSL_METHOD* method, bool server, long options);
 
@@ -301,18 +314,27 @@ protected:
 #endif
 
 private:
-   static int nextProto(SSL* ssl, const unsigned char** data, unsigned int* len, void* arg)
+#ifndef U_HTTP2_DISABLE
+# ifdef U_USE_NPN
+   static int nextProto(SSL* ssl, const unsigned char** data, unsigned int* len, void* arg) U_NO_EXPORT; // NPN selection callback
+# endif
+
+# ifdef U_USE_ALPN
+   static int selectProto(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg) U_NO_EXPORT; // ALPN selection callback
+# endif
+
+   void setupProtocolNegotiationMethods()
       {
-      U_TRACE(0, "USSLSocket::nextProto(%p,%p,%p,%p)", ssl, data, len, arg)
+      U_TRACE_NO_PARAM(0, "USSLSocket::setupProtocolNegotiationMethods()")
 
-      *data = (unsigned char*)arg;
-      *len  = U_CONSTANT_SIZE("\x2h2\x5h2-16\x5h2-14");
+#  ifdef U_USE_NPN
+      U_SYSCALL_VOID(SSL_CTX_set_next_protos_advertised_cb, "%p,%p,%p", ctx, nextProto, (void*)"\x2h2\x5h2-16\x5h2-14"); // NPN selection callback
+#  endif
 
-      U_RETURN(SSL_TLSEXT_ERR_OK);
+#  if U_USE_ALPN
+      U_SYSCALL_VOID(SSL_CTX_set_alpn_select_cb, "%p,%p,%p", ctx, selectProto, U_NULLPTR); // ALPN selection callback
+#  endif
       }
-
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-   static int selectProto(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg) U_NO_EXPORT;
 #endif
 
    U_DISALLOW_COPY_AND_ASSIGN(USSLSocket)

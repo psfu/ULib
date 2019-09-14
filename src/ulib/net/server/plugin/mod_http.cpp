@@ -11,11 +11,10 @@
 //
 // ============================================================================
 
-#include <ulib/db/rdb.h>
 #include <ulib/command.h>
 #include <ulib/file_config.h>
 #include <ulib/utility/uhttp.h>
-#include <ulib/net/server/server.h>
+#include <ulib/utility/websocket.h>
 #include <ulib/utility/string_ext.h>
 #include <ulib/net/server/plugin/mod_http.h>
 
@@ -27,7 +26,7 @@ U_CREAT_FUNC(server_plugin_http, UHttpPlugIn)
 
 UHttpPlugIn::~UHttpPlugIn()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UHttpPlugIn)
+   U_TRACE_DTOR(0, UHttpPlugIn)
 
    UHTTP::dtor(); // delete global HTTP context...
 }
@@ -38,7 +37,7 @@ int UHttpPlugIn::handlerRead()
 {
    U_TRACE_NO_PARAM(0, "UHttpPlugIn::handlerRead()")
    
-#if defined(HAVE_SYS_INOTIFY_H) && defined(U_HTTP_INOTIFY_SUPPORT) && !defined(U_SERVER_CAPTIVE_PORTAL)
+#if defined(HAVE_SYS_INOTIFY_H) && defined(U_HTTP_INOTIFY_SUPPORT)
    U_INTERNAL_ASSERT_POINTER(UHTTP::cache_file)
 
    UHTTP::in_READ();
@@ -78,20 +77,28 @@ int UHttpPlugIn::handlerConfig(UFileConfig& cfg)
    // NOCACHE_FILE_MASK      mask (DOS regexp) of pathfile that content  NOT be cached in memory
    // CACHE_FILE_STORE       pathfile of memory cache stored on filesystem
    //
+   // CACHE_FILE_AS_DYNAMIC_MASK mask (DOS regexp) of pathfile that content be cached as dynamic in memory (to avoid 'Last-Modified: ...' in header response)
+   //
    // CGI_TIMEOUT            timeout for cgi execution
    // VIRTUAL_HOST           flag to activate practice of maintaining more than one server on one machine, as differentiated by their apparent hostname
+   // WEBSOCKET_TIMEOUT      timeout for websocket request
    // DIGEST_AUTHENTICATION  flag authentication method (yes = digest, no = basic)
    //
    // ENABLE_CACHING_BY_PROXY_SERVERS enable caching by proxy servers (add "Cache control: public" directive)
    //
+   // MIN_SIZE_REQUEST_BODY_FOR_PARALLELIZATION enable parallelization for request with body size major of (default 100k)
+   //
+   // URI_PROTECTED_SSE        SSE needs authentication (/sse_event/<name_of_passwd_file>)
    // URI_PROTECTED_MASK       mask (DOS regexp) of URI protected from prying eyes
    // URI_PROTECTED_ALLOWED_IP list of comma separated client address for IP-based access control (IPADDR[/MASK]) for URI_PROTECTED_MASK
+   //
+   // URI_OVERLOAD_AUTHENTICATION enable use of usp services as alternative to .ht[digest|passwd] for URI_PROTECTED_MASK
    //
    // URI_REQUEST_CERT_MASK                      mask (DOS regexp) of URI where client must comunicate a certificate in the SSL connection
    // BANDWIDTH_THROTTLING_MASK                  lets you set maximum byte rates on URLs or URL groups (*.jpg|*.gif 50)
    // URI_REQUEST_STRICT_TRANSPORT_SECURITY_MASK mask (DOS regexp) of URI where use HTTP Strict Transport Security to force client to use only SSL
    //
-   // SESSION_COOKIE_OPTION  eventual params for session cookie (lifetime, path, domain, secure, HttpOnly)  
+   // SESSION_COOKIE_OPTION eventual params for session cookie (lifetime, path, domain, secure, HttpOnly)  
    // ----------------------------------------------------------------------------------------------------------------------------------------------------
    // This directive gives greater control over abnormal client request behavior, which may be useful for avoiding some forms of denial-of-service attacks
    // ----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -115,356 +122,396 @@ int UHttpPlugIn::handlerConfig(UFileConfig& cfg)
    // PY_VIRTUALENV_PATH
    // ------------------------------------------------------------------------------------------------------------------------------------------------
 
-   if (cfg.loadTable())
+   UString x;
+
+   // VIRTUAL HOST
+
+   bool bvirtual_host = cfg.readBoolean(U_CONSTANT_TO_PARAM("VIRTUAL_HOST"));
+
+#ifndef U_ALIAS
+   if (bvirtual_host) U_SRV_LOG("WARNING: Sorry, I can't enable virtual hosting because alias URI support is missing, please recompile ULib");
+#else
+   x = cfg.at(U_CONSTANT_TO_PARAM("MAINTENANCE_MODE"));
+
+   if (x)
       {
-      UString x;
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::maintenance_mode_page, U_NULLPTR)
 
-      // VIRTUAL HOST
+      U_NEW_STRING(UHTTP::maintenance_mode_page, UString(x));
 
-      bool bvirtual_host = cfg.readBoolean(U_CONSTANT_TO_PARAM("VIRTUAL_HOST"));
+      U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
+      }
 
-#  ifndef U_ALIAS
-      if (bvirtual_host) U_SRV_LOG("WARNING: Sorry, I can't enable virtual hosting because alias URI support is missing, please recompile ULib");
-#  else
-      x = cfg.at(U_CONSTANT_TO_PARAM("MAINTENANCE_MODE"));
+   UHTTP::virtual_host = bvirtual_host;
 
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::maintenance_mode_page, 0)
+   x = cfg.at(U_CONSTANT_TO_PARAM("USP_AUTOMATIC_ALIASING"));
 
-         U_NEW(UString, UHTTP::maintenance_mode_page, UString(x));
-
-         U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
-         }
-
-      UHTTP::virtual_host = bvirtual_host;
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("USP_AUTOMATIC_ALIASING"));
-
-      if (x) UHTTP::setGlobalAlias(x); // NB: automatic alias of all uri request without suffix...
-      else
-         {
-         x = cfg.at(U_CONSTANT_TO_PARAM("ALIAS"));
-
-         if (x)
-            {
-            UVector<UString> vec(x);
-            uint32_t n = vec.size();
-
-            if (n < 2) U_ERROR("UHttpPlugIn::handlerConfig(): vector ALIAS malformed: %S", x.rep);
-
-            U_INTERNAL_ASSERT_EQUALS(UHTTP::valias, 0)
-
-            U_NEW(UVector<UString>, UHTTP::valias, UVector<UString>(vec, n));
-            }
-         }
-
-#    ifdef USE_LIBPCRE
-      x = cfg.at(U_CONSTANT_TO_PARAM("REWRITE_RULE_NF"));
+   if (x) UHTTP::setGlobalAlias(x); // NB: automatic alias of all uri request without suffix...
+   else
+      {
+      x = cfg.at(U_CONSTANT_TO_PARAM("ALIAS"));
 
       if (x)
          {
          UVector<UString> vec(x);
          uint32_t n = vec.size();
 
-         if (n < 2) U_ERROR("UHttpPlugIn::handlerConfig(): vector REWRITE_RULE_NF malformed: %S", x.rep);
+         if (n < 2) U_ERROR("UHttpPlugIn::handlerConfig(): vector ALIAS malformed: %V", x.rep);
 
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::vRewriteRule, 0)
+         U_INTERNAL_ASSERT_EQUALS(UHTTP::valias, U_NULLPTR)
 
-         U_NEW(UVector<UHTTP::RewriteRule*>, UHTTP::vRewriteRule, UVector<UHTTP::RewriteRule*>(n));
-
-         for (int32_t i = 0; i < (int32_t)n; i += 2)
-            {
-            UHTTP::RewriteRule* prule;
-            
-            U_NEW(UHTTP::RewriteRule, prule, UHTTP::RewriteRule(vec[i], vec[i+1]));
-
-            UHTTP::vRewriteRule->push_back(prule);
-            }
+         U_NEW(UVector<UString>, UHTTP::valias, UVector<UString>(vec, n));
          }
-#   endif
-#  endif
-
-      UHTTP::cgi_timeout                     = cfg.readLong(U_CONSTANT_TO_PARAM("CGI_TIMEOUT"));
-      UHTTP::limit_request_body              = cfg.readLong(U_CONSTANT_TO_PARAM("LIMIT_REQUEST_BODY"), U_STRING_MAX_SIZE);
-      UHTTP::request_read_timeout            = cfg.readLong(U_CONSTANT_TO_PARAM("REQUEST_READ_TIMEOUT"));
-      UHTTP::enable_caching_by_proxy_servers = cfg.readBoolean(U_CONSTANT_TO_PARAM("ENABLE_CACHING_BY_PROXY_SERVERS"));
-
-      U_INTERNAL_DUMP("UHTTP::limit_request_body = %u", UHTTP::limit_request_body)
-
-      // CACHE FILE
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("CACHE_FILE_MASK"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::cache_file_mask, 0)
-
-         if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
-
-         U_NEW(UString, UHTTP::cache_file_mask, UString(x));
-         }
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("CACHE_AVOID_MASK"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::cache_avoid_mask, 0)
-
-         if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
-
-         U_NEW(UString, UHTTP::cache_avoid_mask, UString(x));
-         }
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("NOCACHE_FILE_MASK"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::nocache_file_mask, 0)
-
-         if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
-
-         U_NEW(UString, UHTTP::nocache_file_mask, UString(x));
-         }
-
-#  ifdef U_STDCPP_ENABLE
-      x = cfg.at(U_CONSTANT_TO_PARAM("CACHE_FILE_STORE"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::cache_file_store, 0)
-
-         if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
-
-         U_NEW(UString, UHTTP::cache_file_store, UString(x));
-         }
-#  endif
-
-      // COOKIE OPTION
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("SESSION_COOKIE_OPTION"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::cgi_cookie_option, 0)
-
-         U_NEW(UString, UHTTP::cgi_cookie_option, UString(x));
-         }
-
-      // HTTP STRICT TRANSPORT SECURITY
-
-#  ifdef U_HTTP_STRICT_TRANSPORT_SECURITY
-      x = cfg.at(U_CONSTANT_TO_PARAM("URI_REQUEST_STRICT_TRANSPORT_SECURITY_MASK"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::uri_strict_transport_security_mask, 0)
-
-         if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
-
-#     ifdef USE_LIBSSL
-         if (UServer_Base::bssl)
-            {
-            if (x.equal(U_CONSTANT_TO_PARAM("*"))) UHTTP::uri_strict_transport_security_mask = (UString*)1L;
-            else
-               {
-               U_SRV_LOG("SSL: Sorry, the directive URI_REQUEST_STRICT_TRANSPORT_SECURITY_MASK for ssl server must have the '*' value, instead of %V", x.rep);
-               }
-            }
-         else
-#     endif
-         U_NEW(UString, UHTTP::uri_strict_transport_security_mask, UString(x));
-         }
-#  endif
-
-      // INOTIFY
-
-#  if defined(HAVE_SYS_INOTIFY_H) && defined(U_HTTP_INOTIFY_SUPPORT) && !defined(U_SERVER_CAPTIVE_PORTAL)
-      if (cfg.readBoolean(U_CONSTANT_TO_PARAM("ENABLE_INOTIFY")))
-         {
-         UServer_Base::handler_inotify = this;
-
-#     ifdef U_CLASSIC_SUPPORT
-         if (UServer_Base::isClassic())
-            {
-            UServer_Base::handler_inotify = 0;
-
-            U_SRV_LOG("WARNING: Sorry, I can't enable inode based directory notification because PREFORK_CHILD == 1 (server classic mode)");
-            }
-         else
-#     endif
-#     if defined(ENABLE_THREAD) && defined(U_SERVER_THREAD_APPROACH_SUPPORT)
-         if (UNotifier::pthread) // NB: we ask to notify for change of file system (inotify), in the thread approach this is not safe so far...
-            {
-            UServer_Base::handler_inotify = 0;
-
-            U_SRV_LOG("WARNING: Sorry, I can't enable inode based directory notification because PREFORK_CHILD == -1 (server thread approach)");
-            }
-#     endif
-         }
-#  endif
-
-      // URI PROTECTION (for example directory listing)
-
-      U_INTERNAL_DUMP("UHTTP::digest_authentication = %b", UHTTP::digest_authentication)
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("DIGEST_AUTHENTICATION"));
-
-      if (x) UHTTP::digest_authentication = x.strtob();
-      else
-         {
-         U_INTERNAL_DUMP("UServer_Base::bssl = %b", UServer_Base::bssl)
-
-#     ifdef USE_LIBSSL
-         if (UServer_Base::bssl == false)
-#     endif
-         UHTTP::digest_authentication = true;
-         }
-
-      U_INTERNAL_DUMP("UHTTP::digest_authentication = %b", UHTTP::digest_authentication)
-
-#  ifdef USE_LIBSSL
-      x = cfg.at(U_CONSTANT_TO_PARAM("URI_PROTECTED_MASK"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::uri_protected_mask, 0)
-
-         if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
-
-         U_NEW(UString, UHTTP::uri_protected_mask, UString(x));
-         }
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("URI_PROTECTED_ALLOWED_IP"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::vallow_IP, 0)
-
-         U_NEW(UVector<UIPAllow*>, UHTTP::vallow_IP, UVector<UIPAllow*>);
-
-         if (UIPAllow::parseMask(x, *UHTTP::vallow_IP) == 0)
-            {
-            delete UHTTP::vallow_IP;
-                   UHTTP::vallow_IP = 0;
-            }
-         }
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("URI_REQUEST_CERT_MASK"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::uri_request_cert_mask, 0)
-
-         if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
-
-         U_NEW(UString, UHTTP::uri_request_cert_mask, UString(x));
-         }
-#  endif
-
-#  ifndef U_LOG_DISABLE
-      x = cfg.at(U_CONSTANT_TO_PARAM("APACHE_LIKE_LOG"));
-
-      if (x)
-         {
-         UServer_Base::update_date  =
-         UServer_Base::update_date2 = true;
-
-         uint32_t size = cfg.readLong(U_CONSTANT_TO_PARAM("LOG_FILE_SIZE"));
-
-         U_INTERNAL_ASSERT_EQUALS(UServer_Base::apache_like_log, 0)
-
-         U_NEW(ULog, UServer_Base::apache_like_log, ULog(x, size));
-
-#     ifdef USE_LIBZ
-         if (size)
-            {
-            uint32_t log_rotate_size = size + (size / 10) + 12U;
-
-            UServer_Base::apache_like_log->setShared(0, log_rotate_size, (UServer_Base::bssl == false));
-
-            U_SRV_LOG("Mapped %u bytes (%u KB) of shared memory for apache like log", log_rotate_size, log_rotate_size / 1024);
-            }
-#     endif
-         }
-#   endif
-
-#  ifdef U_THROTTLING_SUPPORT
-      x = cfg.at(U_CONSTANT_TO_PARAM("BANDWIDTH_THROTTLING_MASK"));
-
-      if (x)
-         {
-#     if defined(ENABLE_THREAD) && defined(U_SERVER_THREAD_APPROACH_SUPPORT)
-         if (UServer_Base::preforked_num_kids == -1) // NB: in the thread approach this is not safe so far...
-            {
-            U_SRV_LOG("WARNING: Sorry, I can't enable bandwidth throttling because PREFORK_CHILD == -1 (server thread approach)");
-            }
-         else
-#     endif
-         {
-         U_NEW(UString, UServer_Base::throttling_mask, UString(x));
-         }
-         }
-#  endif
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("MOUNT_POINT"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::php_mount_point, 0)
-
-         U_NEW(UString, UHTTP::php_mount_point, UString(x));
-         }
-
-#  ifdef USE_RUBY
-      x = cfg.at(U_CONSTANT_TO_PARAM("RUBY_LIBDIR")); // directory to add to the ruby libdir search path
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::ruby_libdir, 0)
-
-         U_NEW(UString, UHTTP::ruby_libdir, UString(x));
-         }
-#  endif
-
-#  ifdef USE_PYTHON
-      x = cfg.at(U_CONSTANT_TO_PARAM("PY_PROJECT_APP")); // full python name of WSGI entry point expected in form <module>.<app> 
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::py_project_app, 0)
-
-         U_NEW(UString, UHTTP::py_project_app, UString(x));
-         }
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("PY_PROJECT_ROOT")); // python module search root; relative to workdir
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::py_project_root, 0)
-
-         U_NEW(UString, UHTTP::py_project_root, UString(x));
-         }
-
-      x = cfg.at(U_CONSTANT_TO_PARAM("PY_VIRTUALENV_PATH"));
-
-      if (x)
-         {
-         U_INTERNAL_ASSERT_EQUALS(UHTTP::py_virtualenv_path, 0)
-
-         U_NEW(UString, UHTTP::py_virtualenv_path, UString(x));
-         }
-#  endif
-
-      U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
       }
 
-   U_RETURN(U_PLUGIN_HANDLER_GO_ON);
+   UWebSocket::timeoutMS = cfg.readLong(U_CONSTANT_TO_PARAM("WEBSOCKET_TIMEOUT"), -1); // -1 => no timeout, i.e. an infinite wait
+
+   if (UWebSocket::timeoutMS > 0) UWebSocket::timeoutMS *= 1000;
+   
+# ifdef USE_LIBPCRE
+   x = cfg.at(U_CONSTANT_TO_PARAM("REWRITE_RULE_NF"));
+
+   if (x)
+      {
+      UVector<UString> vec(x);
+      uint32_t n = vec.size();
+
+      if (n < 2) U_ERROR("UHttpPlugIn::handlerConfig(): vector REWRITE_RULE_NF malformed: %V", x.rep);
+
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::vRewriteRule, U_NULLPTR)
+
+      U_NEW(UVector<UHTTP::RewriteRule*>, UHTTP::vRewriteRule, UVector<UHTTP::RewriteRule*>(n));
+
+      for (int32_t i = 0; i < (int32_t)n; i += 2)
+         {
+         UHTTP::RewriteRule* prule;
+         
+         U_NEW(UHTTP::RewriteRule, prule, UHTTP::RewriteRule(vec[i], vec[i+1]));
+
+         UHTTP::vRewriteRule->push_back(prule);
+         }
+      }
+# endif
+#endif
+
+   UHTTP::cgi_timeout                               = cfg.readLong(U_CONSTANT_TO_PARAM("CGI_TIMEOUT"));
+   UHTTP::limit_request_body                        = cfg.readLong(U_CONSTANT_TO_PARAM("LIMIT_REQUEST_BODY"), U_STRING_MAX_SIZE);
+   UHTTP::request_read_timeout                      = cfg.readLong(U_CONSTANT_TO_PARAM("REQUEST_READ_TIMEOUT"));
+   UHTTP::enable_caching_by_proxy_servers           = cfg.readBoolean(U_CONSTANT_TO_PARAM("ENABLE_CACHING_BY_PROXY_SERVERS"));
+   UHTTP::min_size_request_body_for_parallelization = cfg.readLong(U_CONSTANT_TO_PARAM("MIN_SIZE_REQUEST_BODY_FOR_PARALLELIZATION"), 100 * 1024);
+
+   U_INTERNAL_DUMP("UHTTP::limit_request_body = %u UHTTP::min_size_request_body_for_parallelization = %u", UHTTP::limit_request_body, UHTTP::min_size_request_body_for_parallelization)
+
+   // CACHE FILE
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("CACHE_FILE_MASK"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::cache_file_mask, U_NULLPTR)
+
+      if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
+
+      U_NEW_STRING(UHTTP::cache_file_mask, UString(x));
+      }
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("CACHE_AVOID_MASK"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::cache_avoid_mask, U_NULLPTR)
+
+      if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
+
+      U_NEW_STRING(UHTTP::cache_avoid_mask, UString(x));
+      }
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("NOCACHE_FILE_MASK"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::nocache_file_mask, U_NULLPTR)
+
+      if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
+
+      U_NEW_STRING(UHTTP::nocache_file_mask, UString(x));
+      }
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("CACHE_FILE_AS_DYNAMIC_MASK"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::cache_file_as_dynamic_mask, U_NULLPTR)
+
+      if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
+
+      U_NEW_STRING(UHTTP::cache_file_as_dynamic_mask, UString(x));
+      }
+
+# ifdef U_STDCPP_ENABLE
+   x = cfg.at(U_CONSTANT_TO_PARAM("CACHE_FILE_STORE"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::cache_file_store, U_NULLPTR)
+
+      if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
+
+      U_NEW_STRING(UHTTP::cache_file_store, UString(x));
+      }
+# endif
+
+   // COOKIE OPTION
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("SESSION_COOKIE_OPTION"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::cgi_cookie_option, U_NULLPTR)
+
+      U_NEW_STRING(UHTTP::cgi_cookie_option, UString(x));
+      }
+
+   // HTTP STRICT TRANSPORT SECURITY
+
+# ifdef U_HTTP_STRICT_TRANSPORT_SECURITY
+   x = cfg.at(U_CONSTANT_TO_PARAM("URI_REQUEST_STRICT_TRANSPORT_SECURITY_MASK"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::uri_strict_transport_security_mask, U_NULLPTR)
+
+      if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
+
+#    ifdef USE_LIBSSL
+      if (UServer_Base::bssl)
+         {
+         if (x.equal(U_CONSTANT_TO_PARAM("*"))) UHTTP::uri_strict_transport_security_mask = (UString*)1L;
+         else
+            {
+            U_SRV_LOG("SSL: Sorry, the directive URI_REQUEST_STRICT_TRANSPORT_SECURITY_MASK for ssl server must have the '*' value, instead of %V", x.rep);
+            }
+         }
+      else
+#    endif
+      U_NEW_STRING(UHTTP::uri_strict_transport_security_mask, UString(x));
+      }
+# endif
+
+   // INOTIFY
+
+# if defined(HAVE_SYS_INOTIFY_H) && defined(U_HTTP_INOTIFY_SUPPORT)
+   if (cfg.readBoolean(U_CONSTANT_TO_PARAM("ENABLE_INOTIFY")))
+      {
+      UServer_Base::handler_inotify = this;
+
+#    ifdef U_CLASSIC_SUPPORT
+      if (UServer_Base::isClassic())
+         {
+         UServer_Base::handler_inotify = U_NULLPTR;
+
+         U_SRV_LOG("WARNING: Sorry, I can't enable inode based directory notification because PREFORK_CHILD == 1 (server classic mode)");
+         }
+      else
+#    endif
+#    if defined(ENABLE_THREAD) && defined(U_SERVER_THREAD_APPROACH_SUPPORT)
+      if (UNotifier::pthread) // NB: we ask to notify for change of file system (inotify), in the thread approach this is not safe so far...
+         {
+         UServer_Base::handler_inotify = U_NULLPTR;
+
+         U_SRV_LOG("WARNING: Sorry, I can't enable inode based directory notification because PREFORK_CHILD == -1 (server thread approach)");
+         }
+#    endif
+      }
+# endif
+
+   // URI PROTECTION (for example directory listing)
+
+   U_INTERNAL_DUMP("UHTTP::digest_authentication = %b", UHTTP::digest_authentication)
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("DIGEST_AUTHENTICATION"));
+
+   if (x) UHTTP::digest_authentication = x.strtob();
+   else
+      {
+      U_INTERNAL_DUMP("UServer_Base::bssl = %b", UServer_Base::bssl)
+
+#    ifdef USE_LIBSSL
+      if (UServer_Base::bssl == false)
+#    endif
+      UHTTP::digest_authentication = true;
+      }
+
+   U_INTERNAL_DUMP("UHTTP::digest_authentication = %b", UHTTP::digest_authentication)
+
+# ifdef U_SSE_ENABLE // SERVER SENT EVENTS (SSE)
+   x = cfg.at(U_CONSTANT_TO_PARAM("URI_PROTECTED_SSE"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::sse_auth, false)
+
+      UHTTP::sse_auth = x.strtob();
+      }
+#  endif
+
+# ifdef USE_LIBSSL
+   x = cfg.at(U_CONSTANT_TO_PARAM("URI_PROTECTED_MASK"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::uri_protected_mask, U_NULLPTR)
+
+      if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
+
+      U_NEW_STRING(UHTTP::uri_protected_mask, UString(x));
+      }
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("URI_PROTECTED_ALLOWED_IP"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::vallow_IP, U_NULLPTR)
+
+      U_NEW(UVector<UIPAllow*>, UHTTP::vallow_IP, UVector<UIPAllow*>);
+
+      if (UIPAllow::parseMask(x, *UHTTP::vallow_IP) == 0)
+         {
+         U_DELETE(UHTTP::vallow_IP)
+
+         UHTTP::vallow_IP = U_NULLPTR;
+         }
+      }
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("URI_OVERLOAD_AUTHENTICATION"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::uri_overload_authentication, false)
+
+      UHTTP::uri_overload_authentication = x.strtob();
+      }
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("URI_REQUEST_CERT_MASK"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::uri_request_cert_mask, U_NULLPTR)
+
+      if (x.findWhiteSpace() != U_NOT_FOUND) x = UStringExt::removeWhiteSpace(x);
+
+      U_NEW_STRING(UHTTP::uri_request_cert_mask, UString(x));
+      }
+# endif
+
+# ifndef U_LOG_DISABLE
+   x = cfg.at(U_CONSTANT_TO_PARAM("APACHE_LIKE_LOG"));
+
+   if (x)
+      {
+      UServer_Base::update_date  =
+      UServer_Base::update_date2 = true;
+
+      U_INTERNAL_ASSERT_EQUALS(UServer_Base::apache_like_log, U_NULLPTR)
+
+      uint32_t size = cfg.readLong(U_CONSTANT_TO_PARAM("LOG_FILE_SZ"));
+
+      U_NEW(ULog, UServer_Base::apache_like_log, ULog(x, size));
+
+      if (size)
+         {
+         U_INTERNAL_ASSERT_EQUALS(UServer_Base::shm_data_add, 0)
+
+         UServer_Base::shm_data_add += UServer_Base::apache_like_log->getSizeLogRotateData();
+         }
+      }
+#  endif
+
+# ifdef U_THROTTLING_SUPPORT
+   x = cfg.at(U_CONSTANT_TO_PARAM("BANDWIDTH_THROTTLING_MASK"));
+
+   if (x)
+      {
+#    if defined(ENABLE_THREAD) && defined(U_SERVER_THREAD_APPROACH_SUPPORT)
+      if (UServer_Base::preforked_num_kids == -1) // NB: in the thread approach this is not safe so far...
+         {
+         U_SRV_LOG("WARNING: Sorry, I can't enable bandwidth throttling because PREFORK_CHILD == -1 (server thread approach)");
+         }
+      else
+#    endif
+      {
+      U_NEW_STRING(UServer_Base::throttling_mask, UString(x));
+      }
+      }
+# endif
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("MOUNT_POINT"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::php_mount_point, U_NULLPTR)
+
+      U_NEW_STRING(UHTTP::php_mount_point, UString(x));
+      }
+
+# ifdef USE_RUBY
+   x = cfg.at(U_CONSTANT_TO_PARAM("RUBY_LIBDIR")); // directory to add to the ruby libdir search path
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::ruby_libdir, U_NULLPTR)
+
+      U_NEW_STRING(UHTTP::ruby_libdir, UString(x));
+      }
+# endif
+
+# ifdef USE_PYTHON
+   x = cfg.at(U_CONSTANT_TO_PARAM("PY_PROJECT_APP")); // full python name of WSGI entry point expected in form <module>.<app> 
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::py_project_app, U_NULLPTR)
+
+      U_NEW_STRING(UHTTP::py_project_app, UString(x));
+      }
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("PY_PROJECT_ROOT")); // python module search root; relative to workdir
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::py_project_root, U_NULLPTR)
+
+      U_NEW_STRING(UHTTP::py_project_root, UString(x));
+      }
+
+   x = cfg.at(U_CONSTANT_TO_PARAM("PY_VIRTUALENV_PATH"));
+
+   if (x)
+      {
+      U_INTERNAL_ASSERT_EQUALS(UHTTP::py_virtualenv_path, U_NULLPTR)
+
+      U_NEW_STRING(UHTTP::py_virtualenv_path, UString(x));
+      }
+# endif
+
+   U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
 }
 
 int UHttpPlugIn::handlerInit()
 {
    U_TRACE_NO_PARAM(0, "UHttpPlugIn::handlerInit()")
+
+   UServer_Base::update_date  =
+   UServer_Base::update_date3 = true;
+
+   U_MEMCPY(ULog::date.header1, "HTTP/1.1 200 OK\r\n",
+                U_CONSTANT_SIZE("HTTP/1.1 200 OK\r\n")); // 17
+
+   U_MEMCPY(ULog::date.header2, "\r\nServer: ULib\r\nConnection: close\r\n",
+                U_CONSTANT_SIZE("\r\nServer: ULib\r\nConnection: close\r\n")); // 2+12+2+17+2
+
+   UClientImage_Base::iov_vec[1].iov_len  = 17+6+29+2+12+2; //+17+2;
+   UClientImage_Base::iov_vec[1].iov_base = (caddr_t)ULog::date.header1; // HTTP/1.1 200 OK\r\nDate: Wed, 20 Jun 2012 11:43:17 GMT\r\nServer: ULib\r\nConnection: close\r\n
 
 #ifdef USE_LIBSSL
    if (UServer_Base::bssl)
@@ -490,20 +537,22 @@ int UHttpPlugIn::handlerInit()
  * #endif
  */
 
-   // Configure TLS extensions support
-
-#  if !defined(OPENSSL_NO_TLSEXT) && defined(SSL_set_tlsext_host_name)
-      if (SSL_CTX_set_tlsext_servername_callback(USSLSocket::sctx, USSLSocket::callback_ServerNameIndication) == false) // Server name indication (SNI)
-         {
-         U_WARNING("SSL: Unable to initialize TLS servername extension callback");
-         }
-#  endif
+/**
+ * Configure TLS extensions support
+ *
+ * #if !defined(OPENSSL_NO_TLSEXT) && defined(SSL_set_tlsext_host_name)
+ * if (SSL_CTX_set_tlsext_servername_callback(USSLSocket::sctx, USSLSocket::callback_ServerNameIndication) == false) // Server name indication (SNI)
+ *    {
+ *    U_WARNING("SSL: Unable to initialize TLS servername extension callback");
+ *    }
+ * #endif
+ */
 
       U_SRV_LOG("SSL: server use configuration model: %s, protocol list: %s",
                   ((USSLSocket*)UServer_Base::socket)->getConfigurationModel(), ((USSLSocket*)UServer_Base::socket)->getProtocolList());
 
 #  if defined(ENABLE_THREAD) && !defined(OPENSSL_NO_OCSP) && defined(SSL_CTRL_SET_TLSEXT_STATUS_REQ_CB)
-      U_INTERNAL_ASSERT_EQUALS(USSLSocket::staple.data, 0)
+      U_INTERNAL_ASSERT_EQUALS(USSLSocket::staple.data, U_NULLPTR)
 
       USSLSocket::staple.data = UServer_Base::getOffsetToDataShare(U_OCSP_MAX_RESPONSE_SIZE);
 #  endif
@@ -512,7 +561,7 @@ int UHttpPlugIn::handlerInit()
 
    UHTTP::init();
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 int UHttpPlugIn::handlerRun() // NB: we use this method instead of handlerInit() because now we have the shared data allocated by UServer...
@@ -529,39 +578,56 @@ int UHttpPlugIn::handlerRun() // NB: we use this method instead of handlerInit()
 #endif
    if (UServer_Base::handler_inotify) UHTTP::initDbNotFound();
 
-   if (UServer_Base::vplugin_name->last() == *UString::str_http)
+#if defined(U_LINUX) && defined(ENABLE_THREAD)
+   U_INTERNAL_ASSERT_POINTER(UServer_Base::ptr_shared_data)
+
+# if !defined(U_SERVER_CAPTIVE_PORTAL)
+   UClientImage_Base::callerHandlerCache  = UHTTP::handlerCache;
+# endif
+   UClientImage_Base::iov_vec[1].iov_base = (caddr_t)UServer_Base::ptr_shared_data->log_date_shared.header1;
+#endif
+
+   U_INTERNAL_DUMP("UClientImage_Base::iov_vec[0] = %.*S UClientImage_Base::iov_vec[1] = %.*S",
+                    UClientImage_Base::iov_vec[0].iov_len, UClientImage_Base::iov_vec[0].iov_base,
+                    UClientImage_Base::iov_vec[1].iov_len, UClientImage_Base::iov_vec[1].iov_base)
+
+   UClientImage_Base::callerIsValidMethod     = UHTTP::isValidMethod;
+   UClientImage_Base::callerIsValidRequest    = UHTTP::isValidRequest;
+   UClientImage_Base::callerIsValidRequestExt = UHTTP::isValidRequestExt;
+
+   if (UServer_Base::vplugin_name->last() == *UString::str_http) // NB: we can shortcut the http request processing...
       {
-      UServer_Base::update_date  =
-      UServer_Base::update_date3 = true;
+      uint32_t vplugin_size = UServer_Base::vplugin_size;
 
-      UClientImage_Base::iov_vec[1].iov_base = (caddr_t)ULog::date.date3; // Date: Wed, 20 Jun 2012 11:43:17 GMT\r\nServer: ULib\r\nConnection: close\r\n
-      UClientImage_Base::iov_vec[1].iov_len  = 6+29+2+12+2+17+2;
+      U_INTERNAL_ASSERT_EQUALS(UServer_Base::vplugin_name->size(), vplugin_size)
 
-#  if defined(U_LINUX) && defined(ENABLE_THREAD) && defined(U_LOG_DISABLE) && !defined(USE_LIBZ)
-      U_INTERNAL_ASSERT_POINTER(u_pthread_time)
+      for (uint32_t i = 0; i < vplugin_size-1; ++i)
+         {
+         UStringRep* r = UServer_Base::vplugin_name->UVector<UStringRep*>::at(i);
 
-      UClientImage_Base::iov_vec[1].iov_base = (caddr_t)UServer_Base::ptr_shared_data->log_date_shared.date3;
+         if (r->equal(U_CONSTANT_TO_PARAM("socket")))
+            {
+            --vplugin_size;
+
+            break;
+            }
+         }
+
+      U_INTERNAL_DUMP("vplugin_size = %u", vplugin_size)
+
+#  ifndef U_LOG_DISABLE
+      if (UServer_Base::isLog())
+         {
+                                UClientImage_Base::callerHandlerRead    = UHTTP::handlerREADWithLog;
+         if (vplugin_size == 1) UClientImage_Base::callerHandlerRequest = UHTTP::processRequestWithLog;
+         }
+      else
 #  endif
-
-      U_INTERNAL_DUMP("UClientImage_Base::iov_vec[0] = %.*S UClientImage_Base::iov_vec[1] = %.*S",
-                       UClientImage_Base::iov_vec[0].iov_len, UClientImage_Base::iov_vec[0].iov_base,
-                       UClientImage_Base::iov_vec[1].iov_len, UClientImage_Base::iov_vec[1].iov_base)
-
-      U_MEMCPY(UClientImage_Base::iov_sav, UClientImage_Base::iov_vec, sizeof(struct iovec) * 4);
-
-      // NB: we can shortcut the http request processing...
-
-      UClientImage_Base::callerHandlerRead       = UHTTP::handlerREAD;
-      UClientImage_Base::callerHandlerCache      = UHTTP::handlerCache;
-      UClientImage_Base::callerIsValidMethod     = UHTTP::isValidMethod;
-      UClientImage_Base::callerIsValidRequest    = UHTTP::isValidRequest;
-      UClientImage_Base::callerIsValidRequestExt = UHTTP::isValidRequestExt;
-      UClientImage_Base::callerHandlerEndRequest = UHTTP::setEndRequestProcessing;
-
-      if (UServer_Base::vplugin_size == 1) UClientImage_Base::callerHandlerRequest = UHTTP::processRequest;
+      {
+                             UClientImage_Base::callerHandlerRead    = UHTTP::handlerREAD;
+      if (vplugin_size == 1) UClientImage_Base::callerHandlerRequest = UHTTP::processRequest;
       }
-
-   U_ASSERT(UHTTP::cache_file_check_memory())
+      }
 
    U_SET_MODULE_NAME(usp_init);
 
@@ -569,28 +635,41 @@ int UHttpPlugIn::handlerRun() // NB: we use this method instead of handlerInit()
    if (UServer_Base::apache_like_log) UHTTP::initApacheLikeLog();
 #endif
 
-   UHTTP::cache_file->callForAllEntry(UHTTP::callInitForAllUSP);
+   UHTTP::callInitForAllUSP();
 
    UHTTP::bcallInitForAllUSP = true;
+
+   if (UHTTP::getUSP(U_CONSTANT_TO_PARAM("modupload")))
+      {
+      U_INTERNAL_DUMP("modupload->runDynamicPage = %p", UHTTP::usp->runDynamicPage)
+
+      U_INTERNAL_ASSERT_POINTER(UHTTP::usp->runDynamicPage)
+
+      UHTTP::on_upload = UHTTP::usp->runDynamicPage;
+      }
 
    if (UHTTP::upload_dir->empty()) (void) UHTTP::upload_dir->assign(U_CONSTANT_TO_PARAM("uploads"));
 
    U_RESET_MODULE_NAME;
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_INTERNAL_ASSERT_MINOR(u_cwd_len, UHTTP::pathname->capacity())
+
+   U_MEMCPY(UHTTP::pathname->data(), u_cwd, u_cwd_len);
+
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 int UHttpPlugIn::handlerFork()
 {
    U_TRACE_NO_PARAM(0, "UHttpPlugIn::handlerFork()")
 
-#if defined(HAVE_SYS_INOTIFY_H) && defined(U_HTTP_INOTIFY_SUPPORT) && !defined(U_SERVER_CAPTIVE_PORTAL)
+#if defined(HAVE_SYS_INOTIFY_H) && defined(U_HTTP_INOTIFY_SUPPORT)
    UHTTP::initInotify();
 #endif
 
-   if (UHTTP::bcallInitForAllUSP) UHTTP::cache_file->callForAllEntry(UHTTP::callAfterForkForAllUSP);
+   if (UHTTP::bcallInitForAllUSP) UHTTP::callAfterForkForAllUSP();
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 int UHttpPlugIn::handlerStop()
@@ -601,7 +680,7 @@ int UHttpPlugIn::handlerStop()
 
    U_SET_MODULE_NAME(usp_end);
 
-   UHTTP::cache_file->callForAllEntry(UHTTP::callEndForAllUSP);
+   UHTTP::callEndForAllUSP();
 
    UHTTP::bcallInitForAllUSP = false;
 
@@ -617,7 +696,7 @@ int UHttpPlugIn::handlerStop()
 
    U_RESET_MODULE_NAME;
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // Connection-wide hooks
@@ -626,6 +705,8 @@ int UHttpPlugIn::handlerREAD()
 {
    U_TRACE_NO_PARAM(0, "UHttpPlugIn::handlerREAD()")
 
+   U_INTERNAL_DUMP("UServer_Base::mod_name[0] = %S", UServer_Base::mod_name[0])
+
    return UHTTP::handlerREAD();
 }
 
@@ -633,11 +714,16 @@ int UHttpPlugIn::handlerRequest()
 {
    U_TRACE_NO_PARAM(0, "UHttpPlugIn::handlerRequest()")
 
-   U_INTERNAL_DUMP("method_type = %C uri = %.*S", U_http_method_type, U_HTTP_URI_TO_TRACE)
+   U_INTERNAL_DUMP("method_type = %C uri = %.*S UServer_Base::mod_name[0] = %S", U_http_method_type, U_HTTP_URI_TO_TRACE, UServer_Base::mod_name[0])
 
-   return (UClientImage_Base::isRequestNeedProcessing()
-               ? UHTTP::processRequest()
-               : U_PLUGIN_HANDLER_FINISHED);
+   if (UClientImage_Base::isRequestNeedProcessing())
+      {
+      UHTTP::processRequest();
+
+      U_RETURN(U_PLUGIN_HANDLER_PROCESSED);
+      }
+
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }
 
 // SigHUP hook
@@ -656,7 +742,7 @@ int UHttpPlugIn::handlerSigHUP()
       }
 #endif
 
-   if (UHTTP::bcallInitForAllUSP) UHTTP::cache_file->callForAllEntry(UHTTP::callSigHUPForAllUSP);
+   if (UHTTP::bcallInitForAllUSP) UHTTP::callSigHUPForAllUSP();
 
-   U_RETURN(U_PLUGIN_HANDLER_PROCESSED | U_PLUGIN_HANDLER_GO_ON);
+   U_RETURN(U_PLUGIN_HANDLER_OK);
 }

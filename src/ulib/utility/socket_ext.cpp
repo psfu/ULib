@@ -28,12 +28,15 @@
 
 #ifdef _MSWINDOWS_
 #  include <ws2tcpip.h>
-#elif defined(HAVE_NETPACKET_PACKET_H) && !defined(U_ALL_CPP)
+#elif defined(HAVE_NETPACKET_PACKET_H)
 #  include <net/if.h>
 #endif
 
 #ifdef HAVE_SYS_IOCTL_H
 #  include <sys/ioctl.h>
+#endif
+#ifdef HAVE_ARPA_INET_H
+#  include <net/if_arp.h>
 #endif
 
 #ifdef USE_C_ARES
@@ -48,6 +51,9 @@
  * @time_limit specified the maximum execution time, in seconds. If set to zero, no time limit is imposed
  */
 
+uint32_t USocketExt::byte_read;
+uint32_t USocketExt::start_read;
+
 bool USocketExt::read(USocket* sk, UString& buffer, uint32_t count, int timeoutMS, uint32_t time_limit)
 {
    U_TRACE(0, "USocketExt::read(%p,%V,%u,%d,%u)", sk, buffer.rep, count, timeoutMS, time_limit)
@@ -59,22 +65,44 @@ bool USocketExt::read(USocket* sk, UString& buffer, uint32_t count, int timeoutM
 
    char* ptr;
    long timeout = 0;
-   int byte_read = 0;
    ssize_t value; // = -1;
    uint32_t start  = buffer.size(), // NB: read buffer can have previous data...
             ncount = buffer.space(),
             chunk  = count;
 
+   byte_read = 0;
+
    if (LIKELY(chunk < U_CAPACITY)) chunk = U_CAPACITY;
 
    if (UNLIKELY(ncount < chunk))
       {
-      if (sk == UServer_Base::csocket) UClientImage_Base::manageReadBufferResize(chunk);
-      else                                             UString::_reserve(buffer, chunk);
+      if (buffer.isMmap())
+         {
+         U_INTERNAL_ASSERT_EQUALS(count, start - start_read)
+
+         start  = start_read;
+         ncount = count;
+
+         goto next;
+         }
+
+      if (sk == UServer_Base::csocket)
+         {
+         UClientImage_Base::manageReadBufferResize(chunk);
+
+         U_INTERNAL_ASSERT(buffer.same(*UClientImage_Base::rbuffer))
+         }
+      else
+         {
+         UString::_reserve(buffer, buffer.getReserveNeed(chunk));
+         }
 
       ncount = buffer.space();
+
+      U_INTERNAL_ASSERT_MAJOR(ncount, 0)
       }
 
+next:
    ptr = buffer.c_pointer(start);
 
 read:
@@ -108,7 +136,9 @@ read:
 #  endif
       }
 
-   value = sk->recv(ptr + byte_read, ncount);
+   U_INTERNAL_DUMP("ptr+byte_read(%u) = %p", byte_read, ptr+byte_read)
+
+   value = sk->recv(ptr+byte_read, ncount);
 
    if (value <= 0)
       {
@@ -150,7 +180,7 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
          if (byte_read == 0 ||
              sk->shutdown(SHUT_RD) == false)
             {
-            U_INTERNAL_DUMP("byte_read = %d errno = %d", byte_read, errno)
+            U_INTERNAL_DUMP("byte_read = %u errno = %d", byte_read, errno)
 
             if (U_ClientImage_parallelization != U_PARALLELIZATION_CHILD) sk->abortive_close();
 
@@ -165,11 +195,11 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
 
    byte_read += value;
 
-   U_INTERNAL_DUMP("byte_read = %d", byte_read)
+   U_INTERNAL_DUMP("byte_read = %u count = %u", byte_read, count)
 
    U_INTERNAL_ASSERT_MAJOR(byte_read, 0)
 
-   if (byte_read < (int)count)
+   if (byte_read < count)
       {
       U_INTERNAL_ASSERT_DIFFERS(count, U_SINGLE_READ)
 
@@ -188,12 +218,30 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
 
    if (value == (ssize_t)ncount)
       {
+      if (buffer.isMmap()) U_RETURN(true);
+
       // NB: may be there are available more bytes to read...
 
       buffer.rep->_length = start + byte_read;
 
-      if (sk == UServer_Base::csocket) UClientImage_Base::manageReadBufferResize(ncount * 2);
-      else                                             UString::_reserve(buffer, ncount * 2);
+      if (sk == UServer_Base::csocket)
+         {
+         U_INTERNAL_DUMP("ptr = %.14S", ptr)
+
+         if (u_get_unalignedp32(ptr)   == U_MULTICHAR_CONSTANT32('P','U','T',' ') &&
+             u_get_unalignedp64(ptr+4) == U_MULTICHAR_CONSTANT64('/','u','p','l','o','a','d','/'))
+            {
+            goto done;
+            }
+
+         UClientImage_Base::manageReadBufferResize(ncount * 2);
+
+         U_INTERNAL_ASSERT(buffer.same(*UClientImage_Base::rbuffer))
+         }
+      else
+         {
+         UString::_reserve(buffer, buffer.getReserveNeed(ncount * 2));
+         }
 
       ptr       = buffer.c_pointer(start);
       ncount    = buffer.space();
@@ -206,7 +254,7 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
    if (UNotifier::bepollet == false)
 #endif
    {
-#if !defined(U_LINUX) || !defined(ENABLE_THREAD) || !defined(U_LOG_DISABLE) || defined(USE_LIBZ)
+#if !defined(ENABLE_THREAD) || !defined(U_LOG_DISABLE) || defined(USE_LIBZ)
    if (sk->isBlocking() == false)
       {
       /**
@@ -239,7 +287,7 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
    }
 
 done:
-   U_INTERNAL_DUMP("byte_read = %d", byte_read)
+   U_INTERNAL_DUMP("byte_read = %u", byte_read)
 
    if (byte_read)
       {
@@ -247,7 +295,7 @@ done:
 
       if (start > buffer.size()) buffer.size_adjust_force(start); // NB: we force because the string can be referenced...
 
-      if (byte_read >= (int)count &&
+      if (byte_read >= count &&
           sk->iState != USocket::CLOSE)
          {
          U_RETURN(true);
@@ -286,7 +334,7 @@ uint32_t USocketExt::readWhileNotToken(USocket* sk, UString& buffer, const char*
 
 // write data
 
-int USocketExt::write(USocket* sk, const char* ptr, uint32_t count, int timeoutMS)
+uint32_t USocketExt::write(USocket* sk, const char* ptr, uint32_t count, int timeoutMS)
 {
    U_TRACE(0, "USocketExt::write(%p,%.*S,%u,%d)", sk, count, ptr, count, timeoutMS)
 
@@ -297,15 +345,17 @@ int USocketExt::write(USocket* sk, const char* ptr, uint32_t count, int timeoutM
    U_DUMP("bssl = %b blocking = %b", sk->isSSLActive(), sk->isBlocking())
 
    ssize_t value;
-   int byte_written = 0;
+   uint32_t byte_written = 0;
 
 write:
+   /*
    if (sk->isBlocking() &&
        timeoutMS != 0   &&
        (errno = 0, UNotifier::waitForWrite(sk->iSockDesc, timeoutMS) != 1))
       {
       goto error;
       }
+   */
 
    value = sk->send(ptr + byte_written, count);
 
@@ -313,7 +363,8 @@ write:
       {
       if (value == -1)
          {
-error:   U_INTERNAL_DUMP("errno = %d", errno)
+//error:
+         U_INTERNAL_DUMP("errno = %d", errno)
 
               if (errno != EAGAIN) sk->abortive_close();
          else if (timeoutMS != 0)
@@ -331,11 +382,11 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
 
    byte_written += value;
 
-   U_INTERNAL_DUMP("byte_written = %d", byte_written)
+   U_INTERNAL_DUMP("byte_written = %u", byte_written)
 
    U_INTERNAL_ASSERT_MAJOR(byte_written, 0)
 
-   if (byte_written < (int)count)
+   if (byte_written < count)
       {
       count -= value;
 
@@ -351,9 +402,9 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
 // the last byte that was read. COUNT is the number of bytes to copy between file descriptors. Because this copying is done within
 // the kernel, sendfile() does not need to spend time transferring data to and from user space
 
-int USocketExt::sendfile(USocket* sk, int in_fd, off_t* poffset, uint32_t count, int timeoutMS)
+uint32_t USocketExt::sendfile(USocket* sk, int in_fd, off_t* poffset, off_t count, int timeoutMS)
 {
-   U_TRACE(1, "USocketExt::sendfile(%p,%d,%p,%u,%d)", sk, in_fd, poffset, count, timeoutMS)
+   U_TRACE(1, "USocketExt::sendfile(%p,%d,%p,%I,%d)", sk, in_fd, poffset, count, timeoutMS)
 
    U_INTERNAL_ASSERT_POINTER(sk)
    U_INTERNAL_ASSERT_MAJOR(count, 0)
@@ -367,17 +418,21 @@ int USocketExt::sendfile(USocket* sk, int in_fd, off_t* poffset, uint32_t count,
    off_t len;
 #endif
    ssize_t value;
-   int byte_written = 0;
+   uint32_t byte_written = 0;
 
 loop:
+   /*
    if (sk->isBlocking() &&
        timeoutMS != 0   &&
        (errno = 0, UNotifier::waitForWrite(sk->iSockDesc, timeoutMS) != 1))
       {
       goto error;
       }
+   */
 
-#if defined(HAVE_MACOSX_SENDFILE)
+#ifndef HAVE_MACOSX_SENDFILE
+   value = U_SYSCALL(sendfile, "%d,%d,%p,%I", sk->getFd(), in_fd, poffset, count);
+#else
    /**
     * struct sf_hdtr {
     *  struct iovec *headers;  // pointer to  header iovecs
@@ -392,20 +447,19 @@ loop:
     */
 
    len   = count;
-   value = U_SYSCALL(sendfile, "%d,%d,%p,%u", sk->getFd(), in_fd, *poffset, &len, 0, 0);
+   value = U_SYSCALL(sendfile, "%d,%d,%I,%p,%p,%d", sk->getFd(), in_fd, *poffset, &len, U_NULLPTR, 0);
 
    if (value == -1) goto error;
 
    poffset += (value = len);
-#else
-   value = U_SYSCALL(sendfile, "%d,%d,%p,%u", sk->getFd(), in_fd, poffset, count);
 #endif
 
    if (value <= 0)
       {
       if (value == -1)
          {
-error:   U_INTERNAL_DUMP("errno = %d", errno)
+//error:  
+         U_INTERNAL_DUMP("errno = %d", errno)
 
          if (errno != EAGAIN)
             {
@@ -437,7 +491,7 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
 
    U_INTERNAL_ASSERT_MAJOR(byte_written, 0)
 
-   if (byte_written < (int)count)
+   if (byte_written < count)
       {
       count -= value;
 
@@ -449,82 +503,141 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
 
 // write data from multiple buffers
 
-U_NO_EXPORT void USocketExt::iov_resize(struct iovec* iov, int iovcnt, size_t value)
+uint32_t USocketExt::iov_resize(struct iovec* liov, const struct iovec* iov, int iovcnt, uint32_t byte_written)
 {
-   U_TRACE(0, "USocketExt::iov_resize(%p,%d,%d)", iov, iovcnt, value)
+   U_TRACE(0, "USocketExt::iov_resize(%p,%p,%d,%u)", liov, iov, iovcnt, byte_written)
 
-   int idx;
+   int liovcnt;
+   uint32_t idx;
 
-   for (idx = 0; value >= iov[idx].iov_len; ++idx)
+   for (idx = 0; byte_written >= iov[idx].iov_len; ++idx)
       {
-      value -= iov[idx].iov_len;
-               iov[idx].iov_len = 0;
+      byte_written -= iov[idx].iov_len;
+                  //  iov[idx].iov_len = 0;
       }
 
-   U_INTERNAL_DUMP("iov[%d].iov_len = %d", idx, iov[idx].iov_len)
+   liov    = (struct iovec*)iov + idx;
+   liovcnt =             iovcnt - idx;
 
-   U_INTERNAL_ASSERT_MAJOR(iov[idx].iov_len, value)
+   if (byte_written)
+      {
+             liov[0].iov_base =
+       (char*)iov[0].iov_base + byte_written;
+             liov[0].iov_len  =
+              iov[0].iov_len  - byte_written;
+      }
 
-   iov    += idx;
-   iovcnt -= idx;
+   U_INTERNAL_DUMP("idx = %u liovcnt = %u liov[0].iov_len = %u byte_written = %u", idx, liovcnt, liov[0].iov_len, byte_written)
 
-   U_INTERNAL_ASSERT_MAJOR(iovcnt, 0)
+   U_INTERNAL_ASSERT_RANGE(0,liovcnt,256)
+   U_INTERNAL_ASSERT_MAJOR(liov[0].iov_len, byte_written)
 
-          iov[0].iov_base =
-   (char*)iov[0].iov_base + value;
-          iov[0].iov_len -= value;
+   U_DUMP_IOVEC(liov,liovcnt)
+
+   U_RETURN(liovcnt);
 }
 
-int USocketExt::_writev(USocket* sk, struct iovec* iov, int iovcnt, uint32_t count, int timeoutMS)
+uint32_t USocketExt::writev(USocket* sk, struct iovec* iov, int iovcnt, uint32_t count, int timeoutMS)
 {
-   U_TRACE(0, "USocketExt::_writev(%p,%p,%d,%u,%d)", sk, iov, iovcnt, count, timeoutMS)
+   U_TRACE(0, "USocketExt::writev(%p,%p,%d,%u,%d)", sk, iov, iovcnt, count, timeoutMS)
+
+   U_DUMP_IOVEC(iov,iovcnt)
 
    U_INTERNAL_ASSERT_POINTER(sk)
    U_INTERNAL_ASSERT_MAJOR(count, 0)
    U_INTERNAL_ASSERT(sk->isConnected())
+   U_INTERNAL_ASSERT_RANGE(0,iovcnt,256)
 
    U_DUMP("bssl = %b blocking = %b", sk->isSSLActive(), sk->isBlocking())
 
    ssize_t value;
-   int byte_written = 0;
-
-#ifdef DEBUG
-   int i;
-   uint32_t sum;
-   for (i = sum = 0; i < iovcnt; ++i) sum += iov[i].iov_len;
-   U_INTERNAL_ASSERT_EQUALS(sum, count)
-#endif
+   struct iovec liov[256];
+   uint32_t byte_written = 0;
 
 loop:
+#ifdef DEBUG
+   uint32_t sum = 0;
+
+   for (int i = 0; i < iovcnt; ++i) sum += iov[i].iov_len;
+
+   U_INTERNAL_ASSERT_EQUALS(sum, count-byte_written)
+#endif
+
+   /*
    if (sk->isBlocking() &&
        timeoutMS != 0   &&
        (errno = 0, UNotifier::waitForWrite(sk->iSockDesc, timeoutMS) != 1))
       {
       goto error;
       }
+   */
 
 #if defined(USE_LIBSSL) && !defined(_MSWINDOWS_)
    if (sk->isSSLActive())
 #endif
-#if defined(USE_LIBSSL) ||  defined(_MSWINDOWS_)
+#if defined(USE_LIBSSL) || defined(_MSWINDOWS_)
    {
-   U_INTERNAL_ASSERT_EQUALS(iovcnt, 1)
+   if (iovcnt == 1)
+      {
+      U_INTERNAL_ASSERT_EQUALS(iov[0].iov_len, count-byte_written)
 
-   value = sk->send((const char*)iov[0].iov_base, iov[0].iov_len);
+      value = sk->send((const char*)iov[0].iov_base, iov[0].iov_len);
 
-   goto check;
+      goto check;
+      }
+
+   if (count <= U_BUFFER_SIZE) // NB: OpenSSL has no SSL_writev() so we copy several bufs into our buffer (8k) before the SSL_write() call to decrease a SSL overhead...
+      {
+      U_INTERNAL_ASSERT_EQUALS(u_buffer_len, 0)
+
+      if (byte_written) value = sk->send(u_buffer+byte_written, count-byte_written);
+      else
+         {
+         char* ptr = u_buffer;
+
+         for (int i = 0; i < iovcnt; ++i)
+            {
+            if (iov[i].iov_len)
+               {
+               U_MEMCPY(ptr, (const char*)iov[i].iov_base, iov[i].iov_len);
+                        ptr +=                             iov[i].iov_len;
+               }
+            }
+
+         value = sk->send(u_buffer, count);
+         }
+
+      goto check;
+      }
+
+   for (int i = 0; i < iovcnt; ++i)
+      {
+      int sz = iov[i].iov_len;
+
+      if (sz)
+         {
+         value = writev(sk, iov+i, 1, sz, timeoutMS);
+
+         byte_written += value;
+
+         if (value < sz) U_RETURN(byte_written);
+         }
+      }
+
+   U_RETURN(byte_written);
    }
 #endif
-   value = U_SYSCALL(writev, "%d,%p,%d", sk->iSockDesc, iov, iovcnt);
+   value = U_FF_SYSCALL(writev, "%d,%p,%d", sk->iSockDesc, iov, iovcnt);
 
-#if defined(USE_LIBSSL) ||  defined(_MSWINDOWS_)
+#if defined(USE_LIBSSL) || defined(_MSWINDOWS_)
 check:
 #endif
    if (value <= 0)
       {
       if (value == -1)
          {
-error:   U_INTERNAL_DUMP("errno = %d", errno)
+//error:
+         U_INTERNAL_DUMP("errno = %d", errno)
 
          if (errno != EAGAIN)
             {
@@ -552,163 +665,17 @@ error:   U_INTERNAL_DUMP("errno = %d", errno)
 
    byte_written += value;
 
-   U_INTERNAL_DUMP("byte_written = %d", byte_written)
+   U_INTERNAL_DUMP("byte_written = %u", byte_written)
 
    U_INTERNAL_ASSERT_MAJOR(byte_written, 0)
 
-   if (byte_written < (int)count)
+   if (byte_written < count)
       {
-      iov_resize(iov, iovcnt, value);
+      iovcnt = iov_resize(liov, iov, iovcnt, value);
+         iov = liov;
 
       goto loop;
       }
-
-   U_RETURN(byte_written);
-}
-
-int USocketExt::writev(USocket* sk, struct iovec* iov, int iovcnt, uint32_t count, int timeoutMS)
-{
-   U_TRACE(0, "USocketExt::writev(%p,%p,%d,%u,%d)", sk, iov, iovcnt, count, timeoutMS)
-
-   U_INTERNAL_ASSERT_POINTER(sk)
-   U_INTERNAL_ASSERT_MAJOR(count, 0)
-   U_INTERNAL_ASSERT(sk->isConnected())
-
-#if defined(USE_LIBSSL) && !defined(_MSWINDOWS_)
-   if (sk->isSSLActive())
-#endif
-#if defined(USE_LIBSSL) ||  defined(_MSWINDOWS_)
-   {
-   int sz, byte_written;
-
-   if (count <= U_CAPACITY)
-      {
-      U_INTERNAL_ASSERT_MINOR(iovcnt, 255)
-
-      struct iovec _iov[256];
-      UString buffer(U_CAPACITY);
-
-      for (int i = 0; i < iovcnt; ++i)
-         {
-         if ((sz = _iov[i].iov_len = iov[i].iov_len))
-            {
-            (void) buffer.append((const char*)(_iov[i].iov_base = iov[i].iov_base), sz);
-            }
-         }
-
-      U_INTERNAL_ASSERT_EQUALS(count, buffer.size())
-
-      _iov[iovcnt].iov_len  = count;
-      _iov[iovcnt].iov_base = buffer.data();
-
-      byte_written = _writev(sk, _iov+iovcnt, 1, count, timeoutMS);
-
-      if (byte_written < (int)count)
-         {
-         if (byte_written) iov_resize(iov, iovcnt, byte_written);
-         }
-      }
-   else
-      {
-      ssize_t value;
-
-      byte_written = 0;
-
-      for (int i = 0; i < iovcnt; ++i)
-         {
-         if ((sz = iov[i].iov_len))
-            {
-            value = _writev(sk, iov+i, 1, sz, timeoutMS);
-
-            byte_written += value;
-
-            if (value < sz) break;
-
-            iov[i].iov_len = 0;
-            }
-         }
-      }
-
-   U_RETURN(byte_written);
-   }
-#endif
-
-   int byte_written = _writev(sk, iov, iovcnt, count, timeoutMS);
-
-   U_RETURN(byte_written);
-}
-
-int USocketExt::writev(USocket* sk, struct iovec* iov, int iovcnt, uint32_t count, int timeoutMS, uint32_t cloop)
-{
-   U_TRACE(0, "USocketExt::writev(%p,%p,%d,%u,%d,%u)", sk, iov, iovcnt, count, timeoutMS, cloop)
-
-   U_INTERNAL_ASSERT_POINTER(sk)
-   U_INTERNAL_ASSERT_MAJOR(count, 0)
-   U_INTERNAL_ASSERT_MAJOR(cloop, 0)
-   U_INTERNAL_ASSERT_MINOR(iovcnt, 256)
-   U_INTERNAL_ASSERT(sk->isConnected())
-
-   struct iovec _iov[256];
-
-   char* ptr   = (char*)_iov;
-   uint32_t sz = sizeof(struct iovec) * iovcnt;
-
-   U_MEMCPY(ptr, iov, sz);
-
-#ifdef U_PIPELINE_HOMOGENEOUS_DISABLE
-   U_INTERNAL_ASSERT_EQUALS(cloop, 1)
-#else
-   if (cloop > 1)
-      {
-      for (uint32_t i = 1; i < cloop; ++i)
-         {
-                  ptr +=    sz;
-         U_MEMCPY(ptr, iov, sz);
-         }
-
-      iov     = _iov;
-      iovcnt *= cloop;
-      }
-#endif
-
-   U_INTERNAL_DUMP("iov[0].iov_len = %d iov[1].iov_len = %d", iov[0].iov_len, iov[1].iov_len)
-
-#if defined(USE_LIBSSL) || defined(_MSWINDOWS_)
-   int byte_written = writev(sk, iov, iovcnt, count, timeoutMS);
-#else
-   U_INTERNAL_ASSERT_EQUALS(sk->isSSLActive(), false)
-
-   int byte_written = _writev(sk, iov, iovcnt, count, timeoutMS);
-#endif
-
-        if (cloop == 1) U_MEMCPY(iov, _iov, sz);
-#ifndef U_PIPELINE_HOMOGENEOUS_DISABLE
-   else if (cloop > 1                 &&
-            byte_written < (int)count &&
-            byte_written > 0)
-      {
-      U_INTERNAL_ASSERT(sk->isOpen())
-      U_INTERNAL_ASSERT_EQUALS(u_buffer_len, 0)
-
-      ptr = u_buffer;
-
-      for (int i = 0; i < iovcnt; ++i)
-         {
-         if (iov[i].iov_len)
-            {
-            U_MEMCPY(ptr, iov[i].iov_base, iov[i].iov_len);
-                     ptr +=                iov[i].iov_len;
-            }
-         }
-
-      u_buffer_len = ptr - u_buffer;
-
-      U_INTERNAL_ASSERT_MINOR( u_buffer_len, U_BUFFER_SIZE)
-      U_INTERNAL_ASSERT_EQUALS(u_buffer_len, count - byte_written)
-      }
-#endif
-
-   U_INTERNAL_DUMP("iov[0].iov_len = %d iov[1].iov_len = %d", iov[0].iov_len, iov[1].iov_len)
 
    U_RETURN(byte_written);
 }
@@ -887,7 +854,7 @@ int USocketExt::readMultilineReply(USocket* sk, char* buffer, uint32_t buffer_si
    do {
       r = readLineReply(sk, buffer + r, buffer_size - r);
 
-      if (r) response = atoi(buffer);
+      if (r) response = u_atoi(buffer);
       }
    while (parseCommandResponse(buffer, r, response));
 
@@ -1154,6 +1121,82 @@ UString USocketExt::getMacAddress(int fd, const char* device)
                       hwaddr[3] & 0xFF,
                       hwaddr[4] & 0xFF,
                       hwaddr[5] & 0xFF);
+
+      U_INTERNAL_ASSERT(u_isMacAddr(U_STRING_TO_PARAM(result)))
+      }
+#endif
+
+   U_RETURN_STRING(result);
+}
+
+UString USocketExt::getMacAddress(USocket* socket, const char* device)
+{
+   U_TRACE(1, "USocketExt::getMacAddress(%p,%S)", socket, device)
+
+   U_INTERNAL_ASSERT_POINTER(device)
+
+   UString result(100U);
+
+#if defined(U_LINUX) && defined(HAVE_SYS_IOCTL_H) && defined(HAVE_ARPA_INET_H)
+   U_INTERNAL_ASSERT(socket->isOpen())
+
+   /**
+    * ARP ioctl request
+    *
+    * struct arpreq {
+    *    struct sockaddr arp_pa;       // Protocol address
+    *    struct sockaddr arp_ha;       // Hardware address
+    *    int arp_flags;                // Flags
+    *    struct sockaddr arp_netmask;  // Netmask (only for proxy arps)
+    *    char arp_dev[16];
+    * };
+    */
+
+   struct arpreq arpreq;
+
+   (void) U_SYSCALL(memset, "%p,%d,%u", &arpreq, 0, sizeof(arpreq));
+
+   union uupsockaddr {
+      struct sockaddr*    p;
+      struct sockaddr_in* psin;
+   };
+
+   union uupsockaddr u = { &arpreq.arp_pa };
+
+   // arp_pa must be an AF_INET address
+   // arp_ha must have the same type as the device which is specified in arp_dev
+   // arp_dev is a zero-terminated string which names a device
+
+   u.psin->sin_family      = AF_INET;
+   u.psin->sin_addr.s_addr = socket->getClientAddress();
+   arpreq.arp_ha.sa_family = AF_INET;
+
+   (void) u__strncpy(arpreq.arp_dev, device, 15);
+
+   if (U_SYSCALL(ioctl, "%d,%d,%p", socket->iSockDesc, SIOCGARP, &arpreq) == 0)
+      {
+      if ((arpreq.arp_flags & ATF_COM) != 0)
+         {
+         unsigned char* hwaddr = (unsigned char*)arpreq.arp_ha.sa_data;
+
+         result.snprintf(U_CONSTANT_TO_PARAM("%02x:%02x:%02x:%02x:%02x:%02x"),
+            hwaddr[0] & 0xFF,
+            hwaddr[1] & 0xFF,
+            hwaddr[2] & 0xFF,
+            hwaddr[3] & 0xFF,
+            hwaddr[4] & 0xFF,
+            hwaddr[5] & 0xFF);
+
+         U_INTERNAL_ASSERT(u_isMacAddr(U_STRING_TO_PARAM(result)))
+
+         /**
+          * if (arpreq.arp_flags & ATF_PERM)        printf("PERM");
+          * if (arpreq.arp_flags & ATF_PUBL)        printf("PUBLISHED");
+          * if (arpreq.arp_flags & ATF_USETRAILERS) printf("TRAILERS");
+          * if (arpreq.arp_flags & ATF_PROXY)       printf("PROXY");
+          */
+         }
+   // else printf("*** INCOMPLETE ***");
       }
 #endif
 
@@ -1292,9 +1335,9 @@ void USocketExt::waitResolv()
 
       if (nfds <= 0) break;
 
-      tvp = (struct timeval*) U_SYSCALL(ares_timeout, "%p,%p,%p", (ares_channel)resolv_channel, 0, &tv);
+      tvp = (struct timeval*) U_SYSCALL(ares_timeout, "%p,%p,%p", (ares_channel)resolv_channel, U_NULLPTR, &tv);
 
-      (void) U_SYSCALL(select, "%d,%p,%p,%p,%p", nfds, &read_fds, &write_fds, 0, tvp);
+      (void) U_SYSCALL(select, "%d,%p,%p,%p,%p", nfds, &read_fds, &write_fds, U_NULLPTR, tvp);
 
       U_SYSCALL_VOID(ares_process, "%p,%p,%p", (ares_channel)resolv_channel, &read_fds, &write_fds);
 
@@ -1306,7 +1349,7 @@ void USocketExt::startResolv(const char* name, int family)
 {
    U_TRACE(1, "USocketExt::startResolv(%S,%d)", name, family)
 
-   if (resolv_channel == 0)
+   if (resolv_channel == U_NULLPTR)
       {
       int status = U_SYSCALL(ares_library_init, "%d", ARES_LIB_INIT_ALL);
 
@@ -1328,7 +1371,7 @@ void USocketExt::startResolv(const char* name, int family)
 
    resolv_status = ARES_ENODATA;
 
-   U_SYSCALL_VOID(ares_gethostbyname, "%p,%S,%d,%p,%p", (ares_channel)resolv_channel, name, family, &USocketExt::callbackResolv, 0);
+   U_SYSCALL_VOID(ares_gethostbyname, "%p,%S,%d,%p,%p", (ares_channel)resolv_channel, name, family, &USocketExt::callbackResolv, U_NULLPTR);
 }
 #endif
 

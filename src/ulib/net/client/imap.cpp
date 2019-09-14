@@ -20,7 +20,7 @@
 
 UImapClient::~UImapClient()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UImapClient)
+   U_TRACE_DTOR(0, UImapClient)
 }
 
 U_NO_EXPORT void UImapClient::setStatus()
@@ -248,7 +248,7 @@ bool UImapClient::list(const UString& ref, const UString& wild, UVector<ListResp
             i += 2;
             attributes = v1[i++];
 
-            U_NEW(ListResponse, elem, ListResponse);
+            U_NEW_WITHOUT_CHECK_MEMORY(ListResponse, elem, ListResponse);
 
             elem->marked      = elem->unmarked =
             elem->noSelect    = elem->noInferiors =
@@ -258,7 +258,7 @@ bool UImapClient::list(const UString& ref, const UString& wild, UVector<ListResp
 
             if (attributes.size() > 2)
                {
-               attributes.rep->unQuote();
+               attributes.unQuote();
 
                UVector<UString> v2(attributes);
 
@@ -366,31 +366,31 @@ bool UImapClient::status(const UString& mailboxName, StatusInfo& retval, int ite
             if (retval.hasMessageCount == false &&
                 vec[i].equal(U_CONSTANT_TO_PARAM("MESSAGES")))
                {
-               retval.messageCount    = vec[++i].strtol(10);
+               retval.messageCount    = vec[++i].strtol();
                retval.hasMessageCount = true;
                }
             else if (retval.hasRecentCount == false &&
                      vec[i] == *UString::str_recent)
                {
-               retval.recentCount    = vec[++i].strtol(10);
+               retval.recentCount    = vec[++i].strtol();
                retval.hasRecentCount = true;
                }
             else if (retval.hasNextUID == false &&
                      vec[i] == *UString::str_uidnext)
                {
-               retval.nextUID    = vec[++i].strtol(10);
+               retval.nextUID    = vec[++i].strtol();
                retval.hasNextUID = true;
                }
             else if (retval.hasUIDValidity == false &&
                      vec[i] == *UString::str_uidvalidity)
                {
-               retval.uidValidity    = vec[++i].strtol(10);
+               retval.uidValidity    = vec[++i].strtol();
                retval.hasUIDValidity = true;
                }
             else if (retval.hasUnseenCount == false &&
                      vec[i] == *UString::str_unseen)
                {
-               retval.unseenCount    = vec[++i].strtol(10);
+               retval.unseenCount    = vec[++i].strtol();
                retval.hasUnseenCount = true;
                }
             else
@@ -585,19 +585,19 @@ U_NO_EXPORT void UImapClient::setMailBox(MailboxInfo& retval)
             if (!retval.status.hasUnseenCount &&
                 vec[0] == *UString::str_unseen)
                {
-               retval.status.unseenCount    = vec[1].strtol(10);
+               retval.status.unseenCount    = vec[1].strtol();
                retval.status.hasUnseenCount = true;
                }
             else if (!retval.status.hasNextUID &&
                      vec[0] == *UString::str_uidnext)
                {
-               retval.status.nextUID    = vec[1].strtol(10);
+               retval.status.nextUID    = vec[1].strtol();
                retval.status.hasNextUID = true;
                }
             else if (!retval.status.hasUIDValidity &&
                      vec[0] == *UString::str_uidvalidity)
                {
-               retval.status.uidValidity    = vec[1].strtol(10);
+               retval.status.uidValidity    = vec[1].strtol();
                retval.status.hasUIDValidity = true;
                }
             else
@@ -643,13 +643,13 @@ U_NO_EXPORT void UImapClient::setMailBox(MailboxInfo& retval)
          if (!retval.status.hasMessageCount &&
              vec[1].equal(U_CONSTANT_TO_PARAM("EXISTS")))
             {
-            retval.status.messageCount    = vec[0].strtol(10);
+            retval.status.messageCount    = vec[0].strtol();
             retval.status.hasMessageCount = true;
             }
          else if (!retval.status.hasRecentCount &&
                   vec[1] == *UString::str_recent)
             {
-            retval.status.recentCount    = vec[0].strtol(10);
+            retval.status.recentCount    = vec[0].strtol();
             retval.status.hasRecentCount = true;
             }
          else
@@ -882,7 +882,7 @@ bool UImapClient::expunge(int* _ret)
                {
                U_ASSERT_EQUALS(line[0],'*')
 
-               *_ret++ = strtol(line.c_pointer(2), 0, 10);
+               *_ret++ = ::strtol(line.c_pointer(2), U_NULLPTR, 10);
                }
             }
 
@@ -927,7 +927,7 @@ bool UImapClient::search(int* _ret, const UString& spec, const char* charSet, bo
 
          while (tok.next(word, ' '))
             {
-            *_ret++ = strtol(word.data(), 0, 10);
+            *_ret++ = ::strtol(word.data(), U_NULLPTR, 10);
             }
 
          U_RETURN(true);
@@ -1061,6 +1061,6 @@ const char* UImapClient::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

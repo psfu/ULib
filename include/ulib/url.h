@@ -99,9 +99,15 @@ public:
 
    Url()
       {
-      U_TRACE_REGISTER_OBJECT(0, Url, "", 0)
+      U_TRACE_CTOR(0, Url, "")
 
-      service_end = user_begin = user_end = host_begin = host_end = path_begin = path_end = query = -1;
+      service_end =
+       user_begin =
+         user_end =
+       host_begin =
+         host_end =
+       path_begin =
+         path_end = -1;
       }
 
    /**
@@ -114,7 +120,7 @@ public:
 
    Url(const UString& x) : url(x)
       {
-      U_TRACE_REGISTER_OBJECT(0, Url, "%V", x.rep)
+      U_TRACE_CTOR(0, Url, "%V", x.rep)
 
       findpos();
       }
@@ -129,7 +135,7 @@ public:
 
    Url(const char* t, uint32_t tlen) : url(t, tlen)
       {
-      U_TRACE_REGISTER_OBJECT(0, Url, "%S,%u", t, tlen)
+      U_TRACE_CTOR(0, Url, "%S,%u", t, tlen)
 
       findpos();
       }
@@ -140,7 +146,7 @@ public:
 
    ~Url()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, Url)
+      U_TRACE_DTOR(0, Url)
       }
 
    // ASSIGNMENT
@@ -154,7 +160,6 @@ public:
          host_end = u.host_end;
        path_begin = u.path_begin;
          path_end = u.path_end;
-            query = u.query;
       }
 
    Url(const Url& u) : url(u.url)
@@ -204,8 +209,7 @@ public:
        host_begin =
          host_end =
        path_begin =
-         path_end =
-            query = -1;
+         path_end = -1;
       }
 
    /**
@@ -217,14 +221,45 @@ public:
     * @return str
     */
 
-   UString getService() const;
+   UString getService() const
+      {
+      U_TRACE_NO_PARAM(0, "Url::getService()")
+
+      UString srv;
+
+      if (service_end > 0) srv = url.substr(0U, (uint32_t)service_end);
+
+      U_RETURN_STRING(srv);
+      }
+
+   bool isLDAP() const
+      {
+      U_TRACE_NO_PARAM(0, "Url::isLDAP()")
+
+      if (u_get_unalignedp32(url.data()) == U_MULTICHAR_CONSTANT32('l','d','a','p')) U_RETURN(true);
+
+      U_RETURN(false);
+      }
 
    bool isHTTP() const
       {
       U_TRACE_NO_PARAM(0, "Url::isHTTP()")
 
       if (service_end == 4 &&
-          UString::str_http->equal(url.data(), (uint32_t)service_end))
+          u_get_unalignedp32(url.data()) == U_MULTICHAR_CONSTANT32('h','t','t','p'))
+         {
+         U_RETURN(true);
+         }
+
+      U_RETURN(false);
+      }
+
+   bool isWS() const
+      {
+      U_TRACE_NO_PARAM(0, "Url::isWS()")
+
+      if (service_end == 2 &&
+          u_get_unalignedp16(url.data()) == U_MULTICHAR_CONSTANT16('w','s'))
          {
          U_RETURN(true);
          }
@@ -238,7 +273,7 @@ public:
 
       if (service_end == 5     &&
           url.c_char(4) == 's' &&
-          UString::str_http->equal(url.data(), 4))
+          u_get_unalignedp32(url.data()) == U_MULTICHAR_CONSTANT32('h','t','t','p'))
          {
          U_RETURN(true);
          }
@@ -246,11 +281,16 @@ public:
       U_RETURN(false);
       }
 
-   bool isLDAP() const
+   bool isWSS() const
       {
-      U_TRACE_NO_PARAM(0, "Url::isLDAP()")
+      U_TRACE_NO_PARAM(0, "Url::isWSS()")
 
-      if (getService().equal(U_CONSTANT_TO_PARAM("ldap"))) U_RETURN(true);
+      if (service_end == 3     &&
+          url.c_char(2) == 's' &&
+          u_get_unalignedp16(url.data()) == U_MULTICHAR_CONSTANT16('w','s'))
+         {
+         U_RETURN(true);
+         }
 
       U_RETURN(false);
       }
@@ -259,7 +299,12 @@ public:
       {
       U_TRACE_NO_PARAM(0, "Url::isLDAPS()")
 
-      if (getService().equal(U_CONSTANT_TO_PARAM("ldaps"))) U_RETURN(true);
+      if (service_end == 5     &&
+          url.c_char(4) == 's' &&
+          u_get_unalignedp32(url.data()) == U_MULTICHAR_CONSTANT32('l','d','a','p'))
+         {
+         U_RETURN(true);
+         }
 
       U_RETURN(false);
       }
@@ -283,7 +328,16 @@ public:
     * @return str
     */
 
-   UString getUser();
+   UString getUser()
+      {
+      U_TRACE_NO_PARAM(0, "Url::getUser()")
+
+      UString usr;
+
+      if (user_begin < user_end) usr = url.substr(user_begin, user_end - user_begin);
+
+      U_RETURN_STRING(usr);
+      }
 
    /**
     * This methode set the user of the url
@@ -339,7 +393,16 @@ public:
     * @return str
     */
 
-   UString getHost();
+   UString getHost()
+      {
+      U_TRACE_NO_PARAM(0, "Url::getHost()")
+
+      UString host;
+
+      if (host_begin < host_end) host = url.substr(host_begin, host_end - host_begin);
+
+      U_RETURN_STRING(host);
+      }
 
    /**
     * This methode set the host
@@ -362,7 +425,8 @@ public:
     * @retval        0 no port specified
     */
 
-   unsigned int getPort();
+   UString  getPort();
+   uint32_t getPortNumber();
 
    /**
     * Set the port number
@@ -399,7 +463,38 @@ public:
     * @return str
     */
 
-   UString getPath();
+   UString getPath()
+      {
+      U_TRACE_NO_PARAM(0, "Url::getPath()")
+
+      if (isPath() == false) return *UString::str_path_root;
+
+      uint32_t n = path_end - path_begin;
+
+      UString path(n);
+
+      decode(url.c_pointer(path_begin), n, path);
+
+      U_RETURN_STRING(path);
+      }
+
+   /**
+    * Returns the file name for this URL. The file name consists of the path plus the query (if present)
+    *
+    * For example, the file name for the following URL is @a '/search?q=xml'
+    * @c http://www.google.com/search?q=xml
+    */
+
+   UString getPathAndQuery()
+      {
+      U_TRACE_NO_PARAM(0, "Url::getPathAndQuery()")
+
+      if (isPath() == false) return *UString::str_path_root;
+
+      UString path = url.substr(path_begin);
+
+      U_RETURN_STRING(path);
+      }
 
    /**
     * This methode set the path of the url
@@ -410,15 +505,6 @@ public:
     */
 
    void setPath(const char* path, uint32_t n);
-
-   /**
-    * Returns the file name for this URL. The file name consists of the path plus the query (if present)
-    *
-    * For example, the file name for the following URL is @a '/search?q=xml'
-    * @c http://www.google.com/search?q=xml
-    */
-
-   UString getPathAndQuery();
 
    /**
     * This methode check the existence of the query from the url
@@ -461,17 +547,7 @@ public:
     * This methode erase the query from the url
     */
 
-   void eraseQuery()
-      {
-      U_TRACE_NO_PARAM(0, "Url::eraseQuery()")
-
-      if (path_end < (int)url.size())
-         {
-         (void) url.erase(path_end);
-
-         query = path_end;
-         }
-      }
+   void eraseQuery();
 
    /**
     * This methode add's a new entry to the query
@@ -487,6 +563,19 @@ public:
 
    void addQuery(const char* entry, uint32_t entry_len, const char* value, uint32_t value_len);
 
+   enum UrlFieldType {
+      U_SCHEMA   = 0x0001,
+      U_HOST     = 0x0002,
+      U_PORT     = 0x0004,
+      U_PATH     = 0x0008,
+      U_QUERY    = 0x0010,
+      U_FRAGMENT = 0x0020,
+      U_USERINFO = 0x0040
+   };
+
+   UString getFragment();
+   UString getFieldValue(int field_type);
+
    /**
     * Converts a Unicode string into the MIME @c x-www-form-urlencoded format
     *
@@ -499,16 +588,33 @@ public:
       {
       U_TRACE(0, "Url::encode(%.*S,%u,%p)", len, input, len, &buffer)
 
-      U_ASSERT(buffer.uniq())
-      U_ASSERT(buffer.capacity() >= len * 3)
+      U_ASSERT(buffer.capacity() >= len * 2)
       U_INTERNAL_ASSERT_EQUALS(u_isBase64(input, len), false)
 
       buffer.rep->_length = u_url_encode((const unsigned char*)input, len, (unsigned char*)buffer.data());
 
       U_INTERNAL_DUMP("buffer(%u) = %#V", buffer.size(), buffer.rep)
+
+      U_INTERNAL_ASSERT(buffer.invariant())
       }
 
    static void encode(const UString& input, UString& buffer) { encode(input.data(), input.size(), buffer); }
+
+   static void encode_add(const char* input, uint32_t len, UString& buffer)
+      {
+      U_TRACE(0, "Url::encode_add(%.*S,%u,%p)", len, input, len, &buffer)
+
+      U_ASSERT(buffer.space() >= (len * 2))
+      U_INTERNAL_ASSERT_EQUALS(u_isBase64(input, len), false)
+
+      buffer.rep->_length += u_url_encode((const unsigned char*)input, len, (unsigned char*)buffer.pend());
+
+      U_INTERNAL_DUMP("buffer(%u) = %#V", buffer.size(), buffer.rep)
+
+      U_INTERNAL_ASSERT(buffer.invariant())
+      }
+
+   static void encode_add(const UString& input, UString& buffer) { encode_add(input.data(), input.size(), buffer); }
 
    /**
     * Decode a string
@@ -522,12 +628,13 @@ public:
       {
       U_TRACE(0, "Url::decode(%.*S,%u,%p)", len, input, len, &buffer)
 
-      U_ASSERT(buffer.uniq())
       U_ASSERT(buffer.capacity() >= len)
 
       buffer.rep->_length = u_url_decode(input, len, (unsigned char*)buffer.data());
 
       U_INTERNAL_DUMP("buffer(%u) = %#V", buffer.size(), buffer.rep)
+
+      U_INTERNAL_ASSERT(buffer.invariant())
       }
 
    static void decode(const UString& input, UString& buffer) { decode(U_STRING_TO_PARAM(input), buffer); }
@@ -546,20 +653,26 @@ public:
 #endif
 
 protected:
-   UString url;      // content string
-   int service_end,  // End position of the service
-       user_begin,   // begin position of the user
-       user_end,     // end position of the user
-       host_begin,   // begin position of the host
-       host_end,     // end position of the host
-       path_begin,   // begin position of the path
-       path_end,     // end position of the path
-       query;        // start position of the last readed query entry
+   UString url;     // content string
+   int service_end, // End position of the service
+       user_begin,  // begin position of the user
+       user_end,    // end position of the user
+       host_begin,  // begin position of the host
+       host_end,    // end position of the host
+       path_begin,  // begin position of the path
+       path_end;    // end position of the path
 
-   void findpos();   // scans the structure of the url and is updating the position attributs of the class
+#ifdef DEBUG
+   uint32_t field_mask;
+#endif
+
+   void findpos(); // scans the structure of the url and is updating the position attributs of the class
 
 private:
-   bool prepareForQuery() U_NO_EXPORT; // prepare the string to add a query
+   uint32_t getPosQuery() U_NO_EXPORT __pure;
+   uint32_t getPosFragment() U_NO_EXPORT __pure;
+   bool     prepareForQuery() U_NO_EXPORT; // prepare the string to add a query
+   uint32_t getSizeQuery(uint32_t pos) U_NO_EXPORT __pure;
 };
 
 #endif

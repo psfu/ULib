@@ -20,12 +20,16 @@ extern "C" {
 #include <mysql/mysql.h>
 }
 
+#ifndef U_MYSQL_STRING_SIZE
+#define U_MYSQL_STRING_SIZE (4096-sizeof(USqlStatementBindResult))
+#endif
+
 class U_EXPORT UMySqlStatementBindParam : public USqlStatementBindParam {
 public:
 
    UMySqlStatementBindParam()
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "", 0)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "")
 
       type        = MYSQL_TYPE_NULL;
       is_unsigned = false;
@@ -33,7 +37,7 @@ public:
 
    explicit UMySqlStatementBindParam(bool* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_TINY;
       is_unsigned = false;
@@ -41,7 +45,7 @@ public:
 
    explicit UMySqlStatementBindParam(char* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_TINY;
       is_unsigned = false;
@@ -49,7 +53,7 @@ public:
 
    explicit UMySqlStatementBindParam(unsigned char* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_TINY;
       is_unsigned = true;
@@ -57,7 +61,7 @@ public:
 
    explicit UMySqlStatementBindParam(short* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_SHORT;
       is_unsigned = false;
@@ -65,7 +69,7 @@ public:
 
    explicit UMySqlStatementBindParam(unsigned short* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_SHORT;
       is_unsigned = true;
@@ -73,7 +77,7 @@ public:
 
    explicit UMySqlStatementBindParam(int* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_LONG;
       is_unsigned = false;
@@ -81,7 +85,7 @@ public:
 
    explicit UMySqlStatementBindParam(unsigned int* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_LONG;
       is_unsigned = true;
@@ -89,7 +93,7 @@ public:
 
    explicit UMySqlStatementBindParam(long* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
 #  if SIZEOF_LONG == 4
       type        = MYSQL_TYPE_LONG;
@@ -101,7 +105,7 @@ public:
 
    explicit UMySqlStatementBindParam(unsigned long* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
 #  if SIZEOF_LONG == 4
       type        = MYSQL_TYPE_LONG;
@@ -113,7 +117,7 @@ public:
 
    explicit UMySqlStatementBindParam(long long* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_LONGLONG;
       is_unsigned = false;
@@ -121,7 +125,7 @@ public:
 
    explicit UMySqlStatementBindParam(unsigned long long* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_LONGLONG;
       is_unsigned = true;
@@ -129,7 +133,7 @@ public:
 
    explicit UMySqlStatementBindParam(float* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_FLOAT;
       is_unsigned = false;
@@ -137,7 +141,7 @@ public:
 
    explicit UMySqlStatementBindParam(double* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_DOUBLE;
       is_unsigned = false;
@@ -145,22 +149,29 @@ public:
 
    explicit UMySqlStatementBindParam(long double* v) : USqlStatementBindParam(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%p", v)
 
       type        = MYSQL_TYPE_DOUBLE;
       is_unsigned = false;
       }
 
+   explicit UMySqlStatementBindParam(UString& s) : USqlStatementBindParam(s)
+      {
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%V", s.rep)
+
+      type = U_UTF_VALUE;
+      }
+
    explicit UMySqlStatementBindParam(const char* s, int n, bool bstatic) : USqlStatementBindParam(s, n, bstatic)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindParam, "%.*S,%u,%b", n, s, n, bstatic)
+      U_TRACE_CTOR(0, UMySqlStatementBindParam, "%.*S,%u,%b", n, s, n, bstatic)
 
       type = MYSQL_TYPE_STRING;
       }
 
    virtual ~UMySqlStatementBindParam()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UMySqlStatementBindParam)
+      U_TRACE_DTOR(0, UMySqlStatementBindParam)
       }
 
    // DEBUG
@@ -175,7 +186,7 @@ public:
 
    explicit UMySqlStatementBindResult(bool* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_TINY;
       is_unsigned = false;
@@ -183,7 +194,7 @@ public:
 
    explicit UMySqlStatementBindResult(char* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_TINY;
       is_unsigned = false;
@@ -191,7 +202,7 @@ public:
 
    explicit UMySqlStatementBindResult(unsigned char* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_TINY;
       is_unsigned = true;
@@ -199,7 +210,7 @@ public:
 
    explicit UMySqlStatementBindResult(short* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_SHORT;
       is_unsigned = false;
@@ -207,7 +218,7 @@ public:
 
    explicit UMySqlStatementBindResult(unsigned short* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_SHORT;
       is_unsigned = true;
@@ -215,7 +226,7 @@ public:
 
    explicit UMySqlStatementBindResult(int* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_LONG;
       is_unsigned = false;
@@ -223,7 +234,7 @@ public:
 
    explicit UMySqlStatementBindResult(unsigned int* v) : USqlStatementBindResult(v) 
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_LONG;
       is_unsigned = true;
@@ -231,7 +242,7 @@ public:
 
    explicit UMySqlStatementBindResult(long* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
 #  if SIZEOF_LONG == 4
       type        = MYSQL_TYPE_LONG;
@@ -243,7 +254,7 @@ public:
 
    explicit UMySqlStatementBindResult(unsigned long* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
 #  if SIZEOF_LONG == 4
       type        = MYSQL_TYPE_LONG;
@@ -255,7 +266,7 @@ public:
 
    explicit UMySqlStatementBindResult(long long* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_LONGLONG;
       is_unsigned = false;
@@ -263,7 +274,7 @@ public:
 
    explicit UMySqlStatementBindResult(unsigned long long* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_LONGLONG;
       is_unsigned = true;
@@ -271,7 +282,7 @@ public:
 
    explicit UMySqlStatementBindResult(float* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_FLOAT;
       is_unsigned = false;
@@ -279,7 +290,7 @@ public:
 
    explicit UMySqlStatementBindResult(double* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_DOUBLE;
       is_unsigned = false;
@@ -287,22 +298,36 @@ public:
 
    explicit UMySqlStatementBindResult(long double* v) : USqlStatementBindResult(v)
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%p", v)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%p", v)
 
       type        = MYSQL_TYPE_DOUBLE;
       is_unsigned = false;
       }
 
-   explicit UMySqlStatementBindResult(UStringRep& s) : USqlStatementBindResult(s)
+   explicit UMySqlStatementBindResult(UString& s) : USqlStatementBindResult()
       {
-      U_TRACE_REGISTER_OBJECT(0, UMySqlStatementBindResult, "%V", &s)
+      U_TRACE_CTOR(0, UMySqlStatementBindResult, "%V", s.rep)
 
-      type = MYSQL_TYPE_STRING;
+      buffer = str_data;
+      length = U_MYSQL_STRING_SIZE; // NB: after fetch become the length of the actual data value...
+      pstr   = &s;
+      type   = MYSQL_TYPE_STRING;
+
+      is_unsigned = is_null = false;
       }
 
    virtual ~UMySqlStatementBindResult()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UMySqlStatementBindResult)
+      U_TRACE_DTOR(0, UMySqlStatementBindResult)
+      }
+
+   // SERVICES
+
+   void setString()
+      {
+      U_TRACE_NO_PARAM(0, "UMySqlStatementBindResult::setString()")
+
+      USqlStatementBindResult::setString(str_data, length);
       }
 
    // DEBUG
@@ -310,12 +335,14 @@ public:
 #if defined(U_STDCPP_ENABLE) && defined(DEBUG)
    const char* dump(bool reset) const { return USqlStatementBindResult::dump(reset); }
 #endif
+
+   char str_data[U_MYSQL_STRING_SIZE]; // buffer to handle TEXT field result
 };
 
 class U_EXPORT UMySqlStatement : public USqlStatement {
 public:
 
-            UMySqlStatement(MYSQL_STMT* ptr, uint32_t nbind, uint32_t nresult) : USqlStatement(ptr, nbind, nresult) { string_type = 0; mysql_vparam = mysql_vresult = 0; }
+            UMySqlStatement(MYSQL_STMT* ptr, uint32_t nbind, uint32_t nresult) : USqlStatement(ptr, nbind, nresult) { string_type = 0; mysql_vparam = mysql_vresult = U_NULLPTR; }
    virtual ~UMySqlStatement()                                                                                       { reset(); }
 
    // SERVICES
@@ -342,7 +369,7 @@ public:
 
    UOrmDriverMySql()
       {
-      U_TRACE_REGISTER_OBJECT(0, UOrmDriverMySql, "")
+      U_TRACE_CTOR(0, UOrmDriverMySql, "")
 
       U_INTERNAL_ASSERT_POINTER(UString::str_mysql_name)
 
@@ -351,7 +378,7 @@ public:
 
    UOrmDriverMySql(const UString& name_drv) : UOrmDriver(name_drv)
       {
-      U_TRACE_REGISTER_OBJECT(0, UOrmDriverMySql, "%V", name_drv.rep)
+      U_TRACE_CTOR(0, UOrmDriverMySql, "%V", name_drv.rep)
       }
 
    virtual ~UOrmDriverMySql();
@@ -406,7 +433,10 @@ public:
    virtual USqlStatementBindParam* creatSqlStatementBindParam(unsigned long long* v)
       { UMySqlStatementBindParam* r; U_NEW(UMySqlStatementBindParam, r, UMySqlStatementBindParam(v)); return r; }
 
-   virtual USqlStatementBindParam* creatSqlStatementBindParam(USqlStatement* pstmt, const char* s, int n, bool bstatic, int rebind);
+   virtual USqlStatementBindParam* creatSqlStatementBindParam(UString& s)
+      { UMySqlStatementBindParam* r; U_NEW(UMySqlStatementBindParam, r, UMySqlStatementBindParam(s)); return r; }
+
+   virtual USqlStatementBindParam* creatSqlStatementBindParam(USqlStatement* pstmt, const char* s, uint32_t n, bool bstatic, int rebind);
 
    // CREATE BIND RESULT
 
@@ -424,8 +454,6 @@ public:
       { UMySqlStatementBindResult* r; U_NEW(UMySqlStatementBindResult, r, UMySqlStatementBindResult(v)); return r; }
    virtual USqlStatementBindResult* creatSqlStatementBindResult(double* v)
       { UMySqlStatementBindResult* r; U_NEW(UMySqlStatementBindResult, r, UMySqlStatementBindResult(v)); return r; }
-   virtual USqlStatementBindResult* creatSqlStatementBindResult(UStringRep& v)
-      { UMySqlStatementBindResult* r; U_NEW(UMySqlStatementBindResult, r, UMySqlStatementBindResult(v)); return r; }
    virtual USqlStatementBindResult* creatSqlStatementBindResult(long long* v)
       { UMySqlStatementBindResult* r; U_NEW(UMySqlStatementBindResult, r, UMySqlStatementBindResult(v)); return r; }
    virtual USqlStatementBindResult* creatSqlStatementBindResult(long double* v)
@@ -440,6 +468,9 @@ public:
       { UMySqlStatementBindResult* r; U_NEW(UMySqlStatementBindResult, r, UMySqlStatementBindResult(v)); return r; }
    virtual USqlStatementBindResult* creatSqlStatementBindResult(unsigned long long* v)
       { UMySqlStatementBindResult* r; U_NEW(UMySqlStatementBindResult, r, UMySqlStatementBindResult(v)); return r; }
+
+   virtual USqlStatementBindResult* creatSqlStatementBindResult(UString& s)
+      { UMySqlStatementBindResult* r; U_NEW(UMySqlStatementBindResult, r, UMySqlStatementBindResult(s)); return r; }
 
    // DEBUG
 

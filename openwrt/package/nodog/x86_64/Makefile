@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodog
-PKG_VERSION:=1.4.2
+PKG_VERSION:=2.4.2
 PKG_RELEASE:=13
 
 PKG_SOURCE:=ULib-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=https://github.com/stefanocasazza/ULib/archive/v1.4.2.tar.gz
+PKG_SOURCE_URL:=https://github.com/stefanocasazza/ULib/archive/v2.4.2.tar.gz
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/ULib-$(PKG_VERSION)
 
@@ -46,8 +46,8 @@ NODOG_OPTIONS:= --disable-examples \
 					 --with-ssl --with-libz --with-libtdb \
 					 --without-expat --without-magic --without-pcre \
 					 --disable-static --disable-new-ldflags --disable-zip --disable-LFS \
-					 --enable-log --enable-captive-portal --enable-static-server-plugin="nocat http" \
-					 --disable-stdcpp --disable-thread --disable-HCRS --disable-HPRS \
+					 --enable-log --enable-captive-portal --enable-static-server-plugin="nodog http" \
+					 --disable-stdcpp --disable-thread --disable-HCRS --disable-HPRS --disable-HIS \
 					 $(if $(CONFIG_NODOG_DEBUG),--enable-debug) \
 					 $(if $(CONFIG_NODOG_UUID),--with-libuuid,--without-libuuid) \
 					 $(if $(CONFIG_NODOG_MEMPOOL),--enable-memory-pool,--disable-memory-pool)

@@ -142,9 +142,9 @@ UProcess* UPing::proc;
 
 UPing::UPing(int _timeoutMS, bool bSocketIsIPv6) : USocket(bSocketIsIPv6)
 {
-   U_TRACE_REGISTER_OBJECT(0, UPing, "%d,%b", _timeoutMS, bSocketIsIPv6)
+   U_TRACE_CTOR(0, UPing, "%d,%b", _timeoutMS, bSocketIsIPv6)
 
-   rep       = 0;
+   rep       = U_NULLPTR;
    timeoutMS = _timeoutMS;
 
    (void) memset(&req, 0, sizeof(reqhdr));
@@ -152,8 +152,8 @@ UPing::UPing(int _timeoutMS, bool bSocketIsIPv6) : USocket(bSocketIsIPv6)
    (void) memset(&arp, 0, sizeof(arpmsg));
 #endif
 
-   if (proc     == 0) U_NEW(UProcess, proc, UProcess);
-   if (addrmask == 0)
+   if (proc     == U_NULLPTR) U_NEW(UProcess, proc, UProcess);
+   if (addrmask == U_NULLPTR)
       {
       map_size = sizeof(fd_set) + sizeof(uint32_t);
       addrmask = (fd_set*) UFile::mmap(&map_size);
@@ -162,19 +162,20 @@ UPing::UPing(int _timeoutMS, bool bSocketIsIPv6) : USocket(bSocketIsIPv6)
 
 UPing::~UPing()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, UPing)
+   U_TRACE_DTOR(0, UPing)
 
    if (proc)
       {
-      delete proc;
-             proc= 0;
+      U_DELETE(proc)
+
+      proc = U_NULLPTR;
       }
 
    if (addrmask &&
        map_size)
       {
       UFile::munmap(addrmask, map_size);
-                    addrmask = 0;
+                    addrmask = U_NULLPTR;
       }
 }
 
@@ -365,13 +366,13 @@ fd_set* UPing::checkForPingAsyncCompletion(uint32_t nfds)
    if (nfds &&
        SHM_counter < nfds)
       {
-      UTimeVal::nanosleep(1L);
+      UTimeVal::nanosleep(1000L);
 
       U_INTERNAL_DUMP("SHM_counter = %u addrmask = %B", SHM_counter, __FDS_BITS(addrmask)[0])
 
       // check if pending...
 
-      if (SHM_counter < nfds) U_RETURN_POINTER(0, fd_set);
+      if (SHM_counter < nfds) U_RETURN_POINTER(U_NULLPTR, fd_set);
       }
 
    return pingAsyncCompletion();
@@ -453,10 +454,10 @@ loop: // wait for ARP reply
    if (UNotifier::waitForRead(USocket::iSockDesc, timeoutMS) != 1) U_RETURN(2);
 
 #ifdef U_ARP_WITH_BROADCAST
-   ret = U_SYSCALL(recv,      "%d,%p,%d,%u,%p,%p", USocket::iSockDesc, &reply, sizeof(reply),    0);
+   ret = U_FF_SYSCALL(recv,      "%d,%p,%d,%u,%p,%p", USocket::iSockDesc, &reply, sizeof(reply),    0);
 #else
    alen = sizeof(struct sockaddr);
-   ret  = U_SYSCALL(recvfrom, "%d,%p,%d,%u,%p,%p", USocket::iSockDesc,  ah.pc, sizeof(reply)-14, 0, &(from.s), &alen);
+   ret  = U_FF_SYSCALL(recvfrom, "%d,%p,%d,%u,%p,%p", USocket::iSockDesc,  ah.pc, sizeof(reply)-14, 0, &(from.s), &alen);
 #endif
 
    if (ret <= 0)
@@ -539,7 +540,7 @@ void UPing::initArpPing(const char* device)
 
       (void) u__strncpy(ifr.ifr_name, device, IFNAMSIZ-1);
 
-      if (U_SYSCALL(ioctl, "%d,%d,%p", USocket::iSockDesc, SIOCGIFINDEX, (char*)&ifr) == -1) U_ERROR("Unknown iface for interface %S", device);
+      if (U_FF_SYSCALL(ioctl, "%d,%d,%p", USocket::iSockDesc, SIOCGIFINDEX, (char*)&ifr) == -1) U_ERROR("Unknown iface for interface %S", device);
 
       U_INTERNAL_DUMP("ifr_ifindex = %u", ifr.ifr_ifindex)
 
@@ -556,8 +557,8 @@ void UPing::initArpPing(const char* device)
 
       U_INTERNAL_DUMP("alen = %u", alen)
 
-      if (U_SYSCALL(bind,        "%d,%p,%d", USocket::iSockDesc, &(he.s),  alen) == -1) U_ERROR_SYSCALL("bind");
-      if (U_SYSCALL(getsockname, "%d,%p,%p", USocket::iSockDesc, &(he.s), &alen) == -1) U_ERROR_SYSCALL("getsockname");
+      if (U_FF_SYSCALL(bind,        "%d,%p,%d", USocket::iSockDesc, &(he.s),  alen) == -1) U_ERROR_SYSCALL("bind");
+      if (U_FF_SYSCALL(getsockname, "%d,%p,%p", USocket::iSockDesc, &(he.s), &alen) == -1) U_ERROR_SYSCALL("getsockname");
 
       U_INTERNAL_DUMP("alen = %d he.sll_halen = %u", alen, he.l.sll_halen) // 6
 
@@ -568,12 +569,12 @@ void UPing::initArpPing(const char* device)
       (void) U_SYSCALL(memset, "%p,%d,%u", he.l.sll_addr, 0xff, 6);
 #  endif
 
-      if (U_SYSCALL(ioctl, "%d,%d,%p", USocket::iSockDesc, SIOCGIFFLAGS, (char*)&ifr) == -1) U_ERROR("ioctl(SIOCGIFFLAGS) failed for interface %S", device);
+      if (U_FF_SYSCALL(ioctl, "%d,%d,%p", USocket::iSockDesc, SIOCGIFFLAGS, (char*)&ifr) == -1) U_ERROR("ioctl(SIOCGIFFLAGS) failed for interface %S", device);
 
       if (!(ifr.ifr_flags &  IFF_UP))                                                        U_ERROR("Interface %S is down", device);
       if (  ifr.ifr_flags & (IFF_NOARP | IFF_LOOPBACK))                                      U_ERROR("Interface %S is not ARPable", device);
 
-      if (U_SYSCALL(ioctl, "%d,%d,%p", USocket::iSockDesc, SIOCGIFADDR, (char*)&ifr)  == -1) U_ERROR("ioctl(SIOCGIFADDR) failed for interface %S", device);
+      if (U_FF_SYSCALL(ioctl, "%d,%d,%p", USocket::iSockDesc, SIOCGIFADDR, (char*)&ifr)  == -1) U_ERROR("ioctl(SIOCGIFADDR) failed for interface %S", device);
 
       U_MEMCPY(arp.sInaddr, ifr.ifr_addr.sa_data + sizeof(short), 4); // source IP address
 
@@ -593,7 +594,7 @@ void UPing::initArpPing(const char* device)
       U_INTERNAL_DUMP("ar_op = %u", arp.operation)
 
 #  ifdef U_ARP_WITH_BROADCAST
-      if (U_SYSCALL(ioctl, "%d,%d,%p", USocket::iSockDesc, SIOCGIFHWADDR, (char*)&ifr) == -1)
+      if (U_FF_SYSCALL(ioctl, "%d,%d,%p", USocket::iSockDesc, SIOCGIFHWADDR, (char*)&ifr) == -1)
          {
          U_ERROR("ioctl(SIOCGIFHWADDR) failed for interface %S", device);
          }
@@ -681,7 +682,7 @@ retry:
 
    for (i = 0; i < 3; ++i)
       {
-      ret = U_SYSCALL(sendto, "%d,%p,%d,%u,%p,%d", USocket::iSockDesc, buf, len, 0, saddr, alen);
+      ret = U_FF_SYSCALL(sendto, "%d,%p,%d,%u,%p,%d", USocket::iSockDesc, buf, len, 0, saddr, alen);
 
       if (USocket::checkIO(ret) == false) U_RETURN(false);
 
@@ -780,6 +781,6 @@ const char* UPing::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif

@@ -2,16 +2,16 @@
 
 EXTRA_DIST = *.spec* *.start
 
-ulib_la = @ULIBS@ $(top_builddir)/src/ulib/lib@ULIB@.la @ULIB_LIBS@
+ulib_la = @ULIBS@ $(top_builddir)/src/ulib/lib@ULIB@.la
 
 dist_sysconf_DATA = userver.cfg.default
 
-DEFAULT_INCLUDES    = -I. -I$(top_srcdir)/include
+DEFAULT_INCLUDES 	  = -I. -I$(top_srcdir)/include -I..
 DEFAULT_CONFIG_FILE = @ULIB_SYSCONFDIR@/userver.cfg
 
-userver_tcp_LDADD    = $(ulib_la)
+userver_tcp_LDADD    = $(ulib_la) @FSTACKLIBS@
 userver_tcp_SOURCES  = userver.cpp
-userver_tcp_LDFLAGS  = $(PRG_LDFLAGS)
+userver_tcp_LDFLAGS  = $(PRG_LDFLAGS) @FSTACKLDFLAGS@
 userver_tcp_CPPFLAGS = -DU_TCP_SOCKET $(CPPFLAGS)
 bin_PROGRAMS  			= userver_tcp
 
@@ -23,6 +23,15 @@ userver_ssl_CPPFLAGS = -DU_SSL_SOCKET $(CPPFLAGS)
 bin_PROGRAMS  	  	  += userver_ssl
 endif
 
+if USERVER_UDP
+userver_udp_LDADD    = $(ulib_la)
+userver_udp_SOURCES  = userver.cpp
+userver_udp_LDFLAGS  = $(PRG_LDFLAGS)
+userver_udp_CPPFLAGS = -DU_UDP_SOCKET $(CPPFLAGS)
+bin_PROGRAMS  	  	  += userver_udp
+endif
+
+if USERVER_IPC
 ## MINGW don't have unix socket...
 if !MINGW
 userver_ipc_LDADD    = $(ulib_la)
@@ -30,6 +39,7 @@ userver_ipc_SOURCES  = userver.cpp
 userver_ipc_LDFLAGS  = $(PRG_LDFLAGS)
 userver_ipc_CPPFLAGS = -DU_UNIX_SOCKET $(CPPFLAGS)
 bin_PROGRAMS  	  	  += userver_ipc
+endif
 endif
 
 install-exec-hook:

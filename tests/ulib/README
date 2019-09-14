@@ -1,14 +1,17 @@
 See http://www.debian.org/ for information about Debian GNU/Linux.
 Four Debian releases are available on the main site:
 
-Debian 7.11, or wheezy.  Access this release through dists/oldstable
-Debian 7.11 was released Saturday, 4th June 2016.
+Debian 8.11, or jessie.  Access this release through dists/oldoldstable
+Debian 8.11 was released Saturday, 23rd June 2018.
 
-Debian 8.6, or jessie.  Access this release through dists/stable
-Debian 8.6 was released Saturday, 17th September 2016.
+Debian 9.11, or stretch.  Access this release through dists/oldstable
+Debian 9.11 was released Sunday, 8th September 2019.
 
-Testing, or stretch.  Access this release through dists/testing.  The
-current tested development snapshot is named stretch.  Packages which
+Debian 10.1, or buster.  Access this release through dists/stable
+Debian 10.1 was released Saturday, 7th September 2019.
+
+Testing, or bullseye.  Access this release through dists/testing.  The
+current tested development snapshot is named bullseye.  Packages which
 have been tested in unstable and passed automated tests propagate to
 this release.
 

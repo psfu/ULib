@@ -39,18 +39,20 @@ public:
    UOrmSession(const char* dbname,  uint32_t len);
    UOrmSession(const char* backend, uint32_t len, const UString& option)
       {
-      U_TRACE_REGISTER_OBJECT(0, UOrmSession, "%.*S,%u,%V", len, backend, len, option.rep)
+      U_TRACE_CTOR(0, UOrmSession, "%.*S,%u,%V", len, backend, len, option.rep)
 
       loadDriver(backend, len, option);
       }
 
-   ~UOrmSession() __pure;
+   ~UOrmSession();
 
    // will be typecast into conn-specific type
 
    bool  isReady() const __pure;
    void* getConnection() __pure;
    bool  connect(const UString& option);
+
+   UOrmDriver* getDriver() const { return pdrv; }
 
    // statement that should only be executed once and immediately
 
@@ -63,7 +65,7 @@ public:
 
    // This routine returns the rowid of the most recent successful INSERT into the database
 
-   unsigned long long last_insert_rowid(const char* sequence = 0);
+   unsigned long long last_insert_rowid(const char* sequence = U_NULLPTR);
 
    // STREAM
 
@@ -102,14 +104,14 @@ public:
 
    UOrmTypeHandler_Base(const void* ptr) : pval((void*)ptr)
       {
-      U_TRACE_REGISTER_OBJECT(0, UOrmTypeHandler_Base, "%p", ptr)
+      U_TRACE_CTOR(0, UOrmTypeHandler_Base, "%p", ptr)
 
       U_INTERNAL_ASSERT_POINTER(pval)
       }
 
    ~UOrmTypeHandler_Base()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UOrmTypeHandler_Base)
+      U_TRACE_DTOR(0, UOrmTypeHandler_Base)
 
       U_INTERNAL_ASSERT_POINTER(pval)
       }
@@ -125,45 +127,40 @@ private:
    U_DISALLOW_ASSIGN(UOrmTypeHandler_Base)
 };
 
-#define U_ORM_TYPE_HANDLER(class_name, name_object_member, type_object_member) \
-               UOrmTypeHandler<type_object_member>(((class_name*)pval)->name_object_member)
+#define U_ORM_TYPE_HANDLER(name_object_member, type_object_member) UOrmTypeHandler<type_object_member>(name_object_member)
 
 /**
- * Converts Rows to a Type and the other way around. Provide template specializations to support your own complex types.
+ * Converts Rows to a Type and the other way around.
+ * Provide template specializations to support your own complex types.
  *
  * Take as example the following (simplified) class:
  *
  * class Person {
  * public:
- *    UString _lastName;
- *    UString _firstName;
- *    int     _age;
+ *    int     age;
+ *    UString  lastName;
+ *    UString firstName;
  * };
  *
- * The UOrmTypeHandler must provide a custom bindParam and bindResult method:
+ * add this methods to the (simplified) class:
  * 
- * template <> class UOrmTypeHandler<Person> : public UOrmTypeHandler_Base {
- * public:
- *    explicit UOrmTypeHandler(Person& val) : UOrmTypeHandler_Base(&val)
- *
- *    void bindParam(UOrmStatement* stmt)
+ * void bindParam(UOrmStatement* stmt)
  *    {
- *       // the table is defined as Person (LastName VARCHAR(30), FirstName VARCHAR, Age INTEGER(3))
+ *    // the table is defined as Person (LastName VARCHAR(30), FirstName VARCHAR, Age INTEGER(3))
  *
- *       stmt->bindParam(U_ORM_TYPE_HANDLER(Person, _lastName,  UString));
- *       stmt->bindParam(U_ORM_TYPE_HANDLER(Person, _firstName, UString));
- *       stmt->bindParam(U_ORM_TYPE_HANDLER(Person, _age,       int));
+ *    stmt->bindParam(U_ORM_TYPE_HANDLER(age,       int));
+ *    stmt->bindParam(U_ORM_TYPE_HANDLER( lastName, UString));
+ *    stmt->bindParam(U_ORM_TYPE_HANDLER(firstName, UString));
  *    }
  * 
- *    void bindResult(UOrmStatement* stmt)
+ * void bindResult(UOrmStatement* stmt)
  *    {
- *       // the table is defined as Person (LastName VARCHAR(30), FirstName VARCHAR, Age INTEGER(3))
+ *    // the table is defined as Person (LastName VARCHAR(30), FirstName VARCHAR, Age INTEGER(3))
  *
- *       stmt->bindResult(U_ORM_TYPE_HANDLER(Person, _lastName,  UString));
- *       stmt->bindResult(U_ORM_TYPE_HANDLER(Person, _firstName, UString));
- *       stmt->bindResult(U_ORM_TYPE_HANDLER(Person, _age,       int));
+ *    stmt->bindResult(U_ORM_TYPE_HANDLER(age,       int));
+ *    stmt->bindResult(U_ORM_TYPE_HANDLER( lastName, UString));
+ *    stmt->bindResult(U_ORM_TYPE_HANDLER(firstName, UString));
  *    }
- * };
  */
 
 template <class T> class U_EXPORT UOrmTypeHandler : public UOrmTypeHandler_Base {
@@ -173,8 +170,19 @@ public:
 
    // SERVICES
 
-   void bindParam( UOrmStatement* stmt);
-   void bindResult(UOrmStatement* stmt);
+   void bindParam(UOrmStatement* stmt)
+      {
+      U_TRACE(0, "UOrmTypeHandler<T>::bindParam(%p)", stmt)
+
+      ((T*)pval)->bindParam(stmt);
+      }
+
+   void bindResult(UOrmStatement* stmt)
+      {
+      U_TRACE(0, "UOrmTypeHandler<T>::bindResult(%p)", stmt)
+
+      ((T*)pval)->bindResult(stmt);
+      }
 
 private:
    U_DISALLOW_ASSIGN(UOrmTypeHandler)
@@ -204,11 +212,24 @@ public:
    // a column in a WHERE clause to specify a comparison value.
 
     UOrmStatement(UOrmSession& session, const char* query, uint32_t query_len);
-   ~UOrmStatement() __pure;
+   ~UOrmStatement();
+
+   // will be typecast into conn-specific type
+
+   UOrmDriver*    getDriver() const    { return pdrv; }
+   USqlStatement* getStatement() const { return pstmt; }
 
    // Execute the statement
 
    void execute();
+
+   // ASYNC with PIPELINE
+
+   bool asyncPipelineProcessQueue(uint32_t n);
+   bool asyncPipelineSendQueryPrepared(uint32_t i);
+   bool asyncPipelineMode(vPFu function = U_NULLPTR);
+   void setAsyncPipelineHandlerResult(vPFu function);
+   bool asyncPipelineSendQuery(const char* query, uint32_t query_len, uint32_t n);
 
    // This function returns the number of database rows that were changed
    // or inserted or deleted by the most recently completed SQL statement
@@ -217,7 +238,7 @@ public:
 
    // This routine returns the rowid of the most recent successful INSERT into the database
 
-   unsigned long long last_insert_rowid(const char* sequence = 0);
+   unsigned long long last_insert_rowid(const char* sequence = U_NULLPTR);
 
    // Get number of columns in the row
 
@@ -256,7 +277,6 @@ public:
 #endif
    void bindParam(long long& v);
    void bindParam(struct tm& v);
-   void bindParam(UStringRep& v);
    void bindParam(const char* s);
    void bindParam(long double& v);
    void bindParam(unsigned int& v);
@@ -265,7 +285,10 @@ public:
    void bindParam(unsigned short& v);
    void bindParam(unsigned long long& v);
    void bindParam(const char* b, const char* e);
-   void bindParam(const char* s, int n, bool bstatic, int rebind = -1);
+   void bindParam(const char* s, uint32_t n, bool bstatic, int rebind = -1);
+
+   void bindParam(UString& v);
+   void bindParam(UStringRep& v);
 
    template <typename T> void bindParam(UOrmTypeHandler<T> t)
       {
@@ -301,13 +324,14 @@ public:
    void bindResult(float& v);
    void bindResult(double& v);
    void bindResult(long long& v);
-   void bindResult(UStringRep& v);
    void bindResult(long double& v);
    void bindResult(unsigned int& v);
    void bindResult(unsigned long& v);
    void bindResult(unsigned char& v);
    void bindResult(unsigned short& v);
    void bindResult(unsigned long long& v);
+
+   void bindResult(UString& v);
 
    template <typename T> void bindResult(UOrmTypeHandler<T> t)
       {
@@ -332,6 +356,7 @@ public:
 protected:
    UOrmDriver* pdrv;
    USqlStatement* pstmt;
+   UOrmSession* psession;
 
 private:
    U_DISALLOW_COPY_AND_ASSIGN(UOrmStatement)
@@ -499,7 +524,7 @@ inline void UOrmStatement::into(T1& r1, T2& r2, T3& r3, T4& r4, T5& r5, T6& r6, 
 
 template <> class U_EXPORT UOrmTypeHandler<null> : public UOrmTypeHandler_Base {
 public:
-   explicit UOrmTypeHandler(null& val) : UOrmTypeHandler_Base(0) {}
+   explicit UOrmTypeHandler(null& val) : UOrmTypeHandler_Base(U_NULLPTR) {}
 
    void bindParam(UOrmStatement* stmt)
       {
@@ -819,16 +844,16 @@ public:
 
    void bindParam(UOrmStatement* stmt)
       {
-      U_TRACE(0, "UOrmTypeHandler<UString>::bindParam(%p)", stmt)
+      U_TRACE(0, "UOrmTypeHandler<UStringRep>::bindParam(%p)", stmt)
 
       stmt->bindParam(*(UStringRep*)pval);
       }
 
    void bindResult(UOrmStatement* stmt)
       {
-      U_TRACE(0, "UOrmTypeHandler<UString>::bindResult(%p)", stmt)
+      U_TRACE(0, "UOrmTypeHandler<UStringRep>::bindResult(%p)", stmt)
 
-      stmt->bindResult(*(UStringRep*)pval);
+      U_ERROR("UOrmTypeHandler<UStringRep>::bindResult(): sorry, we cannot use UStringRep type to bind ORM type handler...");
       }
 };
 
@@ -840,16 +865,14 @@ public:
       {
       U_TRACE(0, "UOrmTypeHandler<UString>::bindParam(%p)", stmt)
 
-      stmt->bindParam(*((UString*)pval)->rep);
+      stmt->bindParam(*(UString*)pval);
       }
 
    void bindResult(UOrmStatement* stmt)
       {
       U_TRACE(0, "UOrmTypeHandler<UString>::bindResult(%p)", stmt)
 
-      if (((UString*)pval)->isNull()) ((UString*)pval)->setBuffer(U_CAPACITY);
-
-      stmt->bindResult(*((UString*)pval)->rep);
+      stmt->bindResult(*(UString*)pval);
       }
 };
 
@@ -928,8 +951,13 @@ public:
 
    explicit UOrmTypeHandler(UVector<UString>& val) : UOrmTypeHandler<uvectorbase>(*((uvector*)&val)) {}
 
-   void bindParam( UOrmStatement* stmt) { ((UOrmTypeHandler<uvectorbase>*)this)->bindParam( stmt); }
-   void bindResult(UOrmStatement* stmt) { ((UOrmTypeHandler<uvectorbase>*)this)->bindResult(stmt); }
-};
+   void bindParam(UOrmStatement* stmt) { ((UOrmTypeHandler<uvectorbase>*)this)->bindParam( stmt); }
 
+   void bindResult(UOrmStatement* stmt)
+      {
+      U_TRACE(0, "UOrmTypeHandler<UVector<UString>>::bindResult(%p)", stmt)
+
+      U_ERROR("UOrmTypeHandler<UVector<UString>>::bindResult(): sorry, we cannot use UVector<UString> type to bind ORM type handler...");
+      }
+};
 #endif

@@ -14,7 +14,7 @@
 #ifndef ULIB_IPADDRES_H
 #define ULIB_IPADDRES_H 1
 
-#include <ulib/string.h>
+#include <ulib/container/vector.h>
 
 #ifdef _MSWINDOWS_
 #  include <ws2tcpip.h>
@@ -50,13 +50,12 @@ class UHTTP;
 class USocket;
 class USocketExt;
 class USSLSocket;
+class UIPAddress;
 class UNoCatPlugIn;
 class UClient_Base;
 class UServer_Base;
 class URDBClientImage;
 class UClientImage_Base;
-
-template <class T> class UVector;
 
 // Simple IP-based access-control system
 // Interpret a "HOST/BITS" IP mask specification. (Ex. 192.168.1.64/28)
@@ -71,11 +70,11 @@ public:
    U_MEMORY_ALLOCATOR
    U_MEMORY_DEALLOCATOR
 
-   UString spec, device, host;
+   UString device, host;
 
    UIPAllow()
       {
-      U_TRACE_REGISTER_OBJECT(0, UIPAllow, "", 0)
+      U_TRACE_CTOR(0, UIPAllow, "")
 
       mask = addr = network = 0;
       bnot = false;
@@ -83,7 +82,17 @@ public:
 
    ~UIPAllow()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UIPAllow)
+      U_TRACE_DTOR(0, UIPAllow)
+      }
+
+   UIPAllow(const UIPAllow& a)
+      {
+      device  = a.device;
+      host    = a.host;
+      addr    = a.addr;
+      mask    = a.mask;
+      network = a.network;
+      bnot    = a.bnot;
       }
 
    UIPAllow& operator=(const UIPAllow& a)
@@ -105,15 +114,25 @@ public:
    // Interpret a "HOST/BITS" IP mask specification. (Ex. 192.168.1.64/28)
 
           bool     parseMask(const UString&  spec);
-   static uint32_t parseMask(const UString& vspec, UVector<UIPAllow*>& vipallow);
+   static uint32_t parseMask(const UString& vspec, UVector<UIPAllow*>& vipallow, UVector<UString>* pvspec = U_NULLPTR);
 
    // Check whether a ip address client ought to be allowed (belong to the same network)...
 
-   bool isAllowed(const char*    ip_client);
-   bool isAllowed(const UString& ip_client);
+   inline bool isAllowed(const char* ip_client);
+
+   bool isAllowed(UString& ip_client) { return isAllowed(ip_client.c_str()); }
 
    bool isAllowed(in_addr_t client) __pure;
-   bool isAllowed(in_addr_t ifa_addr, in_addr_t ifa_netmask) __pure;
+   bool isAllowed(in_addr_t ifa_addr, in_addr_t ifa_netmask)
+      {
+      U_TRACE(0, "UIPAllow::isAllowed(%u,%u)", ifa_addr, ifa_netmask)
+
+      U_INTERNAL_ASSERT_EQUALS(network, addr & mask)
+
+      if ((ifa_addr & ifa_netmask) == network) U_RETURN(true);
+
+      U_RETURN(false);
+      }
 
    // SERVICES
 
@@ -121,8 +140,8 @@ public:
       {
       U_TRACE_NO_PARAM(0, "UIPAllow::isEmpty()")
 
-      if (device.empty() ||
-           host.empty())
+      if (  host.empty() ||
+          device.empty())
          {
          U_RETURN(true);
          }
@@ -132,9 +151,41 @@ public:
 
    static bool getNetworkInterface(UVector<UIPAllow*>& vipallow);
 
-   static uint32_t find(in_addr_t         client, UVector<UIPAllow*>& vipallow) __pure;
-   static uint32_t find(const char*    ip_client, UVector<UIPAllow*>& vipallow) __pure;
-   static uint32_t find(const UString& ip_client, UVector<UIPAllow*>& vipallow) __pure;
+   static uint32_t find(in_addr_t client, UVector<UIPAllow*>& vipallow)
+      {
+      U_TRACE(0, "UIPAllow::find(%u,%p)", client, &vipallow)
+
+      for (uint32_t i = 0, vlen = vipallow.size(); i < vlen; ++i)
+         {
+         if (vipallow[i]->isAllowed(client)) U_RETURN(i);
+         }
+
+      U_RETURN(U_NOT_FOUND);
+      }
+
+   static uint32_t find(const char* ip_client, UVector<UIPAllow*>& vipallow)
+      {
+      U_TRACE(0, "UIPAllow::find(%S,%p)", ip_client, &vipallow)
+
+      for (uint32_t i = 0, vlen = vipallow.size(); i < vlen; ++i)
+         {
+         if (vipallow[i]->isAllowed(ip_client)) U_RETURN(i);
+         }
+
+      U_RETURN(U_NOT_FOUND);
+      }
+
+   static uint32_t find(const UString& ip_client, UVector<UIPAllow*>& vipallow)
+      {
+      U_TRACE(0, "UIPAllow::find(%V,%p)", ip_client.rep, &vipallow)
+
+      for (uint32_t i = 0, vlen = vipallow.size(); i < vlen; ++i)
+         {
+         if (vipallow[i]->isAllowed(ip_client)) U_RETURN(i);
+         }
+
+      U_RETURN(U_NOT_FOUND);
+      }
 
    static bool isAllowed(in_addr_t         client, UVector<UIPAllow*>& vipallow) { return (find(   client, vipallow) != U_NOT_FOUND); }
    static bool isAllowed(const char*    ip_client, UVector<UIPAllow*>& vipallow) { return (find(ip_client, vipallow) != U_NOT_FOUND); }
@@ -184,7 +235,7 @@ public:
 
    UIPAddress()
       {
-      U_TRACE_REGISTER_OBJECT(0, UIPAddress, "", 0)
+      U_TRACE_CTOR(0, UIPAddress, "")
 
       pcStrAddress[0] = '\0';
       iAddressLength  =
@@ -193,7 +244,7 @@ public:
 
    ~UIPAddress()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, UIPAddress)
+      U_TRACE_DTOR(0, UIPAddress)
       }
 
    // Sets an UIPAddress by providing a host name and a boolean
@@ -216,7 +267,7 @@ public:
 
    static bool isPrivate(uint32_t i)
       {
-      U_TRACE(0, "UIPAddress::isPrivate(0x%X)", i)
+      U_TRACE(0, "UIPAddress::isPrivate(%#x)", i)
 
       if (((i >= 0x0A000000) && (i <= 0x0AFFFFFF)) ||
           ((i >= 0xAC100000) && (i <= 0xAC1FFFFF)) ||
@@ -228,11 +279,39 @@ public:
       U_RETURN(false);
       }
 
+   static bool isLocalHost(uint32_t i)
+      {
+      U_TRACE(0, "UIPAddress::isLocalHost(%#x)", i)
+
+      if ((i & htonl(0xFF000000)) == htonl(0x7F000000)) U_RETURN(true); /* If it is 0.0.0.0 or starts with 127.0.0.1 then it is probably localhost */
+
+      U_RETURN(false);
+      }
+
    bool isPrivate() __pure;
    bool isWildCard() __pure;
+   bool isLocalHost() __pure;
 
    static UString toString(uint8_t* paddr);
    static UString toString(in_addr_t addr) { return toString((uint8_t*)&addr); } 
+
+   // converts the internet address from the IPv4 numbers-and-dots notation into binary form
+   // (in network byte order) and stores it in the structure that points to
+
+   static bool getBinaryForm(const char* addr_str, uint32_t& addr, bool bconvert = false)
+      {
+      U_TRACE(0, "UIPAddress::getBinaryForm(%S,%p,%b)", addr_str, &addr, bconvert)
+
+      U_INTERNAL_ASSERT(u_isIPv4Addr(addr_str, u__strlen(addr_str, __PRETTY_FUNCTION__)))
+
+      struct in_addr ia;
+
+      if (U_SYSCALL(inet_aton, "%p,%p", addr_str, &ia) == 0) U_RETURN(false);
+
+      addr = (bconvert ? ntohl(ia.s_addr) : ia.s_addr);
+
+      U_RETURN(true);
+      }
 
 #ifdef ENABLE_IPV6
    /********************************************************************************/
@@ -260,14 +339,14 @@ public:
    // Returns a (void*) to the address represented by UIPAddress.
    // This must be cast to (in_addr*) or to (in6_addr*) for use
 
-   void* get_in_addr() const { return (void*) (pcAddress.p + (iAddressType == AF_INET6 ? 12 : 0)); }
+   void* get_in_addr() const { return (void*)((long)pcAddress.p + (iAddressType == AF_INET6 ? 12L : 0L)); }
 
    // Returns the address represented by UIPAddress
 
    in_addr_t getInAddr() const
       {
       union uuaddr {
-         void*      generic;
+         void* generic;
          in_addr_t* addr;
       };
 
@@ -276,12 +355,26 @@ public:
       return *(u.addr);
       }
 
+   uint32_t get_addr() const { return pcAddress.i; }
+
    // Returns a string of the hostname of the represented IP Address
 
    UString& getHostName() { resolveHostName(); return strHostName; }
 
    // Returns a constant string pointer to the string
    // representation of the IP Address suitable for visual presentation
+
+   static const char* getAddressString(uint32_t addr)
+      {
+      union uuaddr {
+         in_addr addr;
+         uint32_t generic;
+      };
+
+      union uuaddr tmp; tmp.generic = addr; return inet_ntoa(tmp.addr);
+      }
+
+   static bool setBroadcastAddress(uusockaddr& addr, const UString& ifname);
 
    const char* getAddressString() { if (U_ipaddress_StrAddressUnresolved(this)) resolveStrAddress(); return pcStrAddress; }
 
@@ -307,7 +400,7 @@ public:
 
    UIPAddress(const UIPAddress& cOtherAddr)
       {
-      U_TRACE_REGISTER_OBJECT(0, UIPAddress, "%p", &cOtherAddr)
+      U_TRACE_CTOR(0, UIPAddress, "%p", &cOtherAddr)
 
       U_MEMORY_TEST_COPY(cOtherAddr)
 
@@ -339,7 +432,16 @@ protected:
    char pcStrAddress[U_INET_ADDRSTRLEN];
 
    void resolveHostName();
-   void resolveStrAddress();
+   void resolveStrAddress()
+      {
+      U_TRACE_NO_PARAM(0, "UIPAddress::resolveStrAddress()")
+
+      U_CHECK_MEMORY
+
+      U_INTERNAL_ASSERT(U_ipaddress_StrAddressUnresolved(this))
+
+      if (resolveStrAddress(iAddressType, pcAddress.p, pcStrAddress)) U_ipaddress_StrAddressUnresolved(this) = false;
+      }
 
    static char* resolveStrAddress(int iAddressType, const void* addr, char* ip);
 
@@ -363,5 +465,20 @@ private:
    friend class URDBClientImage;
    friend class UClientImage_Base;
 };
+
+inline bool UIPAllow::isAllowed(const char* ip_client)
+{
+   U_TRACE(0, "UIPAllow::isAllowed(%S)", ip_client)
+
+   in_addr_t client;
+
+   if (UIPAddress::getBinaryForm(ip_client, client) &&
+       isAllowed(client))
+      {
+      U_RETURN(true);
+      }
+
+   U_RETURN(false);
+}
 
 #endif

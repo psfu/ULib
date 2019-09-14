@@ -83,142 +83,19 @@ const char* UInterrupt::BUS_errlist[] = {
    "BUS_OBJERR", "Object specific hardware error"  // BUS_OBJERR 3
 };
 
+int               UInterrupt::event_signal_pending;
 bool              UInterrupt::flag_alarm;
 bool              UInterrupt::syscall_restart; // NB: notify to make certain system calls restartable across signals...
 bool              UInterrupt::exit_loop_wait_event_for_signal;
 jmp_buf           UInterrupt::jbuf;
+sigset_t          UInterrupt::mask_wait_for_signal;
 sigset_t*         UInterrupt::mask_interrupt;
+sig_atomic_t      UInterrupt::event_signal[NSIG];
 sig_atomic_t      UInterrupt::flag_wait_for_signal;
+sighandler_t      UInterrupt::handler_signal[NSIG];
 struct sigaction  UInterrupt::act;
 struct itimerval  UInterrupt::timerval;
 struct sigaction  UInterrupt::old[NSIG];
-
-int               UInterrupt::event_signal_pending;
-sig_atomic_t      UInterrupt::event_signal[NSIG];
-sighandler_t      UInterrupt::handler_signal[NSIG];
-
-void UInterrupt::insert(int signo, sighandler_t handler)
-{
-   U_TRACE(1, "UInterrupt::insert(%d,%p)", signo, handler)
-
-   U_INTERNAL_ASSERT_RANGE(1, signo, NSIG)
-
-   handler_signal[signo] = handler;
-
-   act.sa_handler = handlerEventSignal;
-
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", signo, &act, old + signo);
-}
-
-void UInterrupt::erase(int signo)
-{
-   U_TRACE(1, "UInterrupt::erase(%d)", signo)
-
-   U_INTERNAL_ASSERT_RANGE(1, signo, NSIG)
-   U_INTERNAL_ASSERT_POINTER(handler_signal[signo])
-
-   handler_signal[signo] = 0;
-
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", signo, old + signo, 0);
-}
-
-bool UInterrupt::disable(sigset_t* mask, sigset_t* mask_old)
-{
-   U_TRACE(1, "UInterrupt::disable(%p,%p)", mask, mask_old)
-
-   if (!mask)
-      {
-      if (!mask_interrupt) setMaskInterrupt(0, 0);
-
-      mask = mask_interrupt;
-      }
-
-   if (U_SYSCALL(sigprocmask, "%d,%p,%p", SIG_BLOCK, mask, mask_old) == 0) U_RETURN(true);
-
-   U_RETURN(false);
-}
-
-bool UInterrupt::enable(sigset_t* mask)
-{
-   U_TRACE(1, "UInterrupt::enable(%p)", mask)
-
-   if (!mask)
-      {
-      if (!mask_interrupt) setMaskInterrupt(0, 0);
-
-      mask = mask_interrupt;
-      }
-
-   if (U_SYSCALL(sigprocmask, "%d,%p,%p", SIG_BLOCK, mask, 0) == 0) U_RETURN(true);
-
-   U_RETURN(false);
-}
-
-RETSIGTYPE UInterrupt::handlerSignal(int signo)
-{
-   U_TRACE(0, "[SIGNAL] UInterrupt::handlerSignal(%d)", signo)
-
-   flag_wait_for_signal = false;
-}
-
-// Send ourselves the signal: see http://www.cons.org/cracauer/sigint.html
-
-void UInterrupt::sendOurselves(int signo)
-{
-   U_TRACE(0, "UInterrupt::sendOurselves(%d)", signo)
-
-   setHandlerForSignal(signo, (sighandler_t)SIG_DFL);
-
-   u_exit();
-
-   (void) U_SYSCALL(kill, "%d,%d", u_pid, signo);
-}
-
-RETSIGTYPE UInterrupt::handlerInterrupt(int signo)
-{
-   U_TRACE(0, "UInterrupt::handlerInterrupt(%d)", signo)
-
-   U_MESSAGE("(pid %P) program interrupt - %Y", signo);
-
-   if (signo == SIGBUS || //  7
-       signo == SIGSEGV)  // 11 
-      {
-      u_debug_at_exit(); 
-      }
-
-// U_EXIT(-1);
-
-   sendOurselves(signo);
-}
-
-RETSIGTYPE UInterrupt::handlerEventSignal(int signo)
-{
-#ifdef DEBUG
-   u_trace_unlock();
-#endif
-
-   U_TRACE(0, "[SIGNAL] UInterrupt::handlerEventSignal(%d)", signo)
-
-   ++event_signal[signo];
-
-   event_signal_pending = (event_signal_pending ? NSIG : signo);
-}
-
-void UInterrupt::waitForSignal(int signo)
-{
-   U_TRACE(1, "UInterrupt::waitForSignal(%d)", signo)
-
-   static sigset_t mask_wait_for_signal;
-
-   flag_wait_for_signal = true;
-
-   setHandlerForSignal(signo, (sighandler_t)handlerSignal);
-
-   while (flag_wait_for_signal == true)
-      {
-      (void) U_SYSCALL(sigsuspend, "%p", &mask_wait_for_signal);
-      }
-}
 
 void UInterrupt::callHandlerSignal()
 {
@@ -281,7 +158,7 @@ void UInterrupt::setMaskInterrupt(sigset_t* mask, int signo)
       }
    else
       {
-      U_INTERNAL_ASSERT_EQUALS(mask_interrupt,0)
+      U_INTERNAL_ASSERT_EQUALS(mask_interrupt, U_NULLPTR)
 
       mask_interrupt = new sigset_t;
 
@@ -313,32 +190,32 @@ void UInterrupt::init()
    act.sa_flags     = SA_SIGINFO;
    act.sa_sigaction = handlerInterruptWithInfo;
 
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGBUS,  &act, 0); // 7
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGSEGV, &act, 0); // 11
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGBUS,  &act, U_NULLPTR); // 7
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGSEGV, &act, U_NULLPTR); // 11
    /*
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGCHLD, &act, 0);
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGILL,  &act, 0);
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGFPE,  &act, 0);
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGPOLL, &act, 0);
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGTRAP, &act, 0);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGCHLD, &act, U_NULLPTR);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGILL,  &act, U_NULLPTR);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGFPE,  &act, U_NULLPTR);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGPOLL, &act, U_NULLPTR);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGTRAP, &act, U_NULLPTR);
    */
 #endif
 
    act.sa_flags   = 0;
    act.sa_handler = handlerInterrupt;
 
-// (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGHUP,  &act, 0);
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGINT,  &act, 0); // 2
-// (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGQUIT, &act, 0);
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGTERM, &act, 0); // 15
+// (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGHUP,  &act, U_NULLPTR);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGINT,  &act, U_NULLPTR); // 2
+// (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGQUIT, &act, U_NULLPTR);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGTERM, &act, U_NULLPTR); // 15
 #ifndef _MSWINDOWS_
-// (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGPIPE, &act, 0); // 13
+// (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGPIPE, &act, U_NULLPTR); // 13
 #endif
 
 #ifndef HAVE_SIGINFO_T
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGSEGV, &act, 0); // 11
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGSEGV, &act, U_NULLPTR); // 11
 #  ifndef _MSWINDOWS_
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGBUS,  &act, 0); // 7
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGBUS,  &act, U_NULLPTR); // 7
 #  endif
 #endif
 
@@ -346,27 +223,12 @@ void UInterrupt::init()
    sigset_t mask_sigpipe;
 
    setMaskInterrupt(&mask_sigpipe, SIGPIPE);
-            disable(&mask_sigpipe, 0);
+            disable(&mask_sigpipe, U_NULLPTR);
 #endif
 
    syscall_restart = true; // NB: notify to make certain system calls restartable across signals...
 
    setHandlerForSignal(SIGALRM, (sighandler_t)handlerAlarm);
-}
-
-RETSIGTYPE UInterrupt::handlerAlarm(int signo)
-{
-   U_TRACE(0, "[SIGALRM] UInterrupt::handlerAlarm(%d)", signo)
-
-   if ((flag_alarm = (signo == SIGALRM)))
-      {
-      timerval.it_value.tv_sec  =
-      timerval.it_value.tv_usec = 0;
-      }
-
-   U_INTERNAL_DUMP("timerval.it_value = { %ld %6ld }", timerval.it_value.tv_sec, timerval.it_value.tv_usec)
-
-   (void) U_SYSCALL(setitimer, "%d,%p,%p", ITIMER_REAL, &timerval, 0);
 }
 
 void UInterrupt::setHandlerForSegv(vPF func, bPF fault)
@@ -392,7 +254,7 @@ retry:
       if (fault()) goto retry;
       }
 
-   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGSEGV, old + SIGSEGV, 0);
+   (void) U_SYSCALL(sigaction, "%d,%p,%p", SIGSEGV, old + SIGSEGV, U_NULLPTR);
 }
 
 RETSIGTYPE UInterrupt::handlerSegvWithInfo(int signo, siginfo_t* info, void* context)
@@ -500,7 +362,7 @@ void UInterrupt::getSignalInfo(int signo, siginfo_t* info)
 #  endif
 #endif
 
-   if (info == 0 ||
+   if (info == U_NULLPTR ||
        SI_FROMKERNEL(info) == false)
       {
       u_buffer_len = u__snprintf(u_buffer, U_BUFFER_SIZE, U_CONSTANT_TO_PARAM("program interrupt by kill(), sigsend() or raise() - %Y"), signo);

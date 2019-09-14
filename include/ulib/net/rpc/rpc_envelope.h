@@ -31,15 +31,15 @@ public:
 
    URPCEnvelope()
       {
-      U_TRACE_REGISTER_OBJECT(0, URPCEnvelope, "", 0)
+      U_TRACE_CTOR(0, URPCEnvelope, "")
 
-      arg            = 0;
+      arg            = U_NULLPTR;
       mustUnderstand = false;
       }
 
    ~URPCEnvelope()
       {
-      U_TRACE_UNREGISTER_OBJECT(0, URPCEnvelope)
+      U_TRACE_DTOR(0, URPCEnvelope)
       }
 
    // SERVICES

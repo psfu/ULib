@@ -16,7 +16,7 @@
 #include <ulib/utility/interrupt.h>
 #include <ulib/utility/semaphore.h>
 
-#if defined(U_LINUX) && !defined(__clang__)
+#ifdef U_LINUX
 U_DUMP_KERNEL_VERSION(LINUX_VERSION_CODE)
 #endif
 
@@ -33,7 +33,7 @@ void USemaphore::init(sem_t* ptr, int resource)
 {
    U_TRACE(1, "USemaphore::init(%p,%d)", ptr, resource)
 
-   U_INTERNAL_ASSERT_EQUALS(psem, 0)
+   U_INTERNAL_ASSERT_EQUALS(psem, U_NULLPTR)
 
 #if defined(__MACOSX__) || defined(__APPLE__)
    (void) u__snprintf(name, sizeof(name), U_CONSTANT_TO_PARAM("/sem%X"), ptr);
@@ -61,43 +61,63 @@ void USemaphore::init(sem_t* ptr, int resource)
    if (psem == -1) U_ERROR("USemaphore::init(%p,%u) failed", ptr, resource);
 #endif
 
-#if !defined(__MACOSX__) && !defined(__APPLE__) && defined(HAVE_SEM_GETVALUE)
-   next  = first;
-           first = this;
+   U_INTERNAL_DUMP("first = %p next = %p this = %p", first, next, this)
 
-# ifdef DEBUG
-   U_INTERNAL_DUMP("first = %p next = %p", first, next)
+   next = first;
+          first = this;
+
+   U_INTERNAL_DUMP("first = %p next = %p this = %p", first, next, this)
 
    U_INTERNAL_ASSERT_DIFFERS(first, next)
 
+#if !defined(__MACOSX__) && !defined(__APPLE__) && defined(HAVE_SEM_GETVALUE)
    int _value = getValue();
 
+   U_INTERNAL_DUMP("value = %d", getValue())
+
    if (_value != resource) U_ERROR("USemaphore::init(%p,%u) failed - value = %d", ptr, resource, _value);
-# endif
 #endif
 }
 
 /**
- * Destroying a semaphore also removes any system resources associated with it. If a semaphore has threads currently
- * waiting on it, those threads will all continue when a semaphore is destroyed
+ * Destroying a semaphore also removes any system resources associated with it. If a semaphore
+ * has threads currently waiting on it, those threads will all continue when a semaphore is destroyed
  */
 
 USemaphore::~USemaphore()
 {
-   U_TRACE_UNREGISTER_OBJECT(0, USemaphore)
+   U_TRACE_DTOR(0, USemaphore)
 
    U_INTERNAL_ASSERT_POINTER(psem)
 
-#if defined(__MACOSX__) || defined(__APPLE__)
-   (void) U_SYSCALL(sem_close,  "%p", psem);
-   (void) U_SYSCALL(sem_unlink, "%S", name);
-#elif defined(HAVE_SEM_INIT) && (!defined(U_LINUX) || LINUX_VERSION_CODE > KERNEL_VERSION(2,6,7))
-   (void) sem_destroy(psem); // Free resources associated with semaphore object sem
-#elif defined(_MSWINDOWS_)
-   (void) ::CloseHandle((HANDLE)psem);
-#else
-   UFile::close(psem);
-#endif
+   U_INTERNAL_DUMP("first = %p next = %p this = %p", first, next, this)
+
+   USemaphore* item;
+
+   for (USemaphore** ptr = &first; (item = *ptr); ptr = &(*ptr)->next)
+      {
+      if (item == this)
+         {
+         U_INTERNAL_DUMP("*ptr = %p item->next = %p", *ptr, item->next)
+
+         *ptr = item->next; // remove it from its active list
+
+#     if defined(__MACOSX__) || defined(__APPLE__)
+         (void) U_SYSCALL(sem_close,  "%p", psem);
+         (void) U_SYSCALL(sem_unlink, "%S", name);
+#     elif defined(HAVE_SEM_INIT) && (!defined(U_LINUX) || LINUX_VERSION_CODE > KERNEL_VERSION(2,6,7))
+         (void) sem_destroy(psem); // Free resources associated with semaphore object sem
+#     elif defined(_MSWINDOWS_)
+         (void) ::CloseHandle((HANDLE)psem);
+#     else
+         UFile::close(psem);
+#     endif
+
+         break;
+         }
+      }
+
+   U_INTERNAL_DUMP("first = %p next = %p this = %p", first, next, this)
 }
 
 /**
@@ -216,9 +236,9 @@ void USemaphore::lock()
 #elif defined(HAVE_SEM_INIT) && (!defined(U_LINUX) || LINUX_VERSION_CODE > KERNEL_VERSION(2,6,7))
    /**
     * sem_wait() decrements (locks) the semaphore pointed to by sem. If the semaphore's value is greater than zero,
-    * then the decrement proceeds, and the function returns, immediately.  * If the semaphore currently has the value
+    * then the decrement proceeds, and the function returns, immediately. If the semaphore currently has the value
     * zero, then the call blocks until either it becomes possible to perform the decrement (i.e., the semaphore value
-    * rises above zero), or a * signal handler interrupts the call
+    * rises above zero), or a signal handler interrupts the call
     */
 
 wait:
@@ -261,6 +281,6 @@ const char* USemaphore::dump(bool reset) const
       return UObjectIO::buffer_output;
       }
 
-   return 0;
+   return U_NULLPTR;
 }
 #endif
